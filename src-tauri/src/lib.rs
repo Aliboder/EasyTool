@@ -124,6 +124,20 @@ fn clipboard_enabled(app: &tauri::AppHandle) -> bool {
         .unwrap_or(false)
 }
 
+fn quota_enabled(app: &tauri::AppHandle) -> bool {
+    app.try_state::<ConfigState>()
+        .map(|s| {
+            s.0.lock()
+                .unwrap()
+                .modules
+                .get("quota")
+                .and_then(|m| m.get("enabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
 struct Hotkeys {
     unified: bool,
     clip_hotkey: String,
@@ -184,6 +198,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
+        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -259,6 +274,11 @@ pub fn run() {
                 popup.hide()?;
             }
 
+            // 额度监控模块
+            if quota_enabled(app.handle()) {
+                modules::quota::setup(app)?;
+            }
+
             // 全局热键（按统一呼出模式注册）
             reapply_hotkeys(app.handle());
 
@@ -290,6 +310,13 @@ pub fn run() {
             modules::clipboard::commands::get_file_icon,
             modules::clipboard::commands::get_file_thumb,
             modules::clipboard::commands::get_file_preview,
+            modules::quota::commands::get_status,
+            modules::quota::commands::get_settings,
+            modules::quota::commands::save_settings,
+            modules::quota::commands::set_deepseek_key,
+            modules::quota::commands::set_go_key,
+            modules::quota::commands::test_key,
+            modules::quota::commands::get_stats_data,
         ])
         .on_window_event(|window, event| {
             match event {

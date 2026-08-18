@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 use crate::config::AppConfig;
 
 pub mod clipboard;
+pub mod quota;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Manifest {

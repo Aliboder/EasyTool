@@ -24,6 +24,11 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
 log = "0.4"
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+tokio = { version = "1", features = ["full"] }
+keyring = "3"
+chrono = { version = "0.4", features = ["serde"] }
+tauri-plugin-notification = "2"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_DataExchange",
