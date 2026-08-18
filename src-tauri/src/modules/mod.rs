@@ -1,0 +1,82 @@
+use std::{fs, path::PathBuf};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager};
+
+use crate::config::AppConfig;
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Manifest {
+    pub id: String,
+    pub name: String,
+    pub icon: String,
+    pub enabled: bool,
+    pub default_config: serde_json::Value,
+}
+
+pub fn modules_dir(app: &AppHandle) -> PathBuf {
+    if let Ok(p) = app
+        .path()
+        .resolve("modules", tauri::path::BaseDirectory::Resource)
+    {
+        if p.exists() {
+            return p;
+        }
+    }
+    PathBuf::from("modules")
+}
+
+pub fn load_manifests(app: &AppHandle) -> Vec<Manifest> {
+    let dir = modules_dir(app);
+    let mut out = vec![];
+    if let Ok(entries) = fs::read_dir(dir) {
+        for e in entries.flatten() {
+            if e.path().is_dir() {
+                let mpath = e.path().join("manifest.json");
+                if let Ok(text) = fs::read_to_string(mpath) {
+                    if let Ok(m) = serde_json::from_str::<Manifest>(&text) {
+                        out.push(m);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 用 manifest 补齐 config.modules 缺失的模块（默认启用 + 默认配置）。
+pub fn merge_manifests(cfg: &mut AppConfig, manifests: &[Manifest]) {
+    for m in manifests {
+        if !cfg.modules.contains_key(&m.id) {
+            let mut value = m.default_config.clone();
+            value["enabled"] = serde_json::json!(m.enabled);
+            cfg.modules.insert(m.id.clone(), value);
+        }
+    }
+}
+
+#[tauri::command]
+pub fn get_manifests(app: AppHandle) -> Vec<Manifest> {
+    load_manifests(&app)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_adds_missing_modules() {
+        let mut cfg = AppConfig::default();
+        cfg.modules.clear();
+        let manifest = Manifest {
+            id: "clipboard".into(),
+            name: "剪贴板".into(),
+            icon: "clipboard".into(),
+            enabled: true,
+            default_config: serde_json::json!({ "max_items": 500 }),
+        };
+        merge_manifests(&mut cfg, &[manifest]);
+        assert!(cfg.modules.contains_key("clipboard"));
+        assert_eq!(cfg.modules["clipboard"]["enabled"], serde_json::json!(true));
+        assert_eq!(cfg.modules["clipboard"]["max_items"], serde_json::json!(500));
+    }
+}

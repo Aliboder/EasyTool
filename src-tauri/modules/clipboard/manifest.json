@@ -1,0 +1,7 @@
+{
+  "id": "clipboard",
+  "name": "剪贴板",
+  "icon": "clipboard",
+  "enabled": true,
+  "default_config": { "max_items": 500, "hotkey": "Ctrl+Shift+V" }
+}

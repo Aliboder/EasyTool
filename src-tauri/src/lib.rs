@@ -1,3 +1,6 @@
+mod config;
+mod modules;
+
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -47,9 +50,21 @@ pub fn run() {
             show_main(app);
         }))
         .setup(|app| {
+            let mut cfg = config::load_config(app.handle());
+            let manifests = modules::load_manifests(app.handle());
+            modules::merge_manifests(&mut cfg, &manifests);
+            let _ = config::save_config(app.handle(), &cfg);
+            app.manage(config::ConfigState(std::sync::Mutex::new(cfg)));
+
             build_tray(app)?;
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            config::get_config,
+            config::set_module_enabled,
+            config::set_theme,
+            modules::get_manifests,
+        ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == MAIN_WINDOW_LABEL {
