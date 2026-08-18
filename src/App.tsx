@@ -22,6 +22,8 @@ import { Separator } from "@/components/ui/separator";
 import { Clipboard, Gauge } from "lucide-react";
 import { Clippage } from "@/modules/clipboard/Clippage";
 import { ClipSettings } from "@/modules/clipboard/ClipSettings";
+import { QuotaPage } from "@/modules/quota/QuotaPage";
+import { QuotaSettings } from "@/modules/quota/QuotaSettings";
 
 function applyTheme(theme: string) {
   const dark =
@@ -134,6 +136,16 @@ function SettingsView({
           </div>
         </>
       )}
+
+      {Boolean(config.modules.quota?.enabled) && (
+        <>
+          <Separator />
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">额度监控设置</h3>
+            <QuotaSettings onRefresh={onConfigRefresh} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -200,6 +212,8 @@ function App() {
     switch (activeModule.id) {
       case "clipboard":
         return <Clippage popup={false} />;
+      case "quota":
+        return <QuotaPage />;
       default:
         return (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

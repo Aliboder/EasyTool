@@ -191,6 +191,16 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
     }
 }
 
+/// 前端 JS 错误上报：写入 easytool.log，方便远程排查渲染问题
+#[tauri::command]
+fn log_frontend(level: String, msg: String) {
+    match level.as_str() {
+        "error" => log::error!("[frontend] {msg}"),
+        "warn" => log::warn!("[frontend] {msg}"),
+        _ => log::info!("[frontend] {msg}"),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logger();
@@ -277,6 +287,18 @@ pub fn run() {
             // 额度监控模块
             if quota_enabled(app.handle()) {
                 modules::quota::setup(app)?;
+                let float_win = tauri::WebviewWindowBuilder::new(
+                    app,
+                    modules::quota::FLOAT_WINDOW_LABEL,
+                    tauri::WebviewUrl::App("float_window.html".into()),
+                )
+                .decorations(false)
+                .shadow(false)
+                .skip_taskbar(true)
+                .always_on_top(true)
+                .inner_size(220.0, 80.0)
+                .build()?;
+                float_win.hide()?;
             }
 
             // 全局热键（按统一呼出模式注册）
@@ -286,6 +308,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            log_frontend,
             config::get_config,
             config::set_module_enabled,
             config::set_theme,

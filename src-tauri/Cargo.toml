@@ -26,7 +26,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 log = "0.4"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 tokio = { version = "1", features = ["full"] }
-keyring = "3"
+keyring = { version = "3", features = ["windows-native"] }
 chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-notification = "2"
 windows = { version = "0.61", features = [

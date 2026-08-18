@@ -51,6 +51,15 @@ pub struct QuotaSettings {
     pub notify_low: bool,
     pub notify_surge: bool,
     pub float_enabled: bool,
+    pub font_size: f64,
+    pub opacity: f64,
+    pub dim_level: f64,
+    pub corner_radius: f64,
+    pub lock_passthrough: bool,
+    /// 只读：DeepSeek 密钥是否已配置（来自系统密钥库）
+    pub ds_configured: bool,
+    /// 只读：OpenCode Go 密钥是否已配置
+    pub go_configured: bool,
 }
 
 /// 读设置（来自 config）
@@ -67,29 +76,50 @@ pub fn get_settings(app: AppHandle) -> QuotaSettings {
         notify_low: getb("notify_low", true),
         notify_surge: getb("notify_surge", true),
         float_enabled: getb("float_enabled", true),
+        font_size: get("font_size", 14.0),
+        opacity: get("opacity", 100.0),
+        dim_level: get("dim_level", 60.0),
+        corner_radius: get("corner_radius", 10.0),
+        lock_passthrough: getb("lock_passthrough", false),
+        ds_configured: !super::get_key("deepseek").is_empty(),
+        go_configured: !super::get_key("opencode-go").is_empty(),
     }
 }
 
 /// 保存设置（写入 config）
 #[tauri::command]
 pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), String> {
-    let state = app.state::<crate::config::ConfigState>();
-    let mut cfg = state.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut("quota") {
-        v["refresh_interval_sec"] = serde_json::json!(settings.refresh_interval_sec);
-        v["warn_threshold"] = serde_json::json!(settings.warn_threshold);
-        v["notify_low"] = serde_json::json!(settings.notify_low);
-        v["notify_surge"] = serde_json::json!(settings.notify_surge);
-        v["float_enabled"] = serde_json::json!(settings.float_enabled);
-    }
-    crate::config::save_config(&app, &cfg)?;
-    // 立即按新阈值评估一次告警状态
+    {
+        let state = app.state::<crate::config::ConfigState>();
+        let mut cfg = state.0.lock().unwrap();
+        if let Some(v) = cfg.modules.get_mut("quota") {
+            v["refresh_interval_sec"] = serde_json::json!(settings.refresh_interval_sec);
+            v["warn_threshold"] = serde_json::json!(settings.warn_threshold);
+            v["notify_low"] = serde_json::json!(settings.notify_low);
+            v["notify_surge"] = serde_json::json!(settings.notify_surge);
+            v["float_enabled"] = serde_json::json!(settings.float_enabled);
+            v["font_size"] = serde_json::json!(settings.font_size);
+            v["opacity"] = serde_json::json!(settings.opacity);
+            v["dim_level"] = serde_json::json!(settings.dim_level);
+            v["corner_radius"] = serde_json::json!(settings.corner_radius);
+            v["lock_passthrough"] = serde_json::json!(settings.lock_passthrough);
+        }
+        crate::config::save_config(&app, &cfg)?;
+    } // ConfigState 锁在此释放，避免 fetch_once 二次加锁死锁
+
+    // 立即按新阈值在后台评估一次告警状态
     if let Some(st_guard) = app.try_state::<Mutex<QuotaState>>() {
         let st = st_guard.lock().unwrap();
         if let Some(b) = st.balance {
             drop(st);
-            super::fetch_once(&app);
-            log::info!("quota settings saved, balance={b} threshold={}", settings.warn_threshold);
+            let app2 = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                super::fetch_once(&app2);
+            });
+            log::info!(
+                "quota settings saved, balance={b} threshold={}",
+                settings.warn_threshold
+            );
         }
     }
     Ok(())
@@ -99,7 +129,8 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
 #[tauri::command]
 pub fn set_deepseek_key(app: AppHandle, key: String) -> Result<(), String> {
     super::set_key("deepseek", &key)?;
-    super::fetch_once(&app);
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || super::fetch_once(&app2));
     Ok(())
 }
 
@@ -107,7 +138,8 @@ pub fn set_deepseek_key(app: AppHandle, key: String) -> Result<(), String> {
 #[tauri::command]
 pub fn set_go_key(app: AppHandle, key: String) -> Result<(), String> {
     super::set_key("opencode-go", &key)?;
-    super::fetch_once(&app);
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || super::fetch_once(&app2));
     Ok(())
 }
 

@@ -22,6 +22,7 @@ export default defineConfig(async () => ({
       input: {
         main: path.resolve(__dirname, "index.html"),
         clipboard_popup: path.resolve(__dirname, "clipboard_popup.html"),
+        float_window: path.resolve(__dirname, "float_window.html"),
       },
     },
   },

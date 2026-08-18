@@ -64,16 +64,19 @@ pub fn history_path(app: &AppHandle) -> std::path::PathBuf {
         .join("balance_history.json")
 }
 
-fn keyring_entry(user: &str) -> keyring::Entry {
-    keyring::Entry::new("com.aliboder.easytool", user).unwrap()
+fn keyring_entry(user: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new("com.aliboder.easytool", user)
+        .map_err(|e| format!("初始化系统密钥库失败: {e}"))
 }
 
 pub fn get_key(user: &str) -> String {
-    keyring_entry(user).get_password().unwrap_or_default()
+    keyring_entry(user)
+        .and_then(|e| e.get_password().map_err(|err| format!("{err}")))
+        .unwrap_or_default()
 }
 
 pub fn set_key(user: &str, key: &str) -> Result<(), String> {
-    let entry = keyring_entry(user);
+    let entry = keyring_entry(user)?;
     if key.trim().is_empty() {
         entry
             .delete_credential()
