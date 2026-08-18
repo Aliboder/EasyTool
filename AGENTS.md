@@ -95,9 +95,15 @@ npx tsc --noEmit       # 前端类型检查
 6. 模块 manifest 走 `resources`（打包后嵌入 exe），dev 模式 fallback 到 `src-tauri/modules` 相对路径
 7. `keyring` 必须启用 `features = ["windows-native"]`，否则 Windows 上 `Entry::new().unwrap()` 直接 panic
 
+## 代码查询规则（必须遵守）
+
+- 本项目已初始化 CodeGraph（`.codegraph/`）。**所有查代码的操作——定位符号、理解逻辑、找调用方、了解影响范围——一律先用 `codegraph_explore`，禁止先 grep/find/Read**。一次调用即可返回符号源码 + 调用链 + 影响范围，比搜索循环更准更省。
+- 查询需传 `projectPath`（如 `D:\SystemFiles\Documents\Project\EasyTool`），或直接在本项目会话中省略。
+- 新增/改动大量代码后，用 `codegraph init`（在项目根目录）重建索引，保持索引与磁盘一致。
+- 找不到结果时再退回 grep/Glob/Read 兜底。
+
 ## 协作约定（本项目用户）
 
 - 用户不写代码、不验代码、不用 git：代码由 AI 完成，编译/测试通过后**只告诉用户启动命令和手动验收清单**，用户亲自验证通过才算完成
 - git 提交由 AI 主动做；提交前 `git status`/`git diff` 检查，只提交相关文件
 - 大改动先汇报方案与改动范围，用户同意后实施
-- 项目已有 `.codegraph/`，理解代码优先用 `codegraph_explore`
