@@ -1,11 +1,13 @@
 mod config;
 mod modules;
 
+use config::ConfigState;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WindowEvent,
 };
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
 
@@ -43,18 +45,102 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+fn clipboard_enabled(app: &tauri::AppHandle) -> bool {
+    app.try_state::<ConfigState>()
+        .map(|s| {
+            s.0.lock()
+                .unwrap()
+                .modules
+                .get("clipboard")
+                .and_then(|m| m.get("enabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let key = shortcut.to_string();
+                    let Some(cfg) = app.try_state::<ConfigState>() else {
+                        return;
+                    };
+                    let (clip_enabled, clip_hotkey, main_hotkey) = {
+                        let cfg = cfg.0.lock().unwrap();
+                        let clip_hotkey = cfg
+                            .modules
+                            .get("clipboard")
+                            .and_then(|m| m.get("hotkey"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Ctrl+Shift+V")
+                            .to_string();
+                        let main_hotkey = cfg
+                            .hotkeys
+                            .get("main")
+                            .cloned()
+                            .unwrap_or_else(|| "Ctrl+Shift+E".into());
+                        let clip_enabled = cfg
+                            .modules
+                            .get("clipboard")
+                            .and_then(|m| m.get("enabled"))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        (clip_enabled, clip_hotkey, main_hotkey)
+                    };
+                    if clip_enabled && key == clip_hotkey {
+                        modules::clipboard::on_hotkey(app);
+                    } else if key == main_hotkey {
+                        show_main(app);
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let mut cfg = config::load_config(app.handle());
             let manifests = modules::load_manifests(app.handle());
             modules::merge_manifests(&mut cfg, &manifests);
             let _ = config::save_config(app.handle(), &cfg);
-            app.manage(config::ConfigState(std::sync::Mutex::new(cfg)));
+            app.manage(ConfigState(std::sync::Mutex::new(cfg)));
+
+            // 剪贴板模块
+            if clipboard_enabled(app.handle()) {
+                modules::clipboard::setup(app)?;
+            }
+
+            // 全局热键
+            {
+                let (clip_hotkey, main_hotkey) = {
+                    let state = app.state::<ConfigState>();
+                    let cfg = state.0.lock().unwrap();
+                    let clip_hotkey = cfg
+                        .modules
+                        .get("clipboard")
+                        .and_then(|m| m.get("hotkey"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Ctrl+Shift+V")
+                        .to_string();
+                    let main_hotkey = cfg
+                        .hotkeys
+                        .get("main")
+                        .cloned()
+                        .unwrap_or_else(|| "Ctrl+Shift+E".into());
+                    (clip_hotkey, main_hotkey)
+                };
+                if clipboard_enabled(app.handle()) {
+                    let _ = app.global_shortcut().register(clip_hotkey.as_str());
+                }
+                let _ = app.global_shortcut().register(main_hotkey.as_str());
+            }
 
             build_tray(app)?;
             Ok(())
@@ -64,6 +150,24 @@ pub fn run() {
             config::set_module_enabled,
             config::set_theme,
             modules::get_manifests,
+            modules::clipboard::commands::get_history,
+            modules::clipboard::commands::pin_item,
+            modules::clipboard::commands::delete_item,
+            modules::clipboard::commands::clear_history,
+            modules::clipboard::commands::clear_all_history,
+            modules::clipboard::commands::paste_item,
+            modules::clipboard::commands::copy_item,
+            modules::clipboard::commands::open_file_location,
+            modules::clipboard::commands::open_file,
+            modules::clipboard::commands::set_max_items,
+            modules::clipboard::commands::get_data_dir,
+            modules::clipboard::commands::open_data_dir,
+            modules::clipboard::commands::get_stats,
+            modules::clipboard::commands::get_thumb,
+            modules::clipboard::commands::get_image,
+            modules::clipboard::commands::get_file_icon,
+            modules::clipboard::commands::get_file_thumb,
+            modules::clipboard::commands::get_file_preview,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
