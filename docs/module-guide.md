@@ -1,0 +1,229 @@
+# EasyTool 新增模块开发指南
+
+本指南供 AI Agent 阅读：如何为 EasyTool 快速新增一个功能模块并衔接现有架构。开发前请结合 `AGENTS.md` 与本项目的 `.codegraph/` 索引理解代码。
+
+## 1. 模块是什么
+
+EasyTool 是「单应用 + 模块注册表」架构。**一个模块 = 一段相对独立的业务功能**，包含：
+
+```
+src-tauri/modules/<id>/manifest.json   # 模块清单（元数据 + 默认配置）
+src-tauri/src/modules/<id>/            # Rust 后端
+src/modules/<id>/                      # React 前端组件
+```
+
+- 模块在设置页可独立**启用/禁用**，配置项随模块独立保存
+- 侧边栏与模块页由 manifest 驱动，新增模块后**壳 UI 自动出现该模块**，无需改侧边栏
+- 模块可拥有独立窗口（如剪贴板弹窗、额度悬浮窗），也可仅作为主窗口内的一个页面
+
+## 2. 新增模块完整步骤（以模块 `foo` 为例）
+
+### Step 1：创建 manifest
+
+`src-tauri/modules/foo/manifest.json`：
+
+```json
+{
+  "id": "foo",
+  "name": "示例模块",
+  "icon": "clipboard",
+  "enabled": true,
+  "default_config": { "max_items": 100, "hotkey": "Ctrl+Shift+F" }
+}
+```
+
+字段说明：
+- `id`：唯一标识，作为 config 中 `modules.<id>` 的键、Rust 模块名、前端模块 id
+- `name`：设置页/侧边栏显示名
+- `icon`：`clipboard`（剪贴板图标）或 `gauge`（仪表图标），暂只支持这两个值；新增图标需同步改 `src/App.tsx` 的图标映射
+- `enabled`：默认是否启用
+- `default_config`：模块配置项的默认值（任意 JSON，启动时并入 config）
+
+> manifest 打包为 resources 嵌入 exe（dev 模式 fallback 到 `src-tauri/modules/` 相对路径），新增模块无需改打包配置。
+
+### Step 2：Rust 后端模块
+
+`src-tauri/src/modules/foo/mod.rs`（必需，至少含 setup 与公开命令）：
+
+```rust
+pub mod commands;
+
+use tauri::{AppHandle, Manager, State};
+use std::sync::Mutex;
+
+pub struct FooState { /* 模块共享状态 */ }
+
+/// 初始化模块：注册共享状态、启动后台任务（若有）
+pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
+    app.manage(Mutex::new(FooState::default()));
+    log::info!("foo module ready");
+    Ok(())
+}
+
+/// 读模块配置对象（统一入口，勿直接锁 config）
+pub fn module_config(app: &AppHandle) -> serde_json::Value {
+    app.state::<crate::config::ConfigState>()
+        .0
+        .lock()
+        .unwrap()
+        .modules
+        .get("foo")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+```
+
+命令层 `src-tauri/src/modules/foo/commands.rs`（前端 invoke 的入口）：
+
+```rust
+#[tauri::command]
+pub fn do_something(state: State<'_, Mutex<FooState>>) -> String { /* ... */ }
+
+#[tauri::command]
+pub fn save_settings(app: AppHandle, settings: FooSettings) -> Result<(), String> {
+    // 写模块配置：改 config.modules["foo"] 后调 save_config
+    // ⚠️ 见「坑 2」：不要持 ConfigState 锁时调用任何会再次取锁的函数
+    Ok(())
+}
+```
+
+约定：
+- 命令命名前缀用模块语义（如 `set_max_items`、`get_stats`），避免全局泛名
+- 模块配置读写统一走 `module_config` + `crate::config::save_config`
+- 密钥类数据存 Windows 凭据库（keyring），**不落盘明文**（见坑 7）
+
+### Step 3：在 lib.rs 注册
+
+`src-tauri/src/lib.rs`：
+
+```rust
+mod modules;              // 已有
+// 模块的 pub mod 声明在 modules/mod.rs 中追加：
+//   pub mod foo;
+
+// setup 中启用时初始化（与 clipboard/quota 并列）：
+if foo_enabled(app.handle()) {
+    modules::foo::setup(app)?;
+}
+
+// invoke_handler 注册命令：
+tauri::generate_handler![
+    // ... 现有命令 ...
+    modules::foo::commands::do_something,
+    modules::foo::commands::save_settings,
+]
+```
+
+`foo_enabled` 的写法参考 `clipboard_enabled`/`quota_enabled`（读 `config.modules["foo"].enabled`）。
+
+### Step 4：前端组件
+
+`src/modules/foo/Page.tsx`（主窗口内的功能页）与 `src/modules/foo/Settings.tsx`（设置区）：
+
+```tsx
+// Page.tsx
+import { invoke } from "@tauri-apps/api/core";
+export function FooPage() {
+  // 用 invoke("do_something") 调后端，按钮/列表等组件参考
+  // src/modules/clipboard/Clippage.tsx 的写法
+}
+```
+
+接入 `src/App.tsx`：
+
+```tsx
+import { FooPage } from "@/modules/foo/Page";
+
+switch (activeModule.id) {
+  case "foo":
+    return <FooPage />;
+  // ...
+}
+
+// 设置页追加（参考 clipboard/quota 的设置区块）：
+{Boolean(config.modules.foo?.enabled) && (
+  <>
+    <Separator />
+    <div>
+      <h3 className="mb-2 text-sm font-semibold">示例模块设置</h3>
+      <FooSettings onRefresh={onConfigRefresh} />
+    </div>
+  </>
+)}
+```
+
+侧边栏无需改动——manifest 已驱动。
+
+### Step 5（可选）：独立窗口
+
+若模块需要独立窗口（如弹窗、悬浮窗）：
+
+1. 根目录新建 `foo_window.html`（参考 `float_window.html`），脚本指向新入口：
+   ```html
+   <script type="module" src="/src/foo_window.tsx"></script>
+   ```
+2. `vite.config.ts` 的 `rollupOptions.input` 增加：
+   ```ts
+   foo_window: path.resolve(__dirname, "foo_window.html"),
+   ```
+3. `src/foo_window.tsx`：独立 React 挂载入口（参考 `src/float_window.tsx`）
+4. Rust 侧动态建窗（参考 lib.rs 中 clipboard_popup / quota_float）：
+   ```rust
+   let win = tauri::WebviewWindowBuilder::new(
+       app, "foo_win", tauri::WebviewUrl::App("foo_window.html".into()),
+   )
+   .decorations(false)
+   .skip_taskbar(true)
+   .always_on_top(true)
+   .inner_size(300.0, 200.0)
+   .build()?;
+   win.hide()?;
+   ```
+5. `src-tauri/capabilities/default.json`：`windows` 数组加入 `"foo_win"`，并按需补充权限（`core:window:allow-*`）
+
+### Step 6：权限声明
+
+模块前端用到的 Tauri 权限（窗口操作、全局快捷键、通知等）在 `capabilities/default.json` 的 `permissions` 中声明。新增窗口必须同时加入 `windows` 数组，否则窗口内所有 invoke 被拒。
+
+### Step 7：测试
+
+后端纯逻辑加 `#[cfg(test)]` 单元测试（参考 clipboard 的 24 个、quota 的 10 个），`cargo test` 全绿。前端无测试框架，靠人工验收。
+
+## 3. 数据与配置规范
+
+- 模块配置：`config.json` 的 `modules.<id>`（HashMap<String, Value>），通过 `module_config` 读取、`save_config` 写回
+- 模块私有数据：`app.path().app_data_dir()/<你的文件>`，即 `%APPDATA%\com.aliboder.easytool\`
+- 密钥：`keyring::Entry::new("com.aliboder.easytool", <用户标识>)`，参考 quota 的 `set_key`/`get_key`
+- 配置迁移、旧数据导入：写进 `src-tauri/src/migrate.rs`（一次性，`config.migrated` 标记）
+
+## 4. 关键坑（新增模块时必须遵守）
+
+1. **不要用 PowerShell 的 `Get-Content`/`Set-Content` 改写源码**（会把 UTF-8 写成 GBK）。改文件一律用编辑器工具
+2. **std Mutex 不可重入**：持 `ConfigState` 或任何 Mutex 锁期间，**绝不调用会再次取锁的函数**（如 `module_config`、`fetch_once` 这类内部取锁的）。先收进块作用域释放锁，再把网络/耗时操作放 `spawn_blocking`
+3. **同步网络请求**（如 reqwest blocking）必须在后台线程执行，禁止在 IPC 命令主路径直接调用
+4. **Windows 下不要给窗口开 `.transparent(true)`**：透明窗口 hide 后再 show 会崩溃（0xcfffffff）。要"悬浮"效果用深色不透明背景
+5. **热键匹配**：`shortcut.to_string()` 输出为 `shift+control+keya` 格式，与配置字符串不匹配。必须用 `Shortcut::from_str(&cfg).map(|s| s == *shortcut)` 做对象比较
+6. **新增前端入口**要同时改 4 处：vite `rollupOptions.input`、根目录 `.html`、Rust 建窗（`WebviewUrl::App`）、capabilities 的 `windows` 数组与权限
+7. **keyring 必须启用 `features = ["windows-native"]`**（Cargo.toml），否则 `Entry::new().unwrap()` 直接 panic
+8. **新增模块后跑 `codegraph init`** 重建索引，保持 `.codegraph/` 与磁盘一致
+
+## 5. 完成清单
+
+新增模块后逐项自检：
+
+- [ ] manifest.json 字段齐全（id/name/icon/enabled/default_config）
+- [ ] `modules/mod.rs` 已声明 `pub mod foo`；lib.rs setup 与 invoke_handler 已注册
+- [ ] 前端页面/设置已接入 App.tsx（侧边栏自动出现）
+- [ ] 独立窗口的 4 处联动齐全，capabilities 权限完备
+- [ ] 配置读写走 `module_config` + `save_config`，无持锁嵌套调用
+- [ ] 网络/耗时操作在后台线程
+- [ ] `cargo test` 全绿、`npx tsc --noEmit` 无错
+- [ ] 手动验收清单已给用户（启动命令 + 验证点）
+- [ ] `codegraph init` 重建索引后提交
+
+## 6. 参考实现
+
+新增模块时对照这两个现成模块：
+
+- **clipboard**：有独立弹窗窗口 + 系统剪贴板监听 + 文件存储，最完整的模块参照
+- **quota**：有独立悬浮窗 + 后台轮询线程 + 密钥加密存储 + 告警通知，后台任务类模块参照
