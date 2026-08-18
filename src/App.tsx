@@ -5,6 +5,7 @@ import {
   getManifests,
   setModuleEnabled,
   setTheme,
+  setUnifiedHotkey,
   type AppConfig,
   type Manifest,
 } from "@/lib/api";
@@ -19,6 +20,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Clipboard, Gauge } from "lucide-react";
+import { Clippage } from "@/modules/clipboard/Clippage";
+import { ClipSettings } from "@/modules/clipboard/ClipSettings";
 
 function applyTheme(theme: string) {
   const dark =
@@ -32,11 +35,15 @@ function SettingsView({
   manifests,
   onToggle,
   onThemeChange,
+  onUnifiedChange,
+  onConfigRefresh,
 }: {
   config: AppConfig;
   manifests: Manifest[];
   onToggle: (id: string, enabled: boolean) => void;
   onThemeChange: (theme: string) => void;
+  onUnifiedChange: (enabled: boolean) => void;
+  onConfigRefresh: () => void;
 }) {
   return (
     <div className="mx-auto w-full max-w-xl space-y-6 p-6">
@@ -76,6 +83,28 @@ function SettingsView({
       <Separator />
 
       <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium">统一呼出主窗口</div>
+          <div className="text-xs text-muted-foreground">
+            开启后只保留主窗口呼出热键，各模块独立热键全部禁用
+          </div>
+        </div>
+        <Switch
+          checked={Boolean(config.unified_hotkey)}
+          onCheckedChange={onUnifiedChange}
+          aria-label="统一呼出主窗口"
+        />
+      </div>
+
+      {Boolean(config.unified_hotkey) && (
+        <p className="text-xs text-muted-foreground">
+          当前全局呼出热键：Ctrl+Shift+E
+        </p>
+      )}
+
+      <Separator />
+
+      <div className="flex items-center justify-between">
         <Label htmlFor="theme" className="text-sm font-medium">
           主题
         </Label>
@@ -90,6 +119,21 @@ function SettingsView({
           </SelectContent>
         </Select>
       </div>
+
+      {Boolean(config.modules.clipboard?.enabled) && (
+        <>
+          <Separator />
+          <div>
+            <h3 className="mb-2 text-sm font-semibold">剪贴板设置</h3>
+            <ClipSettings
+              maxItems={(config.modules.clipboard?.max_items as number) ?? 500}
+              hotkey={(config.modules.clipboard?.hotkey as string) ?? "Ctrl+Shift+V"}
+              onMaxItems={onConfigRefresh}
+              onHotkey={onConfigRefresh}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -126,6 +170,11 @@ function App() {
     setConfig(await getConfig());
   };
 
+  const changeUnified = async (enabled: boolean) => {
+    await setUnifiedHotkey(enabled);
+    setConfig(await getConfig());
+  };
+
   if (!config) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
@@ -135,6 +184,30 @@ function App() {
   }
 
   const activeModule = enabledModules.find((m) => m.id === active);
+
+  const updateClipMaxItems = async () => {
+    setConfig(await getConfig());
+  };
+
+  const renderModule = () => {
+    if (!activeModule) {
+      return (
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          请先在设置中启用模块
+        </div>
+      );
+    }
+    switch (activeModule.id) {
+      case "clipboard":
+        return <Clippage popup={false} />;
+      default:
+        return (
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+            {activeModule.name}模块页面（建设中）
+          </div>
+        );
+    }
+  };
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -146,15 +219,11 @@ function App() {
             manifests={manifests}
             onToggle={toggleModule}
             onThemeChange={changeTheme}
+            onUnifiedChange={changeUnified}
+            onConfigRefresh={updateClipMaxItems}
           />
-        ) : activeModule ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            {activeModule.name}模块页面（建设中）
-          </div>
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            请先在设置中启用模块
-          </div>
+          renderModule()
         )}
       </main>
     </div>

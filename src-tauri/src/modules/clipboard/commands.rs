@@ -4,7 +4,7 @@ use super::models::{Item, ItemDto, ItemKind};
 use super::state::AppState;
 use serde::Serialize;
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Debug, Serialize)]
 pub struct CommandError {
@@ -99,25 +99,27 @@ pub fn delete_item(state: State<'_, AppState>, id: i64) -> CmdResult<bool> {
 
 /// 清空全部非固定条目
 #[tauri::command]
-pub fn clear_history(state: State<'_, AppState>) -> CmdResult<u32> {
+pub fn clear_history(app: AppHandle, state: State<'_, AppState>) -> CmdResult<u32> {
     let db = state.db.lock().unwrap();
     let removed = db.clear_unpinned()?;
     let n = removed.len() as u32;
     for item in removed {
         state.store.remove_files(&item);
     }
+    let _ = app.emit("clipboard://changed", serde_json::json!({}));
     Ok(n)
 }
 
 /// 清空全部历史（含固定条目）
 #[tauri::command]
-pub fn clear_all_history(state: State<'_, AppState>) -> CmdResult<u32> {
+pub fn clear_all_history(app: AppHandle, state: State<'_, AppState>) -> CmdResult<u32> {
     let db = state.db.lock().unwrap();
     let removed = db.clear_all()?;
     let n = removed.len() as u32;
     for item in removed {
         state.store.remove_files(&item);
     }
+    let _ = app.emit("clipboard://changed", serde_json::json!({}));
     Ok(n)
 }
 
@@ -182,6 +184,54 @@ pub fn set_max_items(
         v["max_items"] = serde_json::json!(max);
     }
     crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
+}
+
+/// 设置全局呼出热键（立即生效并持久化）
+#[tauri::command]
+pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    // 统一呼出模式下模块热键被禁用
+    let unified = {
+        let state = app.state::<crate::config::ConfigState>();
+        let cfg = state.0.lock().unwrap();
+        cfg.unified_hotkey
+    };
+    if unified {
+        return Err(CommandError {
+            message: "统一呼出主窗口模式已开启，模块热键已禁用。可在设置中关闭该模式后使用。".into(),
+        });
+    }
+    // 先注册新键：失败时旧热键仍有效，不会出现"无热键"状态
+    app.global_shortcut()
+        .register(hotkey.as_str())
+        .map_err(|e| CommandError {
+            message: format!("快捷键无效或已被其他程序占用：{e}"),
+        })?;
+    // 成功：注销全部后只重新注册剪贴板热键与主窗口热键，保证唯一
+    let _ = app.global_shortcut().unregister_all();
+    app.global_shortcut()
+        .register(hotkey.as_str())
+        .map_err(|e| CommandError {
+            message: format!("快捷键无效或已被其他程序占用：{e}"),
+        })?;
+    let main_hotkey = {
+        let state = app.state::<crate::config::ConfigState>();
+        let cfg = state.0.lock().unwrap();
+        cfg.hotkeys
+            .get("main")
+            .cloned()
+            .unwrap_or_else(|| "Ctrl+Shift+E".into())
+    };
+    let _ = app.global_shortcut().register(main_hotkey.as_str());
+    // 写入 config
+    let cfg_state = app.state::<crate::config::ConfigState>();
+    let mut cfg = cfg_state.0.lock().unwrap();
+    if let Some(v) = cfg.modules.get_mut("clipboard") {
+        v["hotkey"] = serde_json::json!(hotkey);
+    }
+    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })?;
+    log::info!("clipboard hotkey changed to {hotkey}");
+    Ok(())
 }
 
 /// 数据目录路径（设置展示用）

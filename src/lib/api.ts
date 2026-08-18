@@ -13,10 +13,13 @@ export interface AppConfig {
   hotkeys: Record<string, string>;
   theme: string;
   migrated: string[];
+  unified_hotkey: boolean;
 }
 
 export const getConfig = () => invoke<AppConfig>("get_config");
 export const setModuleEnabled = (id: string, enabled: boolean) =>
   invoke<void>("set_module_enabled", { id, enabled });
 export const setTheme = (theme: string) => invoke<void>("set_theme", { theme });
+export const setUnifiedHotkey = (enabled: boolean) =>
+  invoke<void>("set_unified_hotkey", { enabled });
 export const getManifests = () => invoke<Manifest[]>("get_manifests");

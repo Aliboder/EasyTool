@@ -9,6 +9,8 @@ pub struct AppConfig {
     pub hotkeys: HashMap<String, String>,
     pub theme: String,
     pub migrated: Vec<String>,
+    /// 统一呼出主窗口模式：开启时只注册主窗口热键，模块独立热键全部禁用
+    pub unified_hotkey: bool,
 }
 
 impl Default for AppConfig {
@@ -25,7 +27,7 @@ impl Default for AppConfig {
         let mut hotkeys = HashMap::new();
         hotkeys.insert("clipboard".into(), "Ctrl+Shift+V".into());
         hotkeys.insert("main".into(), "Ctrl+Shift+E".into());
-        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![] }
+        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], unified_hotkey: true }
     }
 }
 
@@ -81,6 +83,22 @@ pub fn set_theme(app: AppHandle, state: State<ConfigState>, theme: String) -> Re
     let mut cfg = state.0.lock().unwrap();
     cfg.theme = theme;
     save_config(&app, &cfg)
+}
+
+/// 切换统一呼出主窗口模式：改变后重新注册全局热键
+#[tauri::command]
+pub fn set_unified_hotkey(
+    app: AppHandle,
+    state: State<ConfigState>,
+    enabled: bool,
+) -> Result<(), String> {
+    {
+        let mut cfg = state.0.lock().unwrap();
+        cfg.unified_hotkey = enabled;
+        save_config(&app, &cfg)?;
+    }
+    crate::reapply_hotkeys(&app);
+    Ok(())
 }
 
 #[cfg(test)]

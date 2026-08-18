@@ -8,11 +8,21 @@ const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  appType: "mpa",
   plugins: [react(), tailwindcss()],
 
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+    },
+  },
+
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        clipboard_popup: path.resolve(__dirname, "clipboard_popup.html"),
+      },
     },
   },
 
