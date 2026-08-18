@@ -1,4 +1,5 @@
 mod config;
+mod migrate;
 mod modules;
 
 use config::ConfigState;
@@ -267,6 +268,9 @@ pub fn run() {
             modules::merge_manifests(&mut cfg, &manifests);
             let _ = config::save_config(app.handle(), &cfg);
             app.manage(ConfigState(std::sync::Mutex::new(cfg)));
+
+            // 旧数据一次性迁移（在模块 setup 之前，避免与剪贴板模块同时打开新库）
+            migrate::run_migration(app.handle());
 
             // 剪贴板模块
             if clipboard_enabled(app.handle()) {

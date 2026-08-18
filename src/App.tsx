@@ -154,6 +154,7 @@ function App() {
   const [manifests, setManifests] = useState<Manifest[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [active, setActive] = useState<string>("clipboard");
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     getManifests().then(setManifests).catch(console.error);
@@ -162,6 +163,16 @@ function App() {
 
   useEffect(() => {
     if (config) applyTheme(config.theme);
+  }, [config]);
+
+  useEffect(() => {
+    if (!config) return;
+    const prev: string[] = JSON.parse(localStorage.getItem("easytool_migrated") || "[]");
+    const cur = config.migrated ?? [];
+    if (cur.includes("clipboard") && !prev.includes("clipboard")) {
+      setNotice("已从旧版 PasteBoard 导入剪贴板历史记录");
+    }
+    localStorage.setItem("easytool_migrated", JSON.stringify(cur));
   }, [config]);
 
   const enabledModules = useMemo(
@@ -227,6 +238,17 @@ function App() {
     <div className="flex h-screen overflow-hidden">
       <Sidebar modules={enabledModules} active={active} onSelect={setActive} />
       <main className="flex-1 overflow-y-auto">
+        {notice && (
+          <div className="flex items-center justify-between border-b bg-secondary/50 px-4 py-2 text-sm">
+            <span>{notice}</span>
+            <button
+              onClick={() => setNotice(null)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              关闭
+            </button>
+          </div>
+        )}
         {active === "settings" ? (
           <SettingsView
             config={config}
