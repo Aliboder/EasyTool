@@ -150,7 +150,7 @@ pub fn apply_main_window_mode(app: &tauri::AppHandle) {
 }
 
 /// 失焦 200ms 后仍未聚焦则隐藏（点外部关闭；边缘缩放等瞬时失焦不误关）
-fn hide_after_blur_grace(win: &tauri::Window) {
+pub(crate) fn hide_after_blur_grace(win: &tauri::Window) {
     let win = win.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(200));
@@ -159,6 +159,11 @@ fn hide_after_blur_grace(win: &tauri::Window) {
             let _ = win.hide();
         }
     });
+}
+
+/// 弹窗跟随鼠标定位（转发到剪贴板模块的物理坐标实现，供各模块弹窗复用）
+pub(crate) fn popup_position_physical(hwnd: windows::Win32::Foundation::HWND) -> (i32, i32) {
+    modules::clipboard::popup_position_physical(hwnd)
 }
 
 fn clipboard_enabled(app: &tauri::AppHandle) -> bool {
@@ -189,9 +194,39 @@ fn quota_enabled(app: &tauri::AppHandle) -> bool {
         .unwrap_or(false)
 }
 
+fn search_enabled(app: &tauri::AppHandle) -> bool {
+    app.try_state::<ConfigState>()
+        .map(|s| {
+            s.0.lock()
+                .unwrap()
+                .modules
+                .get("search")
+                .and_then(|m| m.get("enabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+fn emoji_enabled(app: &tauri::AppHandle) -> bool {
+    app.try_state::<ConfigState>()
+        .map(|s| {
+            s.0.lock()
+                .unwrap()
+                .modules
+                .get("emoji")
+                .and_then(|m| m.get("enabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
 struct Hotkeys {
     unified: bool,
     clip_hotkey: String,
+    search_hotkey: String,
+    emoji_hotkey: String,
     main_hotkey: String,
 }
 
@@ -205,9 +240,25 @@ fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Shift+V")
         .to_string();
+    let search_hotkey = cfg
+        .modules
+        .get("search")
+        .and_then(|m| m.get("hotkey"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Shift+F")
+        .to_string();
+    let emoji_hotkey = cfg
+        .modules
+        .get("emoji")
+        .and_then(|m| m.get("hotkey"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Shift+J")
+        .to_string();
     Hotkeys {
         unified: cfg.unified_hotkey,
         clip_hotkey,
+        search_hotkey,
+        emoji_hotkey,
         main_hotkey: cfg
             .hotkeys
             .get("main")
@@ -228,10 +279,24 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
             Ok(_) => log::info!("[unified] main hotkey registered: {}", hk.main_hotkey),
             Err(e) => log::error!("failed to register main hotkey: {e}"),
         }
-    } else if clipboard_enabled(app) {
-        match app.global_shortcut().register(hk.clip_hotkey.as_str()) {
-            Ok(_) => log::info!("clipboard hotkey registered: {}", hk.clip_hotkey),
-            Err(e) => log::error!("failed to register clipboard hotkey: {e}"),
+    } else {
+        if clipboard_enabled(app) {
+            match app.global_shortcut().register(hk.clip_hotkey.as_str()) {
+                Ok(_) => log::info!("clipboard hotkey registered: {}", hk.clip_hotkey),
+                Err(e) => log::error!("failed to register clipboard hotkey: {e}"),
+            }
+        }
+        if search_enabled(app) {
+            match app.global_shortcut().register(hk.search_hotkey.as_str()) {
+                Ok(_) => log::info!("search hotkey registered: {}", hk.search_hotkey),
+                Err(e) => log::error!("failed to register search hotkey: {e}"),
+            }
+        }
+        if emoji_enabled(app) {
+            match app.global_shortcut().register(hk.emoji_hotkey.as_str()) {
+                Ok(_) => log::info!("emoji hotkey registered: {}", hk.emoji_hotkey),
+                Err(e) => log::error!("failed to register emoji hotkey: {e}"),
+            }
         }
     }
 }
@@ -270,29 +335,71 @@ pub fn run() {
                     let Some(cfg) = app.try_state::<ConfigState>() else {
                         return;
                     };
-                    let (unified, clip_enabled, clip_hotkey, main_hotkey) = {
-                        let cfg = cfg.0.lock().unwrap();
-                        let clip_hotkey = cfg
-                            .modules
-                            .get("clipboard")
-                            .and_then(|m| m.get("hotkey"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Ctrl+Shift+V")
-                            .to_string();
-                        let main_hotkey = cfg
-                            .hotkeys
-                            .get("main")
-                            .cloned()
-                            .unwrap_or_else(|| "Ctrl+Shift+E".into());
-                        let clip_enabled = cfg
-                            .modules
-                            .get("clipboard")
-                            .and_then(|m| m.get("enabled"))
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        (cfg.unified_hotkey, clip_enabled, clip_hotkey, main_hotkey)
-                    };
+                    let (unified, clip_enabled, clip_hotkey, search_enabled, search_hotkey, emoji_enabled, emoji_hotkey, main_hotkey) =
+                        {
+                            let cfg = cfg.0.lock().unwrap();
+                            let clip_hotkey = cfg
+                                .modules
+                                .get("clipboard")
+                                .and_then(|m| m.get("hotkey"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Ctrl+Shift+V")
+                                .to_string();
+                            let search_hotkey = cfg
+                                .modules
+                                .get("search")
+                                .and_then(|m| m.get("hotkey"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Ctrl+Shift+F")
+                                .to_string();
+                            let emoji_hotkey = cfg
+                                .modules
+                                .get("emoji")
+                                .and_then(|m| m.get("hotkey"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Ctrl+Shift+J")
+                                .to_string();
+                            let main_hotkey = cfg
+                                .hotkeys
+                                .get("main")
+                                .cloned()
+                                .unwrap_or_else(|| "Ctrl+Shift+E".into());
+                            let clip_enabled = cfg
+                                .modules
+                                .get("clipboard")
+                                .and_then(|m| m.get("enabled"))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let search_enabled = cfg
+                                .modules
+                                .get("search")
+                                .and_then(|m| m.get("enabled"))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let emoji_enabled = cfg
+                                .modules
+                                .get("emoji")
+                                .and_then(|m| m.get("enabled"))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            (
+                                cfg.unified_hotkey,
+                                clip_enabled,
+                                clip_hotkey,
+                                search_enabled,
+                                search_hotkey,
+                                emoji_enabled,
+                                emoji_hotkey,
+                                main_hotkey,
+                            )
+                        };
                     let clip_match = Shortcut::from_str(&clip_hotkey)
+                        .map(|s| s == *shortcut)
+                        .unwrap_or(false);
+                    let search_match = Shortcut::from_str(&search_hotkey)
+                        .map(|s| s == *shortcut)
+                        .unwrap_or(false);
+                    let emoji_match = Shortcut::from_str(&emoji_hotkey)
                         .map(|s| s == *shortcut)
                         .unwrap_or(false);
                     let main_match = Shortcut::from_str(&main_hotkey)
@@ -301,6 +408,12 @@ pub fn run() {
                     if !unified && clip_enabled && clip_match {
                         log::info!("clipboard hotkey matched, showing popup");
                         modules::clipboard::on_hotkey(app);
+                    } else if !unified && search_enabled && search_match {
+                        log::info!("search hotkey matched, showing popup");
+                        modules::search::on_hotkey(app);
+                    } else if !unified && emoji_enabled && emoji_match {
+                        log::info!("emoji hotkey matched, showing popup");
+                        modules::emoji::on_hotkey(app);
                     } else if main_match {
                         if unified {
                             log::info!("main hotkey toggling main window");
@@ -367,6 +480,24 @@ pub fn run() {
                 None
             };
 
+            let search_handle = if search_enabled(app.handle()) {
+                let app_clone = app.handle().clone();
+                Some(std::thread::spawn(move || {
+                    modules::search::setup_from_handle(&app_clone)
+                }))
+            } else {
+                None
+            };
+
+            let emoji_handle = if emoji_enabled(app.handle()) {
+                let app_clone = app.handle().clone();
+                Some(std::thread::spawn(move || {
+                    modules::emoji::setup_from_handle(&app_clone)
+                }))
+            } else {
+                None
+            };
+
             // 等待剪贴板模块初始化完成（弹窗窗口延迟到首次呼出时创建，避免启动闪现）
             if let Some(handle) = clipboard_handle {
                 match handle.join() {
@@ -395,6 +526,32 @@ pub fn run() {
                         }
                     }
                 });
+            }
+
+            // 等待搜索模块初始化完成（SDK 后台加载）
+            if let Some(handle) = search_handle {
+                match handle.join() {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        log::error!("search module init failed: {e}");
+                    }
+                    Err(e) => {
+                        log::error!("search module thread panicked: {:?}", e);
+                    }
+                }
+            }
+
+            // 等待表情模块初始化完成
+            if let Some(handle) = emoji_handle {
+                match handle.join() {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        log::error!("emoji module init failed: {e}");
+                    }
+                    Err(e) => {
+                        log::error!("emoji module thread panicked: {:?}", e);
+                    }
+                }
             }
 
             // 全局热键（按统一呼出模式注册）
@@ -472,6 +629,32 @@ pub fn run() {
             modules::quota::commands::test_key,
             modules::quota::commands::get_stats_data,
             modules::quota::commands::get_daily_history,
+            modules::search::commands::search,
+            modules::search::commands::search_get_status,
+            modules::search::commands::search_start_everything,
+            modules::search::commands::search_open_file,
+            modules::search::commands::search_open_file_location,
+            modules::search::commands::search_copy_path,
+            modules::search::commands::search_copy_file,
+            modules::search::commands::search_save_settings,
+            modules::search::commands::search_save_fixed_pos,
+            modules::search::commands::search_save_popup_size,
+            modules::search::commands::search_set_hotkey,
+            modules::emoji::commands::get_emoji_all,
+            modules::emoji::commands::get_groups,
+            modules::emoji::commands::import_emoji_files,
+            modules::emoji::commands::add_emoji_from_clipboard,
+            modules::emoji::commands::delete_custom_emoji,
+            modules::emoji::commands::rename_custom_emoji,
+            modules::emoji::commands::move_custom_emoji,
+            modules::emoji::commands::create_group,
+            modules::emoji::commands::rename_group,
+            modules::emoji::commands::delete_group,
+            modules::emoji::commands::record_use,
+            modules::emoji::commands::toggle_favorite,
+            modules::emoji::commands::get_emoji_thumb,
+            modules::emoji::commands::apply_emoji,
+            modules::emoji::commands::save_emoji_settings,
         ])
         .on_window_event(|window, event| {
             match event {
@@ -483,7 +666,10 @@ pub fn run() {
                 }
                 WindowEvent::Focused(false) => {
                     let label = window.label().to_string();
-                    if label == modules::clipboard::POPUP_WINDOW_LABEL {
+                    if label == modules::clipboard::POPUP_WINDOW_LABEL
+                        || label == modules::search::POPUP_WINDOW_LABEL
+                        || label == modules::emoji::POPUP_WINDOW_LABEL
+                    {
                         hide_after_blur_grace(window);
                     } else if label == MAIN_WINDOW_LABEL {
                         // 统一模式下点外部即隐藏主窗口（面板行为）

@@ -78,7 +78,7 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
 /// 计算弹出窗位置：跟随鼠标（横向居中于光标、纵向在光标下方），
 /// 全部使用 Win32 物理坐标（与 Tauri 的 DPI 换算无关），
 /// 并钳制在光标所在显示器的工作区内，窄屏时防护
-fn popup_position_physical(hwnd: windows::Win32::Foundation::HWND) -> (i32, i32) {
+pub(crate) fn popup_position_physical(hwnd: windows::Win32::Foundation::HWND) -> (i32, i32) {
     unsafe {
         let mut rect = RECT::default();
         if GetWindowRect(hwnd, &mut rect).is_err() {
@@ -195,6 +195,14 @@ fn ensure_popup_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
             None
         }
     }
+}
+
+/// 供 search 模块联动：把一个文件路径写入剪贴板历史
+pub fn record_file_to_history(app: &tauri::AppHandle, path: &str) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let _ = monitor::save_files_batch(&state, app, std::slice::from_ref(&path.to_string()));
 }
 
 /// 全局热键触发：记录唤起前的窗口上下文（供粘贴回原窗口），随后显示 popup 窗口

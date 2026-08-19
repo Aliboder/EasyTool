@@ -1,0 +1,11 @@
+{
+  "id": "emoji",
+  "name": "表情",
+  "icon": "smile",
+  "enabled": true,
+  "default_config": {
+    "hotkey": "Ctrl+Shift+J",
+    "click_action": "paste",
+    "follow_mouse": true
+  }
+}
