@@ -11,9 +11,9 @@ const raw = JSON.parse(readFileSync(input, "utf8"));
 const GROUP_MAP = {
   "Smileys & Emotion": ["smileys", "笑脸"],
   "People & Body": ["people", "人物"],
-  "Animals & Nature": ["animals", "动物"],
+  "Animals & Nature": ["animals", "动物与自然"],
   "Food & Drink": ["food", "食物"],
-  "Travel & Places": ["travel", "旅行"],
+  "Travel & Places": ["travel", "旅行与地点"],
   "Activities": ["activities", "活动"],
   "Objects": ["objects", "物品"],
   "Symbols": ["symbols", "符号"],
