@@ -4,8 +4,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 // 窗口呼出时重放入场动画（淡入/缩放/滑动）
 // 原理：窗口 hide 后 webview 继续运行，show 时页面不会重新加载，需手动重置 CSS animation。
 // 为避免「先显示完整界面再补动画」的闪烁：
-//  - 窗口失焦/隐藏时 → 把内容重置为透明初始态（opacity 0 + 微缩）
-//  - 窗口聚焦/呼出时 → 从透明态播放动画，与窗口显示同步
+//  - 窗口真正隐藏（isVisible=false）时 → 内容重置为透明初始态
+//  - 窗口从隐藏变可见时 → 从透明态播放动画，与窗口显示同步
+// 关键：焦点事件无法区分「窗口隐藏」与「拖动/切焦点导致的短暂失焦」，
+// 必须用 isVisible() 判断——只有窗口确实不可见才透明化/播放动画，避免拖动窗口闪烁。
 export function useWindowEntrance(enable: boolean, classes: string[]) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -32,24 +34,57 @@ export function useWindowEntrance(enable: boolean, classes: string[]) {
 
     const win = getCurrentWindow();
     let unlisten: (() => void) | null = null;
+    let hidden = false; // 是否处于「已确认隐藏」状态
+    let hideTimer: number | null = null;
+
+    const onBlur = () => {
+      // 失焦 ≠ 隐藏（可能是拖动/切焦点）：延迟确认窗口是否真的不可见
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(async () => {
+        hideTimer = null;
+        const visible = await win.isVisible();
+        if (!visible) {
+          hidden = true;
+          resetToHidden();
+        }
+      }, 250);
+    };
+
+    const onFocus = async () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+      // 仅当窗口「从隐藏变为可见」才播放动画；一直可见（拖动恢复）不播放
+      const visible = await win.isVisible();
+      if (hidden && visible) {
+        hidden = false;
+        play();
+      }
+    };
+
     win
       .onFocusChanged(({ payload }) => {
         if (payload) {
-          play();
+          onFocus();
         } else {
-          resetToHidden();
+          onBlur();
         }
       })
       .then((fn) => (unlisten = fn));
 
-    // 初始化：先设为透明初始态，若窗口当前已聚焦则立即播放（启动/首次显示场景）
+    // 初始化：先设为透明初始态；窗口当前可见则直接播放（启动场景），
+    // 不可见（如延迟创建的弹窗）则标记隐藏，等首次 show 时播放
     resetToHidden();
-    win.isFocused().then((focused) => {
-      if (focused) play();
-    });
+    (async () => {
+      const visible = await win.isVisible();
+      hidden = !visible;
+      if (visible) play();
+    })();
 
     return () => {
       unlisten?.();
+      if (hideTimer) clearTimeout(hideTimer);
     };
   }, [enable]);
 
