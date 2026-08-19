@@ -2,9 +2,31 @@
 
 本文件记录开发过程中遇到的问题、解决方案和经验教训。每次修复 bug 或解决技术问题后，应将经验记录于此。
 
+## 易踩坑速查（开发前必读）
+
+1. **PowerShell 读写文件编码**：`Get-Content`/`Set-Content` 会把 UTF-8 文件写成 GBK，曾损坏 Rust 源码。改文件一律用编辑器工具，不要用 PowerShell 重写
+2. **std Mutex 不可重入**：持 `ConfigState` 或任何 Mutex 锁期间，**绝不调用会再次取锁的函数**（如 `module_config`、`fetch_once`）；网络/耗时操作放 `spawn_blocking`
+3. **同步网络请求**：`fetch_once` 是同步 reqwest，必须在后台线程执行，禁止在 IPC 命令主路径直接调用
+4. **Windows 下不要开 `.transparent(true)`**：透明 WebView2 窗口 hide 后再 show 会崩溃（0xcfffffff）
+5. **新增前端入口**：需同时改 `vite.config.ts` 的 `rollupOptions.input`、根目录新建 `.html`、Rust 侧建窗（`WebviewUrl::App("xxx.html")`）、`capabilities/default.json` 的 `windows` 数组与权限
+6. 模块 manifest 走 `resources`（打包后嵌入 exe），dev 模式 fallback 到 `src-tauri/modules` 相对路径
+7. `keyring` 必须启用 `features = ["windows-native"]`，否则 `Entry::new().unwrap()` 直接 panic
+8. **@dnd-kit 拖拽 + WebView2 渲染变形**：**大尺寸卡片 + opacity + transform 组合会让窗口压扁**。被拖大卡片不加透明度；DragOverlay 方案也会出问题；额度面板用 `verticalListSortingStrategy` + `will-change: transform` + 拖动中禁 transition。**小尺寸条目（剪贴板固定板块）拖拽安全**
+9. **ResizeObserver 绑定异步挂载节点用回调 ref**：空依赖 `useEffect` 只在挂载时跑一次，异步渲染的节点绑不上。用 `useCallback` 回调 ref（React 19 支持清理）
+10. **横向滚动**：滚轮→`scrollLeft` 用共享 `useHorizontalWheel`（返回 `{ ref, nodeRef }`）；`overflow-x-auto` 会让 `overflow-y` 也变 auto，悬浮元素别放超出滚动容器顶部
+11. **版本号三处同步**：改版本需同时改 `package.json`、`tauri.conf.json`、`src-tauri/Cargo.toml`
+12. **Windows 文件图标**：`SHGFI_USEFILEATTRIBUTES` 取不到格式专属图标，必须访问真实文件再回退；缓存按路径而非扩展名
+13. **多账户密钥槽位必须独立**：quota 新增账户 `key_ref` 分配独立槽位（`quota-<id>`），**绝不复用/回退旧槽位**（否则同类账户串号共用同一密钥）；旧账户用 `migrate_account_keyrefs` 幂等迁移
+14. **窗口尺寸记忆要过滤脏数据**：窗口隐藏/最小化时 WebView2 报 0x0，`onResized`/`save_main_size`/setup 恢复都要校验最小尺寸（<400x300 忽略）；`minWidth/minHeight` 只约束用户拖拽，编程 `set_size` 不受限
+15. **独立窗口延迟创建**：不要在 setup 创建隐藏弹窗（`.visible(false)` 在 Windows WebView2 上仍会闪现），首次呼出时才建窗（见 `clipboard::ensure_popup_window`）
+16. **窗口入场动画**：用共享 `useWindowEntrance`（失焦时内容置透明、聚焦时重放动画），避免「先显示完整界面再补动画」闪烁；不要重挂载根节点触发（会丢子组件状态）
+17. **SQLite 建索引必须在列添加之后**：索引引用的列若在版本迁移中才添加（如 `pin_order`），索引创建要放迁移之后，否则新库建表失败
+18. **焦点事件 ≠ 窗口可见性**：拖动/切焦点会触发失焦，不要把「失焦」当「隐藏」；动画/显隐判断用 `isVisible()` 守卫（见 useWindowEntrance）
+
 ---
 
-## 2026-08-19
+## 按日期记录
+
 
 ### 虚拟列表导致文本卡片重叠
 
