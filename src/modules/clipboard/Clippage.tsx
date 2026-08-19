@@ -4,8 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
 import { getConfig } from "@/lib/api";
-import { Search, Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical } from "lucide-react";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { Search, Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2 } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -123,6 +122,8 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   } | null>(null);
   const debounce = useRef<number | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [preview, setPreview] = useState<{ src: string; name: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const refreshClipCfg = useCallback(async () => {
     try {
@@ -292,16 +293,24 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
 
   const viewImage = async (item: ItemDto) => {
     setMenu(null);
-    const path =
-      item.kind === "files"
-        ? item.preview
-        : await invoke<string | null>("get_image_path", { id: item.id });
-    if (path) {
-      try {
-        await openPath(path);
-      } catch (e) {
-        console.error("open image failed", e);
+    setPreviewLoading(true);
+    setPreview({ src: "", name: item.kind === "files" ? fileBasename(item.preview) : "剪贴板图片" });
+    try {
+      const b64 =
+        item.kind === "files"
+          ? await invoke<string | null>("get_file_preview", { path: item.preview })
+          : await invoke<string | null>("get_image", { id: item.id });
+      if (b64) {
+        setPreview({ src: `data:image/png;base64,${b64}`, name: item.kind === "files" ? fileBasename(item.preview) : "剪贴板图片" });
+      } else {
+        setPreview(null);
+        console.error("preview image is empty");
       }
+    } catch (e) {
+      console.error("load preview failed", e);
+      setPreview(null);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -569,9 +578,15 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       doPaste(selected);
       return;
     }
-    if (e.key === "Escape" && popup) {
-      hideWindow();
-      return;
+    if (e.key === "Escape") {
+      if (preview) {
+        setPreview(null);
+        return;
+      }
+      if (popup) {
+        hideWindow();
+        return;
+      }
     }
     if (e.key === "Delete" && selected != null) {
       del(selected);
@@ -893,6 +908,42 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
             <Trash2 className="size-3.5" />
             删除
           </button>
+        </div>
+      )}
+
+      {preview && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70"
+          onClick={() => setPreview(null)}
+        >
+          <div className="relative flex max-h-[92%] max-w-[92%] items-center justify-center">
+            {previewLoading && (
+              <div className="flex flex-col items-center gap-2 text-white/90">
+                <Loader2 className="size-6 animate-spin" />
+                <span className="text-xs">加载中…</span>
+              </div>
+            )}
+            {preview.src && (
+              <img
+                src={preview.src}
+                alt=""
+                onClick={(e) => e.stopPropagation()}
+                className="max-h-[92vh] max-w-[92vw] rounded object-contain shadow-lg"
+              />
+            )}
+          </div>
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-4 py-3">
+            <span className="max-w-[70%] truncate text-xs text-white/90" title={preview.name}>
+              {preview.name}
+            </span>
+            <button
+              onClick={() => setPreview(null)}
+              aria-label="关闭预览"
+              className="pointer-events-auto rounded-full bg-black/50 p-1.5 text-white/90 transition-colors hover:bg-black/70"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
         </div>
       )}
     </div>
