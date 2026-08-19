@@ -18,7 +18,9 @@ src/modules/<id>/                      # React 前端组件
 - **复用共享前端工具**（不要重复造轮子）：
   - `src/lib/theme.ts` 的 `applyTheme`（弹窗等独立窗口跟随主题）
   - `src/lib/use-horizontal-wheel.ts` 的 `useHorizontalWheel`（滚轮→横向滚动，如历史列表）
+  - `src/lib/use-window-entrance.ts` 的 `useWindowEntrance`（窗口呼出入场动画，失焦置透明 + 聚焦重放，避免闪烁）
   - `src/components/hotkey-recorder.tsx` 的 `HotkeyRecorder`（热键录制式设置）
+  - `src/components/LazyImage.tsx` 的 `LazyImage`（IntersectionObserver 懒加载图片）
 
 ## 2. 新增模块完整步骤（以模块 `foo` 为例）
 
@@ -197,15 +199,15 @@ switch (activeModule.id) {
 
 ### Step 7：测试
 
-后端纯逻辑加 `#[cfg(test)]` 单元测试（参考 clipboard 的 24 个、quota 的 10 个，当前共 37+），`cargo test` 全绿。前端无测试框架，靠人工验收。
+后端纯逻辑加 `#[cfg(test)]` 单元测试（参考 clipboard 的 24 个、quota 的 10 个，当前共 36），`cargo test` 全绿。前端无测试框架，靠人工验收。
 
 ## 3. 数据与配置规范
 
 - 模块配置：`config.json` 的 `modules.<id>`（HashMap<String, Value>），通过 `module_config` 读取、`save_config` 写回
 - 模块私有数据：`app.path().app_data_dir()/<你的文件>`，即 `%APPDATA%\com.aliboder.easytool\`
-- 密钥：`keyring::Entry::new("com.aliboder.easytool", <用户标识>)`，参考 quota 的 `set_key`/`get_key`
+- 密钥：`keyring::Entry::new("com.aliboder.easytool", <用户标识>)`。**多账户场景每个账户独立槽位**（参考 quota 的 `get_account_key`/`set_account_key` + `key_ref`，绝不复用固定槽位，否则同类账户串号）
 - 配置迁移、旧数据导入：写进 `src-tauri/src/migrate.rs`（一次性，`config.migrated` 标记）
-- **时间序列数据**（余额历史/消费历史）：`balance_history.json`（`{"records":[{time,balance}]}`，ISO 时间），quota 用 `history::daily_series_all` 聚合完整每日序列
+- **时间序列数据**（余额历史/消费历史）：quota 按账户分文件 `balance_history_<account_id>.json`（`{"records":[{time,balance}]}`，ISO 时间），用 `history::daily_series_all` 聚合完整每日序列
 - **条目顺序持久化**：数据库加排序列（如剪贴板 `items.pin_order`，NULL=未排过序排最后），查询 `ORDER BY col IS NULL, col ASC`，新增 `set_xxx_order(ids)` 命令保存
 
 ## 4. 关键坑（新增模块时必须遵守）
@@ -224,6 +226,11 @@ switch (activeModule.id) {
 12. **热键录制格式**：global-hotkey crate 接受 `Ctrl/Shift/Alt/Super`（Windows 键是 **Super**，不是 Win）+ 键名（`A-Z/0-9/F1-F24/ArrowUp/Enter/Space` 等）。用共享 `HotkeyRecorder` 组件
 13. **版本号三处同步**：改版本需同时改 `package.json`、`tauri.conf.json`、`src-tauri/Cargo.toml`；当前 Tauri CLI **不支持 portable** 打包目标（仅 msi/nsis）
 14. **Windows 文件图标**：`SHGFI_USEFILEATTRIBUTES` 取不到格式专属图标（txt/图片等退化为通用图标），须访问真实文件再回退；缓存按路径而非扩展名
+15. **多账户密钥槽位必须独立**：quota 新增账户 `key_ref` 分配独立槽位（`quota-<id>`），绝不复用/回退旧槽位（否则所有同类账户串号共用同一密钥）。旧账户用 `migrate_account_keyrefs` 幂等迁移
+16. **窗口尺寸记忆要过滤脏数据**：窗口隐藏/最小化时 WebView2 报 0x0，`onResized`/保存/恢复都要校验最小尺寸（<400x300 忽略）；`minWidth/minHeight` 只约束用户拖拽，编程 `set_size` 不受限
+17. **独立窗口延迟创建**：不要在 setup 创建隐藏弹窗（`.visible(false)` 在 Windows WebView2 上仍会闪现），首次呼出时才建窗（参考 `clipboard::ensure_popup_window`）
+18. **窗口入场动画**：用共享 `useWindowEntrance`（失焦置透明 + 聚焦重放），避免「先显示完整界面再补动画」的闪烁；不要重挂载根节点触发（会丢子组件状态）
+19. **SQLite 建索引必须在列添加之后**：索引引用的列若在版本迁移中才添加（如 `pin_order`），索引创建要放在迁移之后，否则新库建表直接失败
 
 ## 5. 完成清单
 
@@ -245,5 +252,5 @@ switch (activeModule.id) {
 
 新增模块时对照这两个现成模块：
 
-- **clipboard**：独立弹窗窗口 + 系统剪贴板监听 + 文件存储（缩略图/图标）+ 固定板块拖拽排序（小条目 @dnd-kit）+ 弹窗位置/尺寸记忆 + 监听规则，最完整的模块参照
-- **quota**：后台轮询线程 + 密钥加密存储（keyring）+ 告警通知 + 消费历史完整时间线（横向滚动）+ 面板卡片拖拽排序（@dnd-kit + will-change），后台任务/数据可视化类模块参照
+- **clipboard**：独立弹窗窗口（延迟创建）+ 系统剪贴板监听 + 文件存储（缩略图/图标）+ 固定板块拖拽排序（小条目 @dnd-kit）+ 弹窗位置/尺寸记忆 + 监听规则，最完整的模块参照
+- **quota**：后台轮询线程 + **多账户支持**（账户增删改 + 独立密钥槽位 key_ref + 独立余额/历史）+ 告警通知 + 消费历史按账户分文件 + 完整时间线（横向滚动）+ 面板卡片拖拽排序（@dnd-kit + will-change），后台任务/数据可视化/多实例类模块参照

@@ -58,7 +58,9 @@ impl Db {
                 value TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_items_created ON items(created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_items_pinned ON items(pinned);",
+            CREATE INDEX IF NOT EXISTS idx_items_pinned ON items(pinned);
+            CREATE INDEX IF NOT EXISTS idx_items_hash ON items(hash);
+            CREATE INDEX IF NOT EXISTS idx_items_kind ON items(kind);",
         )?;
         // 版本化迁移：schema_version 在 settings 表中，缺失视为 0（旧库）
         let version: i64 = self
@@ -93,6 +95,9 @@ impl Db {
             }
             self.set_setting("schema_version", "2")?;
         }
+        // pin_order 列在 v2 迁移后才存在，索引须在其后创建（旧库无此列）
+        self.conn
+            .execute_batch("CREATE INDEX IF NOT EXISTS idx_items_pinned_order ON items(pinned, pin_order)")?;
         Ok(())
     }
 

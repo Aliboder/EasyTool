@@ -108,6 +108,16 @@ fn poll_thread() {
     let mut last_signature: Option<String> = None;
     loop {
         std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
+        
+        // 检查模块是否启用，禁用时跳过工作
+        let Some(app) = APP_HANDLE.get() else {
+            continue;
+        };
+        if !crate::clipboard_enabled(app) {
+            last_signature = None;
+            continue;
+        }
+        
         // 单次处理异常不得杀死线程（否则监听功能静默失效），记录后继续
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let signature = clipboard_signature();
@@ -144,6 +154,12 @@ fn process_clipboard_change() {
     let Some(app) = APP_HANDLE.get() else {
         return;
     };
+    
+    // 检查模块是否启用，禁用时跳过处理
+    if !crate::clipboard_enabled(app) {
+        return;
+    }
+    
     let state = app.state::<AppState>();
 
     // 自身写入守卫：我们写入剪贴板后 300ms 内的变化跳过

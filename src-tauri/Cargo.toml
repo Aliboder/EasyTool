@@ -1,6 +1,6 @@
 [package]
 name = "easytool"
-version = "0.2.0"
+version = "0.3.0"
 description = "EasyTool 工具箱"
 authors = ["Yuan Jiawei"]
 edition = "2021"
@@ -8,6 +8,13 @@ edition = "2021"
 [lib]
 name = "easytool_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"      # 优化大小
+lto = true           # 链接时优化
+codegen-units = 1    # 单线程代码生成（更优优化）
+strip = true         # 去除调试符号
+panic = "abort"      # 终止而非展开
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -29,6 +36,7 @@ tokio = { version = "1", features = ["full"] }
 keyring = { version = "3", features = ["windows-native"] }
 chrono = { version = "0.4", features = ["serde"] }
 tauri-plugin-notification = "2"
+lru = "0.12"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_DataExchange",

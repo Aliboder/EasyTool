@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod clipboard;
 pub mod commands;
 pub mod db;
@@ -55,6 +56,22 @@ pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
     log::info!("clipboard module ready, data dir: {}", data_dir.display());
     app.manage(state);
     monitor::start(handle.clone());
+    Ok(())
+}
+
+/// 从 AppHandle 初始化剪贴板模块（用于并行初始化）
+pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let data_dir = app.path().app_data_dir()?;
+    std::fs::create_dir_all(&data_dir)?;
+    db::backup_database(&data_dir);
+    let state = AppState::new(data_dir.clone(), data_dir.join("clipboard.db"), max_items(app))
+        .expect("failed to init clipboard state");
+    if let Ok(db) = state.db.lock() {
+        let _ = db.vacuum_if_large(8 * 1024 * 1024);
+    }
+    log::info!("clipboard module ready, data dir: {}", data_dir.display());
+    app.manage(state);
+    monitor::start(app.clone());
     Ok(())
 }
 
@@ -133,42 +150,90 @@ pub fn record_foreground_state(app: &tauri::AppHandle) {    if let Some(state) =
     }
 }
 
+/// 确保弹窗窗口存在（延迟创建：首次呼出时才创建，避免启动闪现）
+fn ensure_popup_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
+    if let Some(win) = app.get_webview_window(POPUP_WINDOW_LABEL) {
+        return Some(win);
+    }
+    let win = tauri::WebviewWindowBuilder::new(
+        app,
+        POPUP_WINDOW_LABEL,
+        tauri::WebviewUrl::App("clipboard_popup.html".into()),
+    )
+    .decorations(false)
+    .skip_taskbar(true)
+    .visible(false)
+    .inner_size(620.0, 480.0)
+    .min_inner_size(400.0, 300.0)
+    .resizable(true)
+    .always_on_top(true)
+    .build();
+    match win {
+        Ok(win) => {
+            // 应用记住的弹窗尺寸
+            let saved_size = app
+                .state::<ConfigState>()
+                .0
+                .lock()
+                .unwrap()
+                .modules
+                .get("clipboard")
+                .and_then(|m| m.get("popup_size"))
+                .cloned();
+            if let Some(size) = saved_size {
+                if let (Some(w), Some(h)) = (
+                    size.get("w").and_then(|v| v.as_u64()),
+                    size.get("h").and_then(|v| v.as_u64()),
+                ) {
+                    let _ = win.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+                }
+            }
+            Some(win)
+        }
+        Err(e) => {
+            log::error!("failed to create clipboard popup window: {e}");
+            None
+        }
+    }
+}
+
 /// 全局热键触发：记录唤起前的窗口上下文（供粘贴回原窗口），随后显示 popup 窗口
 pub fn on_hotkey(app: &tauri::AppHandle) {
     record_foreground_state(app);
-    if let Some(win) = app.get_webview_window(POPUP_WINDOW_LABEL) {
-        if let Ok(hwnd) = win.hwnd() {
-            // 位置模式：跟随鼠标（默认）或记住的固定位置
-            let cfg = module_config(app);
-            let follow_mouse = cfg
-                .get("follow_mouse")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let (x, y) = if follow_mouse {
-                popup_position_physical(hwnd)
-            } else {
-                cfg.get("fixed_pos")
-                    .and_then(|p| {
-                        Some((
-                            p.get("x")?.as_i64()? as i32,
-                            p.get("y")?.as_i64()? as i32,
-                        ))
-                    })
-                    .unwrap_or_else(|| popup_position_physical(hwnd))
-            };
-            unsafe {
-                let _ = SetWindowPos(
-                    hwnd,
-                    None,
-                    x,
-                    y,
-                    0,
-                    0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-                );
-            }
+    let Some(win) = ensure_popup_window(app) else {
+        return;
+    };
+    if let Ok(hwnd) = win.hwnd() {
+        // 位置模式：跟随鼠标（默认）或记住的固定位置
+        let cfg = module_config(app);
+        let follow_mouse = cfg
+            .get("follow_mouse")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let (x, y) = if follow_mouse {
+            popup_position_physical(hwnd)
+        } else {
+            cfg.get("fixed_pos")
+                .and_then(|p| {
+                    Some((
+                        p.get("x")?.as_i64()? as i32,
+                        p.get("y")?.as_i64()? as i32,
+                    ))
+                })
+                .unwrap_or_else(|| popup_position_physical(hwnd))
+        };
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                x,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
         }
-        let _ = win.show();
-        let _ = win.set_focus();
     }
+    let _ = win.show();
+    let _ = win.set_focus();
 }

@@ -55,6 +55,25 @@ pub fn merge_manifests(cfg: &mut AppConfig, manifests: &[Manifest]) {
             cfg.modules.insert(m.id.clone(), value);
         }
     }
+    // quota 多账户：旧配置无 accounts 字段时补默认账户（兼容旧 keyring 槽位）
+    if let Some(q) = cfg.modules.get_mut("quota") {
+        if q.get("accounts").and_then(|v| v.as_array()).is_none() {
+            q["accounts"] = serde_json::json!([
+                {
+                    "id": "deepseek",
+                    "kind": "deepseek",
+                    "name": "DeepSeek",
+                    "key_ref": "deepseek"
+                },
+                {
+                    "id": "opencode-go",
+                    "kind": "go",
+                    "name": "OpenCode Go",
+                    "key_ref": "opencode-go"
+                }
+            ]);
+        }
+    }
 }
 
 #[tauri::command]

@@ -81,7 +81,9 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
+    let icon = app.default_window_icon().cloned().expect("no window icon");
     TrayIconBuilder::new()
+        .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -315,8 +317,30 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            let mut cfg = config::load_config(app.handle());
-            let manifests = modules::load_manifests(app.handle());
+            // 并行加载配置和 manifests
+            let app_handle = app.handle().clone();
+            let cfg_handle = app_handle.clone();
+            let manifests_handle = app_handle.clone();
+            
+            let cfg_thread = std::thread::spawn(move || {
+                config::load_config(&cfg_handle)
+            });
+            
+            let manifests_thread = std::thread::spawn(move || {
+                modules::load_manifests(&manifests_handle)
+            });
+            
+            // 等待配置和 manifests 加载完成
+            let mut cfg = cfg_thread.join().unwrap_or_else(|e| {
+                log::error!("config load thread panicked: {:?}", e);
+                config::load_config(app.handle())
+            });
+            
+            let manifests = manifests_thread.join().unwrap_or_else(|e| {
+                log::error!("manifests load thread panicked: {:?}", e);
+                modules::load_manifests(app.handle())
+            });
+            
             modules::merge_manifests(&mut cfg, &manifests);
             let _ = config::save_config(app.handle(), &cfg);
             app.manage(ConfigState(std::sync::Mutex::new(cfg)));
@@ -324,44 +348,53 @@ pub fn run() {
             // 旧数据一次性迁移（在模块 setup 之前，避免与剪贴板模块同时打开新库）
             migrate::run_migration(app.handle());
 
-            // 剪贴板模块
-            if clipboard_enabled(app.handle()) {
-                modules::clipboard::setup(app)?;
-                let popup = tauri::WebviewWindowBuilder::new(
-                    app,
-                    modules::clipboard::POPUP_WINDOW_LABEL,
-                    tauri::WebviewUrl::App("clipboard_popup.html".into()),
-                )
-                .decorations(false)
-                .skip_taskbar(true)
-                .inner_size(620.0, 480.0)
-                .min_inner_size(400.0, 300.0)
-                .resizable(true)
-                .always_on_top(true)
-                .build()?;
-                // 应用记住的弹窗尺寸
-                let saved_size = {
-                    let state = app.state::<ConfigState>();
-                    let c = state.0.lock().unwrap();
-                    c.modules
-                        .get("clipboard")
-                        .and_then(|m| m.get("popup_size"))
-                        .cloned()
-                };
-                if let Some(size) = saved_size {
-                    if let (Some(w), Some(h)) = (
-                        size.get("w").and_then(|v| v.as_u64()),
-                        size.get("h").and_then(|v| v.as_u64()),
-                    ) {
-                        let _ = popup.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+            // 并行初始化模块
+            let clipboard_handle = if clipboard_enabled(app.handle()) {
+                let app_clone = app.handle().clone();
+                Some(std::thread::spawn(move || {
+                    modules::clipboard::setup_from_handle(&app_clone)
+                }))
+            } else {
+                None
+            };
+
+            let quota_handle = if quota_enabled(app.handle()) {
+                let app_clone = app.handle().clone();
+                Some(std::thread::spawn(move || {
+                    modules::quota::setup_from_handle(&app_clone)
+                }))
+            } else {
+                None
+            };
+
+            // 等待剪贴板模块初始化完成（弹窗窗口延迟到首次呼出时创建，避免启动闪现）
+            if let Some(handle) = clipboard_handle {
+                match handle.join() {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        log::error!("clipboard module init failed: {e}");
+                    }
+                    Err(e) => {
+                        log::error!("clipboard module thread panicked: {:?}", e);
                     }
                 }
-                popup.hide()?;
             }
 
-            // 额度监控模块
-            if quota_enabled(app.handle()) {
-                modules::quota::setup(app)?;
+            // 等待额度监控模块初始化完成（延迟加载）
+            if let Some(handle) = quota_handle {
+                // 额度监控模块延迟 500ms 初始化，让用户先看到主窗口
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    match handle.join() {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => {
+                            log::error!("quota module init failed: {e}");
+                        }
+                        Err(e) => {
+                            log::error!("quota module thread panicked: {:?}", e);
+                        }
+                    }
+                });
             }
 
             // 全局热键（按统一呼出模式注册）
@@ -380,8 +413,11 @@ pub fn run() {
                     size.get("w").and_then(|v| v.as_u64()),
                     size.get("h").and_then(|v| v.as_u64()),
                 ) {
-                    if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-                        let _ = win.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+                    // 校验最小尺寸：0 或小于最小限制的尺寸是脏数据，忽略（用默认尺寸）
+                    if w >= 400 && h >= 300 {
+                        if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                            let _ = win.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+                        }
                     }
                 }
             }
@@ -429,8 +465,10 @@ pub fn run() {
             modules::quota::commands::save_settings,
             modules::quota::commands::get_panel_order,
             modules::quota::commands::save_panel_order,
-            modules::quota::commands::set_deepseek_key,
-            modules::quota::commands::set_go_key,
+            modules::quota::commands::add_account,
+            modules::quota::commands::remove_account,
+            modules::quota::commands::rename_account,
+            modules::quota::commands::set_account_key,
             modules::quota::commands::test_key,
             modules::quota::commands::get_stats_data,
             modules::quota::commands::get_daily_history,

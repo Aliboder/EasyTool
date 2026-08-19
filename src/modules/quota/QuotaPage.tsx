@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Settings2,
@@ -12,6 +11,7 @@ import {
   CalendarDays,
   GripVertical,
   LayoutGrid,
+  User,
 } from "lucide-react";
 import {
   DndContext,
@@ -33,11 +33,24 @@ import { CSS } from "@dnd-kit/utilities";
 import { useHorizontalWheel } from "@/lib/use-horizontal-wheel";
 import { QuotaSettings } from "./QuotaSettings";
 
-interface StatusPayload {
+interface GoQuotaPayload {
+  window: string;
+  used_percent: number;
+  resets_at: number | null;
+}
+
+interface AccountStatusPayload {
+  id: string;
+  kind: string;
+  name: string;
   balance: number | null;
   available: boolean;
   error: string | null;
-  go_windows: { window: string; used_percent: number; resets_at: number | null }[];
+  go_windows: GoQuotaPayload[];
+}
+
+interface StatusPayload {
+  accounts: AccountStatusPayload[];
 }
 
 interface StatsData {
@@ -107,6 +120,97 @@ function SortableBlock({ id, children }: { id: string; children: React.ReactNode
   );
 }
 
+function AccountBadge({ account, threshold }: { account: AccountStatusPayload; threshold: number }) {
+  const low = account.balance != null && account.balance < threshold;
+  const label =
+    account.balance == null
+      ? account.error
+        ? "查询出错"
+        : "未配置"
+      : low
+        ? "不足"
+        : "正常";
+  const cls =
+    account.balance == null
+      ? account.error
+        ? "bg-orange-500/15 text-orange-600"
+        : "bg-muted text-muted-foreground"
+      : low
+        ? "bg-red-500/15 text-red-600"
+        : "bg-emerald-500/15 text-emerald-600";
+  return <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium", cls)}>{label}</span>;
+}
+
+function DeepseekCard({ account, threshold }: { account: AccountStatusPayload; threshold: number }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Wallet className="size-4 text-muted-foreground" />
+          {account.name}
+          <AccountBadge account={account} threshold={threshold} />
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-semibold">
+          {account.balance != null ? fmtMoney(account.balance) : "—"}
+        </div>
+        {account.error && (
+          <div className="mt-1 text-xs text-orange-600" title={account.error}>
+            {account.error.length > 40 ? account.error.slice(0, 40) + "…" : account.error}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function GoCard({ account }: { account: AccountStatusPayload }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">{account.name}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!account.go_windows.length ? (
+          <div className="text-sm text-muted-foreground">
+            {account.error ? `暂无套餐数据（${account.error}）` : "未配置密钥或暂无套餐数据"}
+          </div>
+        ) : (
+          account.go_windows.map((w) => (
+            <div key={w.window}>
+              <div className="mb-1 flex items-center justify-between text-xs">
+                <span>{WINDOW_NAMES[w.window] ?? w.window}</span>
+                <span className="text-muted-foreground">
+                  重置：
+                  <span className="font-semibold text-primary">{fmtCountdown(w.resets_at)}</span>
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all",
+                    w.used_percent >= 90
+                      ? "bg-red-500"
+                      : w.used_percent >= 70
+                        ? "bg-orange-500"
+                        : "bg-emerald-500",
+                  )}
+                  style={{ width: `${w.used_percent}%` }}
+                />
+              </div>
+              <div className="mt-0.5 flex justify-between text-xs text-muted-foreground">
+                <span>已用 {w.used_percent}%</span>
+                <span>剩余 {Math.max(0, 100 - w.used_percent)}%</span>
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function QuotaPage() {
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [stats, setStats] = useState<StatsData | null>(null);
@@ -115,11 +219,11 @@ export function QuotaPage() {
   const [lastRefresh, setLastRefresh] = useState<number | null>(null);
   const [order, setOrder] = useState<string[]>(["stats", "chart", "go"]);
   const [dailyHistory, setDailyHistory] = useState<{ date: string; amount: number }[]>([]);
+  const [selectedDsId, setSelectedDsId] = useState<string | null>(null);
   const { ref: chartScrollRef, nodeRef: chartNodeRef } = useHorizontalWheel<HTMLDivElement>();
   const [chartWidth, setChartWidth] = useState(0);
 
   // 测量图表可见宽度：数据少时柱子拉伸铺满；数据多时固定最小宽度横向滚动。
-  // 用回调 ref 在图表节点真正挂载后再绑定观察器（图表数据是异步加载的）
   const chartWrapRef = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
     const ro = new ResizeObserver((entries) => {
@@ -134,14 +238,27 @@ export function QuotaPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  const dsAccounts = status?.accounts.filter((a) => a.kind === "deepseek") ?? [];
+  const goAccounts = status?.accounts.filter((a) => a.kind === "go") ?? [];
+  const selectedDs = dsAccounts.find((a) => a.id === selectedDsId) ?? dsAccounts[0] ?? null;
+
   const refresh = useCallback(() => {
     invoke<StatusPayload>("get_status").then(setStatus).catch(console.error);
-    invoke<StatsData>("get_stats_data").then(setStats).catch(console.error);
     invoke<Settings>("get_settings").then(setSettings).catch(console.error);
-    invoke<{ date: string; amount: number }[]>("get_daily_history")
+    setLastRefresh(Date.now());
+  }, []);
+
+  // 刷新统计/历史（依赖当前选中的 DeepSeek 账户）
+  const refreshStats = useCallback((accountId: string | null) => {
+    if (!accountId) {
+      setStats(null);
+      setDailyHistory([]);
+      return;
+    }
+    invoke<StatsData>("get_stats_data", { accountId }).then(setStats).catch(console.error);
+    invoke<{ date: string; amount: number }[]>("get_daily_history", { accountId })
       .then(setDailyHistory)
       .catch(console.error);
-    setLastRefresh(Date.now());
   }, []);
 
   // 加载后滚到最右，默认看到最近的消费（今天）
@@ -157,6 +274,17 @@ export function QuotaPage() {
     const t = setInterval(refresh, 5000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  // 账户列表变化时，自动选中第一个 DeepSeek 账户
+  useEffect(() => {
+    if (dsAccounts.length && !dsAccounts.find((a) => a.id === selectedDsId)) {
+      setSelectedDsId(dsAccounts[0].id);
+    }
+  }, [dsAccounts, selectedDsId]);
+
+  useEffect(() => {
+    refreshStats(selectedDs?.id ?? null);
+  }, [selectedDs?.id, refreshStats]);
 
   // 恢复上次的卡片顺序
   useEffect(() => {
@@ -179,25 +307,11 @@ export function QuotaPage() {
     invoke("save_panel_order", { order: next }).catch(console.error);
   };
 
-  const balanceStatus = () => {
-    if (!status || status.balance == null) {
-      if (status?.error) {
-        return { label: "查询出错", cls: "bg-orange-500/15 text-orange-600", low: false };
-      }
-      return { label: "未配置", cls: "bg-muted text-muted-foreground", low: false };
-    }
-    if (status.balance < (settings?.warn_threshold ?? 10)) {
-      return { label: "不足", cls: "bg-red-500/15 text-red-600", low: true };
-    }
-    return { label: "正常", cls: "bg-emerald-500/15 text-emerald-600", low: false };
-  };
-
-  const bs = balanceStatus();
+  const threshold = settings?.warn_threshold ?? 10;
   const today = stats?.today ?? 0;
   const avg = stats?.avg_7d ?? 0;
   const trendPct = avg > 0 ? ((today - avg) / avg) * 100 : null;
   const chartMax = Math.max(1, ...dailyHistory.map((d) => d.amount), 1);
-  // 自适应：数据少时柱子铺满容器，数据多时固定最小宽度横向滚动
   const MIN_BAR_W = 32;
   const GAP = 4;
   const totalNeeded = dailyHistory.length * MIN_BAR_W + (dailyHistory.length - 1) * GAP;
@@ -212,83 +326,21 @@ export function QuotaPage() {
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <LayoutGrid className="size-4 text-muted-foreground" />
-                数据总览
+                DeepSeek 账户
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Card className={cn(bs.low && "border-red-500/60")}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-2 text-sm">
-                      <Wallet className="size-4 text-muted-foreground" />
-                      DeepSeek 余额
-                      <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium", bs.cls)}>
-                        {bs.label}
-                      </span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-semibold">
-                      {status?.balance != null ? fmtMoney(status.balance) : "—"}
-                    </div>
-                    {status?.error && (
-                      <div className="mt-1 text-xs text-orange-600" title={status.error}>
-                        {status.error.length > 40 ? status.error.slice(0, 40) + "…" : status.error}
-                      </div>
-                    )}
-                    {status && status.balance == null && !status.error && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="mt-2"
-                        onClick={() => setShowSettings(true)}
-                      >
-                        去配置密钥
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-2 text-sm">
-                      <TrendingUp className="size-4 text-muted-foreground" />
-                      今日消费
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-semibold">{fmtMoney(today)}</div>
-                    {trendPct != null && (
-                      <div
-                        className={cn(
-                          "mt-1 flex items-center gap-1 text-xs",
-                          trendPct > 0 ? "text-red-600" : "text-emerald-600",
-                        )}
-                      >
-                        {trendPct > 0 ? (
-                          <TrendingUp className="size-3" />
-                        ) : (
-                          <TrendingDown className="size-3" />
-                        )}
-                        {Math.abs(trendPct).toFixed(0)}% {trendPct > 0 ? "高于" : "低于"}近7天日均
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="flex items-center gap-2 text-sm">
-                      <CalendarDays className="size-4 text-muted-foreground" />
-                      近7天日均
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-semibold">{fmtMoney(avg)}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">含今日，共 7 天</div>
-                  </CardContent>
-                </Card>
-              </div>
+              {dsAccounts.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  暂无 DeepSeek 账户，请在设置中添加
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {dsAccounts.map((acc) => (
+                    <DeepseekCard key={acc.id} account={acc} threshold={threshold} />
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         );
@@ -296,82 +348,132 @@ export function QuotaPage() {
         return (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">消费历史</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <CalendarDays className="size-4 text-muted-foreground" />
+                消费历史
+                <div className="ml-auto flex items-center gap-1 text-xs">
+                  <User className="size-3.5 text-muted-foreground" />
+                  <select
+                    className="rounded border bg-background px-2 py-0.5"
+                    value={selectedDs?.id ?? ""}
+                    onChange={(e) => setSelectedDsId(e.target.value)}
+                  >
+                    {dsAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              {dailyHistory.length === 0 ? (
+              {!selectedDs ? (
+                <div className="flex h-36 items-center justify-center text-sm text-muted-foreground">
+                  无 DeepSeek 账户，无法统计消费
+                </div>
+              ) : dailyHistory.length === 0 ? (
                 <div className="flex h-36 items-center justify-center text-sm text-muted-foreground">
                   暂无历史数据
                 </div>
               ) : (
-                <div ref={chartWrapRef}>
-                  <div ref={chartScrollRef} className="overflow-x-auto">
-                    <div style={chartFits ? undefined : { width: `${totalNeeded}px` }}>
-                      <div className="relative flex h-44 items-end gap-1">
-                        {avg > 0 && (
-                          <div
-                            className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-muted-foreground/50"
-                            style={{ bottom: `${(avg / chartMax) * 74}%` }}
-                          >
-                            <span className="absolute -top-4 right-0 text-[9px] text-muted-foreground">
-                              日均 {fmtMoney(avg)}
-                            </span>
-                          </div>
-                        )}
-                        {dailyHistory.map((d, i) => {
-                          const isLast = i === dailyHistory.length - 1;
-                          const hPct = (d.amount / chartMax) * 74;
-                          return (
+                <div>
+                  <div className="mb-2 grid gap-3 sm:grid-cols-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <TrendingUp className="size-4 text-muted-foreground" />
+                      今日消费
+                      <span className="text-lg font-semibold">{fmtMoney(today)}</span>
+                      {trendPct != null && (
+                        <span
+                          className={cn(
+                            "flex items-center gap-1 text-xs",
+                            trendPct > 0 ? "text-red-600" : "text-emerald-600",
+                          )}
+                        >
+                          {trendPct > 0 ? (
+                            <TrendingUp className="size-3" />
+                          ) : (
+                            <TrendingDown className="size-3" />
+                          )}
+                          {Math.abs(trendPct).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <CalendarDays className="size-4 text-muted-foreground" />
+                      近7天日均
+                      <span className="text-lg font-semibold">{fmtMoney(avg)}</span>
+                    </div>
+                  </div>
+                  <div ref={chartWrapRef}>
+                    <div ref={chartScrollRef} className="overflow-x-auto">
+                      <div style={chartFits ? undefined : { width: `${totalNeeded}px` }}>
+                        <div className="relative flex h-44 items-end gap-1">
+                          {avg > 0 && (
+                            <div
+                              className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-muted-foreground/50"
+                              style={{ bottom: `${(avg / chartMax) * 74}%` }}
+                            >
+                              <span className="absolute -top-4 right-0 text-[9px] text-muted-foreground">
+                                日均 {fmtMoney(avg)}
+                              </span>
+                            </div>
+                          )}
+                          {dailyHistory.map((d, i) => {
+                            const isLast = i === dailyHistory.length - 1;
+                            const hPct = (d.amount / chartMax) * 74;
+                            return (
+                              <div
+                                key={i}
+                                className={cn(
+                                  "group relative h-full shrink-0",
+                                  chartFits && "flex-1",
+                                )}
+                                style={barW ? { width: barW } : undefined}
+                              >
+                                <div
+                                  className={cn(
+                                    "absolute inset-x-0 bottom-0 rounded-t transition-colors",
+                                    isLast
+                                      ? "bg-primary hover:bg-primary/80"
+                                      : "bg-primary/20 hover:bg-primary/40",
+                                  )}
+                                  style={{ height: `${Math.max(3, hPct)}%` }}
+                                />
+                                {chartFits && d.amount > 0 && (
+                                  <div
+                                    className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] text-muted-foreground"
+                                    style={{ bottom: `calc(${Math.max(3, hPct)}% + 2px)` }}
+                                  >
+                                    {fmtMoney(d.amount)}
+                                  </div>
+                                )}
+                                <div
+                                  className={cn(
+                                    "pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-popover px-1.5 py-0.5 text-[10px] text-popover-foreground opacity-0 shadow transition-opacity group-hover:opacity-100",
+                                  )}
+                                  style={{ bottom: `calc(${Math.max(3, hPct)}% + 18px)` }}
+                                >
+                                  {d.date} · {fmtMoney(d.amount)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-1 pt-0.5">
+                          {dailyHistory.map((d, i) => (
                             <div
                               key={i}
                               className={cn(
-                                "group relative h-full shrink-0",
+                                "shrink-0 text-center text-[9px] text-muted-foreground",
                                 chartFits && "flex-1",
                               )}
                               style={barW ? { width: barW } : undefined}
                             >
-                              <div
-                                className={cn(
-                                  "absolute inset-x-0 bottom-0 rounded-t transition-colors",
-                                  isLast
-                                    ? "bg-primary hover:bg-primary/80"
-                                    : "bg-primary/20 hover:bg-primary/40",
-                                )}
-                                style={{ height: `${Math.max(3, hPct)}%` }}
-                              />
-                              {chartFits && d.amount > 0 && (
-                                <div
-                                  className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] text-muted-foreground"
-                                  style={{ bottom: `calc(${Math.max(3, hPct)}% + 2px)` }}
-                                >
-                                  {fmtMoney(d.amount)}
-                                </div>
-                              )}
-                              <div
-                                className={cn(
-                                  "pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-popover px-1.5 py-0.5 text-[10px] text-popover-foreground opacity-0 shadow transition-opacity group-hover:opacity-100",
-                                )}
-                                style={{ bottom: `calc(${Math.max(3, hPct)}% + 18px)` }}
-                              >
-                                {d.date} · {fmtMoney(d.amount)}
-                              </div>
+                              {i % 2 === 0 || i === dailyHistory.length - 1 ? d.date : ""}
                             </div>
-                          );
-                        })}
-                      </div>
-                      <div className="flex gap-1 pt-0.5">
-                        {dailyHistory.map((d, i) => (
-                          <div
-                            key={i}
-                            className={cn(
-                              "shrink-0 text-center text-[9px] text-muted-foreground",
-                              chartFits && "flex-1",
-                            )}
-                            style={barW ? { width: barW } : undefined}
-                          >
-                            {i % 2 === 0 || i === dailyHistory.length - 1 ? d.date : ""}
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -384,46 +486,18 @@ export function QuotaPage() {
         return (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">OpenCode Go 套餐</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <LayoutGrid className="size-4 text-muted-foreground" />
+                OpenCode Go 套餐
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {!status?.go_windows.length ? (
+            <CardContent className="space-y-4">
+              {goAccounts.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
-                  {status?.error
-                    ? `暂无套餐数据（${status.error}）`
-                    : "未配置 Go 密钥或暂无套餐数据"}
+                  暂无 Go 账户，请在设置中添加
                 </div>
               ) : (
-                status.go_windows.map((w) => (
-                  <div key={w.window}>
-                    <div className="mb-1 flex items-center justify-between text-xs">
-                      <span>{WINDOW_NAMES[w.window] ?? w.window}</span>
-                      <span className="text-muted-foreground">
-                        重置：
-                        <span className="font-semibold text-primary">
-                          {fmtCountdown(w.resets_at)}
-                        </span>
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={cn(
-                          "h-full rounded-full transition-all",
-                          w.used_percent >= 90
-                            ? "bg-red-500"
-                            : w.used_percent >= 70
-                              ? "bg-orange-500"
-                              : "bg-emerald-500",
-                        )}
-                        style={{ width: `${w.used_percent}%` }}
-                      />
-                    </div>
-                    <div className="mt-0.5 flex justify-between text-xs text-muted-foreground">
-                      <span>已用 {w.used_percent}%</span>
-                      <span>剩余 {Math.max(0, 100 - w.used_percent)}%</span>
-                    </div>
-                  </div>
-                ))
+                goAccounts.map((acc) => <GoCard key={acc.id} account={acc} />)
               )}
             </CardContent>
           </Card>
@@ -471,7 +545,7 @@ export function QuotaPage() {
       </header>
       <div className="flex-1 overflow-y-auto">
         {showSettings ? (
-          <QuotaSettings />
+          <QuotaSettings onRefresh={refresh} />
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={order} strategy={verticalListSortingStrategy}>

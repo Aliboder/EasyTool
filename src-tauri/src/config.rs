@@ -140,7 +140,7 @@ pub fn set_main_hotkey(
     Ok(())
 }
 
-/// 保存主窗口尺寸（重启恢复）
+/// 保存主窗口尺寸（重启恢复）；忽略 0/极小尺寸（窗口隐藏/最小化时 WebView2 会报 0x0）
 #[tauri::command]
 pub fn save_main_size(
     app: AppHandle,
@@ -148,6 +148,10 @@ pub fn save_main_size(
     width: u32,
     height: u32,
 ) -> Result<(), String> {
+    // 与 tauri.conf.json 的 minWidth/minHeight 一致
+    if width < 400 || height < 300 {
+        return Ok(());
+    }
     let mut cfg = state.0.lock().unwrap();
     cfg.main_size = Some(serde_json::json!({ "w": width, "h": height }));
     save_config(&app, &cfg)

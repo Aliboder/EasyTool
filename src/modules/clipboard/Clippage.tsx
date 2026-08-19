@@ -25,6 +25,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useHorizontalWheel } from "@/lib/use-horizontal-wheel";
 import { ClipSettings } from "./ClipSettings";
+import { LazyImage } from "@/components/LazyImage";
+import { useWindowEntrance } from "@/lib/use-window-entrance";
 
 interface ItemDto {
   id: number;
@@ -101,6 +103,7 @@ function PinnedSortable({ id, children }: { id: string; children: React.ReactNod
 }
 
 export function Clippage({ popup = true }: { popup?: boolean }) {
+  const entranceRef = useWindowEntrance(popup, ["animate-in", "fade-in-0"]);
   const [items, setItems] = useState<ItemDto[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -455,9 +458,9 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       index,
       { w: cellSize, h: cellSize },
       thumbs[item.id] ? (
-        <img
+        <LazyImage
           src={`data:image/png;base64,${thumbs[item.id]}`}
-          className="h-full w-full object-cover"
+          className="h-full w-full"
           alt=""
         />
       ) : (
@@ -609,7 +612,14 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   };
 
   return (
-    <div className="flex h-full flex-col bg-background text-foreground" onKeyDown={onKeyDown}>
+    <div
+      ref={popup ? entranceRef : undefined}
+      className={cn(
+        "flex h-full flex-col bg-background text-foreground",
+        popup && "animate-in fade-in-0 duration-150",
+      )}
+      onKeyDown={onKeyDown}
+    >
       <div className="flex items-center gap-2 border-b p-2">
         {popup && (
           <div

@@ -89,6 +89,19 @@ pub fn run_migration(app: &AppHandle) {
         cfg.migrated.push("balance".into());
     }
 
+    // 分账户历史迁移：默认 deepseek 账户沿用旧单文件数据（兼容已迁移用户）
+    let legacy_history = data_dir.join("balance_history.json");
+    let per_acc = data_dir.join("balance_history_deepseek.json");
+    if legacy_history.exists() && !per_acc.exists() {
+        match fs::copy(&legacy_history, &per_acc) {
+            Ok(_) => {
+                log::info!("migration: split balance history into per-account file");
+                changed = true;
+            }
+            Err(e) => log::warn!("migration: per-account history split failed: {e}"),
+        }
+    }
+
     if changed {
         if let Err(e) = crate::config::save_config(app, &cfg) {
             log::warn!("migration: failed to save migrated flag: {e}");
