@@ -24,13 +24,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Clipboard, Gauge } from "lucide-react";
+import { Clipboard, Gauge, Smile } from "lucide-react";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { applyTheme } from "@/lib/theme";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 
 const Clippage = lazy(() => import("@/modules/clipboard/Clippage").then(m => ({ default: m.Clippage })));
 const QuotaPage = lazy(() => import("@/modules/quota/QuotaPage").then(m => ({ default: m.QuotaPage })));
+const EmojiPage = lazy(() => import("@/modules/emoji/Page").then(m => ({ default: m.EmojiPage })));
 
 function SettingsView({
   config,
@@ -83,6 +84,8 @@ function SettingsView({
                 <div className="flex size-9 items-center justify-center rounded-md bg-secondary">
                   {m.icon === "gauge" ? (
                     <Gauge className="size-4" />
+                  ) : m.icon === "smile" ? (
+                    <Smile className="size-4" />
                   ) : (
                     <Clipboard className="size-4" />
                   )}
@@ -287,6 +290,8 @@ function App() {
               return <Clippage popup={false} />;
             case "quota":
               return <QuotaPage />;
+            case "emoji":
+              return <EmojiPage />;
             default:
               return (
                 <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
