@@ -275,6 +275,29 @@
 
 ---
 
+## 2026-08-19
+
+### vite 端口 1420 启动报 EACCES（Windows 动态端口排除范围占用）
+
+**问题描述**：`npm run tauri dev` 启动 vite 时报 `listen EACCES: permission denied ::1:1420`，且端口查询显示空闲。
+
+**根本原因**：Windows 的 Hyper-V/WSL 会动态保留一段 TCP 端口范围（`netsh interface ipv4 show excludedportrange protocol=tcp` 显示 1331-1430 被排除）。1420 落在保留范围内，普通进程无法绑定，报 EACCES。即使端口显示"空闲"也绑不上。
+
+**解决方案**：把开发端口从 1420 改到不在排除范围的 14200，同步修改两处：
+- `vite.config.ts` - `server.port`
+- `src-tauri/tauri.conf.json` - `build.devUrl`
+
+**教训**：
+1. `listen EACCES` 在 Windows 上先查 `netsh interface ipv4 show excludedportrange protocol=tcp`，端口"空闲"≠"可绑定"；
+2. 端口被排除范围吞掉时，换端口比重启/改防火墙更可靠（排除范围随 Hyper-V/WSL 状态动态变化）；
+3. 排错用最小验证：`node -e` 起 net server 分别试绑 `::1` 和 `127.0.0.1`，能快速区分 IPv6 问题 vs 端口被占用。
+
+**相关代码**：
+- `vite.config.ts` - `port: 14200`
+- `src-tauri/tauri.conf.json` - `devUrl: http://localhost:14200`
+
+---
+
 <!-- 新增教训请添加到上方，格式如下：
 ## YYYY-MM-DD
 

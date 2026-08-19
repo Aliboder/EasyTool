@@ -65,7 +65,7 @@ src/
 ## 开发命令
 
 ```bash
-npm run tauri dev      # 开发（需保持 localhost:1420 空闲）
+npm run tauri dev      # 开发（需保持 localhost:14200 空闲；1420 可能被 Windows 动态端口排除范围占用）
 npm run tauri build    # 打包（产物 src-tauri/target/release/bundle/nsis/）
 cargo test             # Rust 测试（在 src-tauri/ 下）
 npx tsc --noEmit       # 前端类型检查
