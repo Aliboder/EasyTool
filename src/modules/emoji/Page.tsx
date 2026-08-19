@@ -6,8 +6,6 @@ import {
   Upload,
   FolderPlus,
   Trash2,
-  Star,
-  StarOff,
   Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,11 +13,11 @@ import { Drawer } from "@/components/ui/drawer";
 import { EmojiSettings } from "./Settings";
 import { loadCatalog, type Catalog, type GroupDto } from "./api";
 import { SmartEmoji } from "./SmartEmoji";
+import { toast } from "@/lib/toast";
 
 const GROUP_TABS = [
   { id: "smileys", zh: "表情" },
   { id: "recent", zh: "最近" },
-  { id: "mine", zh: "我的表情" },
   { id: "favorite", zh: "收藏" },
   { id: "hearts", zh: "爱心" },
   { id: "gestures", zh: "手势" },
@@ -40,7 +38,7 @@ const GROUP_TABS = [
   { id: "flags", zh: "旗帜" },
 ];
 
-export function EmojiPage() {
+export function EmojiPage({ active = true }: { active?: boolean }) {
   const [cat, setCat] = useState<Catalog | null>(null);
   const [tab, setTab] = useState("smileys");
   const [q, setQ] = useState("");
@@ -89,6 +87,14 @@ export function EmojiPage() {
     load().catch(console.error);
   }, []);
 
+  // 变为可见时刷新数据（keep-alive 下组件常驻，跨页面操作后切回需拿到最新数据）
+  useEffect(() => {
+    if (active) {
+      load().catch(console.error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
   // 诊断：cat 加载完成后到内容渲染的耗时
   useEffect(() => {
     if (!cat) return;
@@ -115,8 +121,8 @@ export function EmojiPage() {
     const ql = q.trim().toLowerCase();
     let list = cat.emoji;
     if (tab === "recent") list = list.filter((e) => e.last_used_at != null);
-    else if (tab === "favorite") list = list.filter((e) => e.is_favorite);
-    else if (tab !== "mine") list = list.filter((e) => e.group === tab);
+    else if (tab === "favorite") return []; // 收藏 Tab 只显示图片表情
+    else list = list.filter((e) => e.group === tab);
     if (ql) {
       list = list.filter(
         (e) =>
@@ -131,9 +137,11 @@ export function EmojiPage() {
     if (!cat) return [];
     const ql = q.trim().toLowerCase();
     let list = cat.customs;
-    if (tab === "favorite") list = list.filter((c) => c.is_favorite);
-    else if (tab === "recent") list = list.filter((c) => c.last_used_at != null);
-    else if (tab !== "mine") {
+    if (tab === "favorite") {
+      // 收藏 Tab = 图片表情库：显示全部
+    } else if (tab === "recent") {
+      list = list.filter((c) => c.last_used_at != null);
+    } else {
       // 自定义分组 Tab：显示组内图片表情；普通分类 Tab：不含图片表情
       const gid = customGroups.find((g) => g.id === Number(tab))?.id;
       if (gid === undefined) return [];
@@ -144,7 +152,11 @@ export function EmojiPage() {
   }, [cat, customGroups, tab, q]);
 
   const onPick = async (kind: "emoji" | "custom", key: string) => {
-    await invoke("apply_emoji", { kind, key });
+    try {
+      await invoke("apply_emoji", { kind, key });
+    } catch (e) {
+      toast(String(e));
+    }
   };
 
   listLenRef.current = Math.max(visibleEmoji.length, visibleCustoms.length);
@@ -269,20 +281,6 @@ export function EmojiPage() {
                   ) : (
                     <span className="text-xs">无</span>
                   )}
-                </button>
-                <button
-                  onClick={async () => {
-                    await invoke("toggle_favorite", {
-                      kind: "custom",
-                      key: String(c.id),
-                      fav: !c.is_favorite,
-                    });
-                    await refreshCustom();
-                  }}
-                  className="absolute -right-1 -top-1 hidden rounded-full bg-background p-0.5 text-yellow-500 group-hover:block"
-                  aria-label="收藏"
-                >
-                  {c.is_favorite ? <Star className="size-3" /> : <StarOff className="size-3" />}
                 </button>
                 <button
                   onClick={async () => {

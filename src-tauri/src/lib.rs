@@ -122,6 +122,9 @@ fn toggle_main(app: &tauri::AppHandle) {
             if clipboard_enabled(app) {
                 modules::clipboard::record_foreground_state(app);
             }
+            if emoji_enabled(app) {
+                modules::emoji::paste::record_foreground_state(app);
+            }
             // 可选手：呼出时跟随鼠标定位
             let follow_mouse = app
                 .state::<ConfigState>()
@@ -587,6 +590,7 @@ pub fn run() {
             log_frontend,
             config::get_config,
             config::set_module_enabled,
+            config::set_module_order,
             config::set_theme,
             config::set_unified_hotkey,
             config::set_main_hotkey,
@@ -621,8 +625,6 @@ pub fn run() {
             modules::quota::commands::get_status,
             modules::quota::commands::get_settings,
             modules::quota::commands::save_settings,
-            modules::quota::commands::get_panel_order,
-            modules::quota::commands::save_panel_order,
             modules::quota::commands::add_account,
             modules::quota::commands::remove_account,
             modules::quota::commands::rename_account,
@@ -630,6 +632,8 @@ pub fn run() {
             modules::quota::commands::test_key,
             modules::quota::commands::get_stats_data,
             modules::quota::commands::get_daily_history,
+            modules::quota::commands::get_go_history,
+            modules::quota::commands::get_go_cycles,
             modules::search::commands::search,
             modules::search::commands::search_get_status,
             modules::search::commands::search_start_everything,

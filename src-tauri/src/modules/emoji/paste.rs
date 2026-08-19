@@ -161,7 +161,7 @@ pub fn apply_to_foreground(write: impl FnOnce() -> bool) -> Result<(), String> {
     let sel_end = st.sel_end.load(Ordering::SeqCst) as u32;
     if win_hwnd == 0 {
         log::warn!("no previous foreground window, only copied to clipboard");
-        return Ok(());
+        return Err("未找到唤起前窗口，表情已复制到剪贴板".into());
     }
     let focus = HWND(focus_hwnd as *mut core::ffi::c_void);
     let restored = restore_focus(HWND(win_hwnd as *mut core::ffi::c_void), focus);

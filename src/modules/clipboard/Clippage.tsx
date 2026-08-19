@@ -24,6 +24,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useHorizontalWheel } from "@/lib/use-horizontal-wheel";
+import { toast } from "@/lib/toast";
 import { ClipSettings } from "./ClipSettings";
 import { LazyImage } from "@/components/LazyImage";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
@@ -319,9 +320,9 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
     setMenu(null);
     try {
       await invoke("add_clipboard_item_as_emoji", { id: item.id });
-      alert("已添加为表情");
+      toast("已添加为表情");
     } catch (e) {
-      alert(String(e));
+      toast(String(e));
     }
   };
 

@@ -6,11 +6,11 @@ import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadCatalog, type Catalog } from "./api";
 import { SmartEmoji } from "./SmartEmoji";
+import { toast } from "@/lib/toast";
 
 const TABS = [
   "smileys",
   "recent",
-  "mine",
   "favorite",
   "hearts",
   "gestures",
@@ -32,7 +32,6 @@ const TABS = [
 ];
 const TAB_ZH: Record<string, string> = {
   recent: "最近",
-  mine: "我的表情",
   favorite: "收藏",
   smileys: "表情",
   hearts: "爱心",
@@ -84,30 +83,19 @@ export function EmojiPopup() {
     if (tab === "recent") {
       emojis = emojis.filter((e) => e.last_used_at != null);
     } else if (tab === "favorite") {
-      emojis = emojis.filter((e) => e.is_favorite);
-    } else if (tab !== "mine") {
+      emojis = []; // 收藏 Tab 只显示图片表情
+    } else {
       emojis = emojis.filter((e) => e.group === tab);
-    }
-    if (tab === "mine") {
-      // 我的表情：仅图片表情
-      const items = cat.customs.map((c) => ({
-        type: "custom" as const,
-        id: String(c.id),
-        label: c.name,
-        thumb: c.thumb,
-        ts: c.last_used_at ?? 0,
-      }));
-      return items.sort((a, b) => b.ts - a.ts);
     }
     if (ql) {
       emojis = emojis.filter(
         (e) => e.name_en.toLowerCase().includes(ql) || e.keywords_zh.some((k) => k.includes(q.trim())),
       );
     }
-    // 图片表情只出现在「最近/收藏」；分类 Tab 只显示 Emoji
+    // 图片表情只在「收藏（全部）/最近（用过的）」；分类 Tab 只显示 Emoji
     const customs =
       tab === "favorite"
-        ? cat.customs.filter((c) => c.is_favorite)
+        ? cat.customs
         : tab === "recent"
           ? cat.customs.filter((c) => c.last_used_at != null)
           : [];
@@ -155,7 +143,12 @@ export function EmojiPopup() {
   const shown = list.slice(0, visible);
 
   const pick = async (type: "emoji" | "custom", key: string) => {
-    await invoke("apply_emoji", { kind: type, key });
+    try {
+      await invoke("apply_emoji", { kind: type, key });
+    } catch (e) {
+      toast(String(e));
+      return;
+    }
     const cfg = await getConfig().catch(() => null);
     const action = cfg?.modules?.emoji?.click_action as string | undefined;
     if (action !== "copy") getCurrentWindow().hide();
