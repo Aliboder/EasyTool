@@ -1,6 +1,7 @@
 // 智能 Emoji 渲染：优先系统字体（字符），系统字体不支持（豆腐块）时回退 Twemoji 图片。
 // canvas 像素检测，结果持久化到 localStorage（跨启动复用，无需每次重测）。
 import { useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 const STORAGE_KEY = "easytool_emoji_supported_v1";
 
@@ -27,9 +28,25 @@ function persistCache() {
 const SUPPORT_CACHE = loadCache();
 const BASE = import.meta.env.BASE_URL;
 
+// 诊断统计：缓存命中数 / 实际检测数 / 检测总耗时（写入 easytool.log）
+const DIAG = { calls: 0, hits: 0, detections: 0, ms: 0 };
+
+function reportDiag() {
+  invoke("log_frontend", {
+    level: "info",
+    msg: `[diag] emoji smartemoji: calls=${DIAG.calls}, hits=${DIAG.hits}, detections=${DIAG.detections}, detectMs=${DIAG.ms.toFixed(1)}, cacheSize=${SUPPORT_CACHE.size}`,
+  }).catch(() => {});
+}
+
 function isSystemSupported(char: string): boolean {
+  DIAG.calls++;
   const cached = SUPPORT_CACHE.get(char);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) {
+    DIAG.hits++;
+    if (DIAG.calls % 240 === 0) reportDiag();
+    return cached;
+  }
+  const t0 = performance.now();
   let result = true;
   try {
     const c = document.createElement("canvas");
@@ -69,6 +86,9 @@ function isSystemSupported(char: string): boolean {
     result = true; // 检测失败时按支持处理（回退到字符）
   }
   SUPPORT_CACHE.set(char, result);
+  DIAG.detections++;
+  DIAG.ms += performance.now() - t0;
+  if (DIAG.calls % 240 === 0) reportDiag();
   persistCache();
   return result;
 }

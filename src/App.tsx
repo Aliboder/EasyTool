@@ -1,11 +1,28 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { cn } from "@/lib/utils";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   getConfig,
   getManifests,
   setModuleEnabled,
+  setModuleOrder,
   setTheme,
   setUnifiedHotkey,
   setMainHotkey,
@@ -24,7 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Clipboard, Gauge, Smile } from "lucide-react";
+import { Clipboard, Gauge, Smile, Search, GripVertical } from "lucide-react";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { applyTheme } from "@/lib/theme";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
@@ -32,11 +49,37 @@ import { useWindowEntrance } from "@/lib/use-window-entrance";
 const Clippage = lazy(() => import("@/modules/clipboard/Clippage").then(m => ({ default: m.Clippage })));
 const QuotaPage = lazy(() => import("@/modules/quota/QuotaPage").then(m => ({ default: m.QuotaPage })));
 const EmojiPage = lazy(() => import("@/modules/emoji/Page").then(m => ({ default: m.EmojiPage })));
+const SearchPage = lazy(() => import("@/modules/search/Page").then(m => ({ default: m.SearchPage })));
+
+function SortableModuleCard({ id, children }: { id: string; children: ReactNode }) {
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(isDragging && "z-10 opacity-70")}
+    >
+      <div className="flex items-center justify-between gap-2 rounded-lg border p-4">
+        <button
+          {...attributes}
+          {...listeners}
+          aria-label="拖动排序"
+          title="拖动排序"
+          className="cursor-grab rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </button>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 function SettingsView({
   config,
   manifests,
   onToggle,
+  onReorder,
   onThemeChange,
   onUnifiedChange,
   onMainHotkey,
@@ -45,12 +88,24 @@ function SettingsView({
   config: AppConfig;
   manifests: Manifest[];
   onToggle: (id: string, enabled: boolean) => void;
+  onReorder: (ids: string[]) => Promise<void>;
   onThemeChange: (theme: string) => void;
   onUnifiedChange: (enabled: boolean) => void;
   onMainHotkey: (hotkey: string) => Promise<void>;
   onMainFollowMouse: (enabled: boolean) => Promise<void>;
 }) {
   const [autostart, setAutostart] = useState<boolean | null>(null);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIdx = manifests.findIndex((m) => m.id === active.id);
+    const newIdx = manifests.findIndex((m) => m.id === over.id);
+    if (oldIdx === -1 || newIdx === -1) return;
+    onReorder(arrayMove(manifests, oldIdx, newIdx).map((m) => m.id));
+  };
 
   useEffect(() => {
     invoke<boolean>("plugin:autostart|is_enabled")
@@ -75,34 +130,45 @@ function SettingsView({
         <p className="text-sm text-muted-foreground">管理功能模块与全局选项</p>
       </div>
 
-      <div className="space-y-4">
-        {manifests.map((m) => {
-          const enabled = Boolean(config.modules[m.id]?.enabled);
-          return (
-            <div key={m.id} className="flex items-center justify-between rounded-lg border p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex size-9 items-center justify-center rounded-md bg-secondary">
-                  {m.icon === "gauge" ? (
-                    <Gauge className="size-4" />
-                  ) : m.icon === "smile" ? (
-                    <Smile className="size-4" />
-                  ) : (
-                    <Clipboard className="size-4" />
-                  )}
-                </div>
-                <div>
-                  <div className="text-sm font-medium">{m.name}</div>
-                  <div className="text-xs text-muted-foreground">ID: {m.id}</div>
-                </div>
-              </div>
-              <Switch
-                checked={enabled}
-                onCheckedChange={(v) => onToggle(m.id, v)}
-                aria-label={`启用${m.name}`}
-              />
-            </div>
-          );
-        })}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-muted-foreground">功能模块</h3>
+        <span className="text-xs text-muted-foreground">拖动手柄调整排序</span>
+      </div>
+
+      <div className="space-y-2">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={manifests.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+            {manifests.map((m) => {
+              const enabled = Boolean(config.modules[m.id]?.enabled);
+              return (
+                <SortableModuleCard key={m.id} id={m.id}>
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                      {m.icon === "gauge" ? (
+                        <Gauge className="size-4" />
+                      ) : m.icon === "smile" ? (
+                        <Smile className="size-4" />
+                      ) : m.icon === "search" ? (
+                        <Search className="size-4" />
+                      ) : (
+                        <Clipboard className="size-4" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{m.name}</div>
+                      <div className="text-xs text-muted-foreground">ID: {m.id}</div>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={enabled}
+                    onCheckedChange={(v) => onToggle(m.id, v)}
+                    aria-label={`启用${m.name}`}
+                  />
+                </SortableModuleCard>
+              );
+            })}
+          </SortableContext>
+        </DndContext>
       </div>
 
       <Separator />
@@ -188,6 +254,15 @@ function App() {
   const [manifests, setManifests] = useState<Manifest[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [active, setActive] = useState<string>("clipboard");
+  // keep-alive：已访问过的模块保留在 DOM（切换时显隐，不卸载重建，避免切页卡顿）
+  const [visited, setVisited] = useState<Set<string>>(() => new Set(["clipboard"]));
+
+  const selectModule = useCallback((id: string) => {
+    setActive(id);
+    if (id !== "settings") {
+      setVisited((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    }
+  }, []);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -227,16 +302,30 @@ function App() {
     localStorage.setItem("easytool_migrated", JSON.stringify(cur));
   }, [config]);
 
+  // 按 config.module_order 排序；未收录的模块按 manifest 顺序补末尾
+  const orderedManifests = useMemo(() => {
+    const order = config?.module_order ?? [];
+    const byId = new Map(manifests.map((m) => [m.id, m]));
+    const ordered = order.map((id) => byId.get(id)).filter((m): m is Manifest => !!m);
+    const seen = new Set(ordered.map((m) => m.id));
+    return [...ordered, ...manifests.filter((m) => !seen.has(m.id))];
+  }, [manifests, config?.module_order]);
+
   const enabledModules = useMemo(
     () =>
-      manifests
+      orderedManifests
         .filter((m) => config?.modules[m.id]?.enabled !== false)
         .map((m) => ({ id: m.id, name: m.name, icon: m.icon })),
-    [manifests, config],
+    [orderedManifests, config],
   );
 
   const toggleModule = async (id: string, enabled: boolean) => {
     await setModuleEnabled(id, enabled);
+    setConfig(await getConfig());
+  };
+
+  const reorderModules = async (ids: string[]) => {
+    await setModuleOrder(ids);
     setConfig(await getConfig());
   };
 
@@ -268,41 +357,30 @@ function App() {
     );
   }
 
-  const activeModule = enabledModules.find((m) => m.id === active);
-
-  const renderModule = () => {
-    if (!activeModule) {
-      return (
-        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          请先在设置中启用模块
+  const renderModules = () => (
+    <div className="relative h-full">
+      {visited.has("clipboard") && (
+        <div className={active === "clipboard" ? "h-full" : "hidden"}>
+          <Clippage popup={false} />
         </div>
-      );
-    }
-    return (
-      <Suspense fallback={
-        <div className="flex h-full items-center justify-center">
-          <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      )}
+      {visited.has("quota") && (
+        <div className={active === "quota" ? "h-full" : "hidden"}>
+          <QuotaPage />
         </div>
-      }>
-        {(() => {
-          switch (activeModule.id) {
-            case "clipboard":
-              return <Clippage popup={false} />;
-            case "quota":
-              return <QuotaPage />;
-            case "emoji":
-              return <EmojiPage />;
-            default:
-              return (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  {activeModule.name}模块页面（建设中）
-                </div>
-              );
-          }
-        })()}
-      </Suspense>
-    );
-  };
+      )}
+      {visited.has("emoji") && (
+        <div className={active === "emoji" ? "h-full" : "hidden"}>
+          <EmojiPage />
+        </div>
+      )}
+      {visited.has("search") && (
+        <div className={active === "search" ? "h-full" : "hidden"}>
+          <SearchPage />
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -310,7 +388,7 @@ function App() {
         ref={entranceRef}
         className="flex h-full min-h-0 flex-1 flex-col animate-in fade-in-0 zoom-in-95 duration-150"
       >
-        <main key={active} className="flex-1 overflow-y-auto animate-in fade-in-0 slide-in-from-right-2 duration-150">
+        <main className="flex-1 overflow-y-auto">
           {notice && (
             <div className="flex items-center justify-between border-b bg-secondary/50 px-4 py-2 text-sm">
               <span>{notice}</span>
@@ -325,18 +403,27 @@ function App() {
           {active === "settings" ? (
             <SettingsView
               config={config}
-              manifests={manifests}
+              manifests={orderedManifests}
               onToggle={toggleModule}
+              onReorder={reorderModules}
               onThemeChange={changeTheme}
               onUnifiedChange={changeUnified}
               onMainHotkey={changeMainHotkey}
               onMainFollowMouse={changeMainFollowMouse}
             />
           ) : (
-            renderModule()
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center">
+                  <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                </div>
+              }
+            >
+              {renderModules()}
+            </Suspense>
           )}
         </main>
-        <Sidebar modules={enabledModules} active={active} onSelect={setActive} />
+        <Sidebar modules={enabledModules} active={active} onSelect={selectModule} />
       </div>
     </div>
   );
