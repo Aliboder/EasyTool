@@ -30,6 +30,7 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useHorizontalWheel } from "@/lib/use-horizontal-wheel";
 import { QuotaSettings } from "./QuotaSettings";
 
 interface StatusPayload {
@@ -50,9 +51,9 @@ interface Settings {
 }
 
 const WINDOW_NAMES: Record<string, string> = {
-  session: "5小时",
-  weekly: "每周",
-  monthly: "每月",
+  session: "滚动用量",
+  weekly: "每周用量",
+  monthly: "每月用量",
 };
 
 const BLOCKS = ["stats", "chart", "go"] as const;
@@ -65,10 +66,12 @@ function fmtCountdown(ts: number | null): string {
   if (!ts) return "—";
   const diff = ts * 1000 - Date.now();
   if (diff <= 0) return "即将重置";
-  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
-  if (h > 0) return `${h}h${m}m`;
-  return `${m}m`;
+  if (d > 0) return `${d} 天 ${h} 小时 ${m} 分钟`;
+  if (h > 0) return `${h} 小时 ${m} 分钟`;
+  return `${m} 分钟`;
 }
 
 // 让位式拖拽（cc-switch 同款）：所有卡片平滑让位；transform 取整 + 拖动中禁 transition
@@ -111,6 +114,20 @@ export function QuotaPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<number | null>(null);
   const [order, setOrder] = useState<string[]>(["stats", "chart", "go"]);
+  const [dailyHistory, setDailyHistory] = useState<{ date: string; amount: number }[]>([]);
+  const { ref: chartScrollRef, nodeRef: chartNodeRef } = useHorizontalWheel<HTMLDivElement>();
+  const [chartWidth, setChartWidth] = useState(0);
+
+  // 测量图表可见宽度：数据少时柱子拉伸铺满；数据多时固定最小宽度横向滚动。
+  // 用回调 ref 在图表节点真正挂载后再绑定观察器（图表数据是异步加载的）
+  const chartWrapRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const en of entries) setChartWidth(en.contentRect.width);
+    });
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -121,8 +138,19 @@ export function QuotaPage() {
     invoke<StatusPayload>("get_status").then(setStatus).catch(console.error);
     invoke<StatsData>("get_stats_data").then(setStats).catch(console.error);
     invoke<Settings>("get_settings").then(setSettings).catch(console.error);
+    invoke<{ date: string; amount: number }[]>("get_daily_history")
+      .then(setDailyHistory)
+      .catch(console.error);
     setLastRefresh(Date.now());
   }, []);
+
+  // 加载后滚到最右，默认看到最近的消费（今天）
+  useEffect(() => {
+    const el = chartNodeRef.current;
+    if (el && dailyHistory.length) {
+      el.scrollLeft = el.scrollWidth;
+    }
+  }, [dailyHistory, chartNodeRef]);
 
   useEffect(() => {
     refresh();
@@ -165,11 +193,16 @@ export function QuotaPage() {
   };
 
   const bs = balanceStatus();
-  const daily = stats?.daily ?? [];
-  const maxDaily = Math.max(1, ...daily.map((d) => d.amount), 1);
   const today = stats?.today ?? 0;
   const avg = stats?.avg_7d ?? 0;
   const trendPct = avg > 0 ? ((today - avg) / avg) * 100 : null;
+  const chartMax = Math.max(1, ...dailyHistory.map((d) => d.amount), 1);
+  // 自适应：数据少时柱子铺满容器，数据多时固定最小宽度横向滚动
+  const MIN_BAR_W = 32;
+  const GAP = 4;
+  const totalNeeded = dailyHistory.length * MIN_BAR_W + (dailyHistory.length - 1) * GAP;
+  const chartFits = chartWidth > 0 && totalNeeded <= chartWidth;
+  const barW = chartFits ? undefined : MIN_BAR_W;
 
   const renderBlock = (id: string) => {
     switch (id) {
@@ -263,48 +296,87 @@ export function QuotaPage() {
         return (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">近 14 天每日消费</CardTitle>
+              <CardTitle className="text-sm">消费历史</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="relative flex h-40 items-end gap-1">
-                {avg > 0 && (
-                  <div
-                    className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-muted-foreground/50"
-                    style={{ bottom: `${(avg / maxDaily) * 100}%` }}
-                  >
-                    <span className="absolute -top-4 right-0 text-[9px] text-muted-foreground">
-                      日均 {fmtMoney(avg)}
-                    </span>
-                  </div>
-                )}
-                {daily.map((d, i) => {
-                  const isLast = i === daily.length - 1;
-                  return (
-                    <div key={i} className="group relative flex-1">
-                      <div
-                        className={cn(
-                          "absolute inset-x-0 bottom-0 rounded-t transition-colors",
-                          isLast
-                            ? "bg-primary hover:bg-primary/80"
-                            : "bg-primary/20 hover:bg-primary/40",
+              {dailyHistory.length === 0 ? (
+                <div className="flex h-36 items-center justify-center text-sm text-muted-foreground">
+                  暂无历史数据
+                </div>
+              ) : (
+                <div ref={chartWrapRef}>
+                  <div ref={chartScrollRef} className="overflow-x-auto">
+                    <div style={chartFits ? undefined : { width: `${totalNeeded}px` }}>
+                      <div className="relative flex h-44 items-end gap-1">
+                        {avg > 0 && (
+                          <div
+                            className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-muted-foreground/50"
+                            style={{ bottom: `${(avg / chartMax) * 74}%` }}
+                          >
+                            <span className="absolute -top-4 right-0 text-[9px] text-muted-foreground">
+                              日均 {fmtMoney(avg)}
+                            </span>
+                          </div>
                         )}
-                        style={{ height: `${Math.max(3, (d.amount / maxDaily) * 100)}%` }}
-                      />
-                      <div
-                        className={cn(
-                          "pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-popover px-1.5 py-0.5 text-[10px] text-popover-foreground opacity-0 shadow transition-opacity group-hover:opacity-100",
-                        )}
-                      >
-                        {fmtMoney(d.amount)}
+                        {dailyHistory.map((d, i) => {
+                          const isLast = i === dailyHistory.length - 1;
+                          const hPct = (d.amount / chartMax) * 74;
+                          return (
+                            <div
+                              key={i}
+                              className={cn(
+                                "group relative h-full shrink-0",
+                                chartFits && "flex-1",
+                              )}
+                              style={barW ? { width: barW } : undefined}
+                            >
+                              <div
+                                className={cn(
+                                  "absolute inset-x-0 bottom-0 rounded-t transition-colors",
+                                  isLast
+                                    ? "bg-primary hover:bg-primary/80"
+                                    : "bg-primary/20 hover:bg-primary/40",
+                                )}
+                                style={{ height: `${Math.max(3, hPct)}%` }}
+                              />
+                              {chartFits && d.amount > 0 && (
+                                <div
+                                  className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] text-muted-foreground"
+                                  style={{ bottom: `calc(${Math.max(3, hPct)}% + 2px)` }}
+                                >
+                                  {fmtMoney(d.amount)}
+                                </div>
+                              )}
+                              <div
+                                className={cn(
+                                  "pointer-events-none absolute left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded bg-popover px-1.5 py-0.5 text-[10px] text-popover-foreground opacity-0 shadow transition-opacity group-hover:opacity-100",
+                                )}
+                                style={{ bottom: `calc(${Math.max(3, hPct)}% + 18px)` }}
+                              >
+                                {d.date} · {fmtMoney(d.amount)}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                      <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] text-muted-foreground">
-                        {d.date}
+                      <div className="flex gap-1 pt-0.5">
+                        {dailyHistory.map((d, i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              "shrink-0 text-center text-[9px] text-muted-foreground",
+                              chartFits && "flex-1",
+                            )}
+                            style={barW ? { width: barW } : undefined}
+                          >
+                            {i % 2 === 0 || i === dailyHistory.length - 1 ? d.date : ""}
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-              <div className="h-5" />
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         );
@@ -327,7 +399,10 @@ export function QuotaPage() {
                     <div className="mb-1 flex items-center justify-between text-xs">
                       <span>{WINDOW_NAMES[w.window] ?? w.window}</span>
                       <span className="text-muted-foreground">
-                        重置：{fmtCountdown(w.resets_at)}
+                        重置：
+                        <span className="font-semibold text-primary">
+                          {fmtCountdown(w.resets_at)}
+                        </span>
                       </span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-muted">

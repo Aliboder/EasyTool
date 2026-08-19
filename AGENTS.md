@@ -13,7 +13,7 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），单应用 + 模块�
 ## 技术栈
 
 - 后端：Tauri 2 + Rust（rusqlite、keyring、reqwest、chrono、tauri-plugin-global-shortcut / single-instance / notification / autostart / opener）
-- 前端：React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + lucide-react
+- 前端：React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + lucide-react + @dnd-kit（拖拽排序）
 - 构建：Vite（`appType: "mpa"`，多 HTML 入口）、`@tauri-apps/cli`
 
 ## 目录结构
@@ -22,7 +22,7 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），单应用 + 模块�
 src-tauri/
 ├── src/
 │   ├── lib.rs            # 壳程序：托盘、全局热键、窗口事件、模块 setup、SimpleLogger、log_frontend 命令
-│   ├── config.rs         # AppConfig（modules/hotkeys/theme/migrated/unified_hotkey）+ ConfigState(Mutex)
+│   ├── config.rs         # AppConfig + ConfigState(Mutex)；含 set_* / save_* 命令
 │   ├── migrate.rs        # 旧数据一次性迁移（PasteBoard 库、QuotaMonitor 余额记录）
 │   └── modules/
 │       ├── mod.rs        # 模块注册表：Manifest 读取（resources）、merge_manifests、get_manifests
@@ -32,30 +32,35 @@ src-tauri/
 ├── capabilities/default.json  # 窗口与权限声明
 └── tauri.conf.json
 src/
-├── App.tsx               # 壳 UI：侧边栏 + 模块页 + 设置页 + 迁移提示条
+├── App.tsx               # 壳 UI：底部导航栏 + 模块页 + 设置页 + 迁移提示条
 ├── lib/api.ts            # invoke 封装
-├── float_window.tsx / clipboard_popup.tsx  # 独立窗口入口
+├── lib/theme.ts          # applyTheme（多窗口共享）
+├── lib/use-horizontal-wheel.ts  # 滚轮→横向滚动 hook（剪贴板/消费历史共用）
+├── components/hotkey-recorder.tsx  # 热键录制组件（剪贴板与主窗口热键共用）
+├── clipboard_popup.tsx   # 剪贴板弹窗入口
 └── modules/              # clipboard/ 和 quota/ 前端组件
 ```
 
 ## 关键机制
 
-### 窗口（三个，均在 Rust 侧动态创建）
-- `main`：主窗口（tauri.conf.json 定义），关闭 = 隐藏到托盘
-- `clipboard_popup`：剪贴板弹窗，跟随鼠标定位，失焦自动隐藏，按热键呼出
-- `quota_float`：额度悬浮窗（220×80，decorations(false)），设置页开关显示/隐藏
+### 窗口（两个，均在 Rust 侧动态创建/定义）
+- `main`：主窗口（tauri.conf.json 定义），关闭 = 隐藏到托盘；统一呼出模式下可「点击外部关闭 / 热键切换 / 置顶 / 跳过任务栏」
+- `clipboard_popup`：剪贴板弹窗，跟随鼠标或固定位置，失焦自动隐藏，按热键呼出
 
-**坑**：Windows 下 `.transparent(true)` 的 WebView2 窗口在 hide 后再 show 会崩溃（0xcfffffff），已放弃透明方案，悬浮窗用深色不透明背景。
+**坑**：Windows 下 `.transparent(true)` 的 WebView2 窗口在 hide 后再 show 会崩溃（0xcfffffff），已放弃透明方案。
 
 ### 全局热键与统一呼出
-- `config.unified_hotkey`（默认 true）：开启时只注册主窗口热键（Ctrl+Shift+E），模块独立热键全部禁用；关闭时两者共存
+- `config.unified_hotkey`（默认 true）：
+  - 开启：只注册主窗口热键（默认 Ctrl+Shift+E），模块独立热键禁用；主窗口按「面板」行为（点击外部关闭、热键切换、置顶、跳过任务栏、可选跟随鼠标）
+  - 关闭：只注册各模块独立热键，主窗口热键失效（改由托盘呼出）
 - 热键匹配坑：`shortcut.to_string()` 输出为 `shift+control+keya` 格式，与配置字符串不匹配。必须用 `Shortcut::from_str(&cfg).map(|s| s == *shortcut)` 做对象比较（见 lib.rs handler）
 - 重新注册：改热键/unified 后调用 `reapply_hotkeys(app)`
+- 热键录制：global-hotkey crate 解析格式为 `Ctrl/Shift/Alt/Super`（Windows 键用 **Super**，不是 Win）+ 键名（`A-Z / 0-9 / F1-F24 / ArrowUp / Enter / Space` 等），见 `HotkeyRecorder`
 
 ### 配置与数据
 - 目录：`%APPDATA%\com.aliboder.easytool\`（`app_data_dir()`）
-- `config.json`：`{modules, hotkeys, theme, migrated, unified_hotkey}`；模块配置为 `HashMap<String, Value>`
-- `clipboard.db`（SQLite，WAL 模式）、`images/`、`thumbs/`、`balance_history.json`（`{"records":[{time,balance}]}`，ISO 时间）
+- `config.json`：`{modules, hotkeys, theme, migrated, unified_hotkey, main_size, main_follow_mouse}`；模块配置为 `HashMap<String, Value>`
+- `clipboard.db`（SQLite，WAL 模式）含 `pin_order` 列（schema v2，固定条目手动排序）、`images/`、`thumbs/`、`balance_history.json`（`{"records":[{time,balance}]}`，ISO 时间）
 - 密钥存 Windows Credential Manager（keyring，service `com.aliboder.easytool`，users `deepseek` / `opencode-go`），不落盘明文
 
 ### API
@@ -64,7 +69,13 @@ src/
 
 ### 额度轮询
 - `poll_loop` 后台线程按 `refresh_interval_sec`（最小 5s）调 `fetch_once`：查询余额 + Go 套餐 → 更新 `QuotaState` → 告警（阈值一次 + 消费突增每日一次）→ 追加历史 → emit `quota://updated`
-- 前端 `get_status` / `get_stats_data` 轮询获取
+- 前端 `get_status` / `get_stats_data` / `get_daily_history` 轮询获取
+- 消费历史：完整时间线用 `history::daily_series_all`（最早记录日→今天），前端横向滚动查看
+
+### 固定条目排序
+- DB `items.pin_order`（INTEGER，NULL = 未排过序，按时间倒序排最后）
+- 固定 Tab 查询按 `pin_order IS NULL, pin_order ASC, created_at DESC` 排序
+- 拖拽排序：前端按区（图片/文件/文本）用 @dnd-kit 重排后调 `set_pin_order(ids)` 持久化整组顺序
 
 ### 迁移
 - `migrate::run_migration` 在 setup 启动时自动执行一次，结果写 `config.migrated` 标记
@@ -75,14 +86,16 @@ src/
 
 ```bash
 npm run tauri dev      # 开发（需保持 http://localhost:1420 端口空闲）
-npm run tauri build    # 打包（产物在 src-tauri/target/release/bundle/nsis/ 与 portable/）
+npm run tauri build    # 打包（产物在 src-tauri/target/release/bundle/nsis/）
 cargo test             # Rust 测试（在 src-tauri/ 下执行）
 npx tsc --noEmit       # 前端类型检查
 ```
 
+**注意**：当前 Tauri CLI 只支持 `msi/nsis` 打包目标，**不支持 portable**。发版流程：改版本号（三处同步）→ build → git tag → `gh release create`。
+
 ## 测试
 
-- 后端 36 个单元测试（clipboard 24 + quota 10 + 迁移 2 + 其他），纯逻辑测试无 GUI 依赖
+- 后端 37+ 单元测试（clipboard / quota / 迁移 / 图标探针），纯逻辑测试无 GUI 依赖（file_icons 的 probe_icons 除外，依赖真实 Shell 图标）
 - 前端无测试框架；验证依赖人工
 
 ## 已知坑与约束
@@ -94,6 +107,11 @@ npx tsc --noEmit       # 前端类型检查
 5. **新增前端入口**：需同时改 `vite.config.ts` 的 `rollupOptions.input`、根目录新建 `.html`、Rust 侧建窗口（`WebviewUrl::App("xxx.html")`）、`capabilities/default.json` 的 `windows` 数组和所需权限
 6. 模块 manifest 走 `resources`（打包后嵌入 exe），dev 模式 fallback 到 `src-tauri/modules` 相对路径
 7. `keyring` 必须启用 `features = ["windows-native"]`，否则 Windows 上 `Entry::new().unwrap()` 直接 panic
+8. **@dnd-kit 拖拽 + WebView2 渲染变形**：**大尺寸卡片 + opacity + transform 组合会让窗口形状变形**（压扁）。不要给被拖的大卡片加透明度；DragOverlay 方案也会出问题；额度面板用 `verticalListSortingStrategy` + `will-change: transform` + 拖动中禁 transition。**小尺寸条目（剪贴板固定板块）拖拽安全**
+9. **ResizeObserver 绑定异步挂载节点要用回调 ref**：空依赖 `useEffect` 只在组件挂载时跑一次，若目标节点是异步渲染的（如数据加载后），观察器绑不上。用 `useCallback` 回调 ref（React 19 支持 ref 清理）
+10. **横向滚动**：滚轮→`scrollLeft` 用共享 `useHorizontalWheel`（callback ref，返回 `{ ref, nodeRef }`）；注意 `overflow-x-auto` 会把 `overflow-y` 也变 auto，悬浮元素别放超出滚动容器顶部
+11. **版本号三处同步**：改版本需同时改 `package.json`、`tauri.conf.json`、`src-tauri/Cargo.toml`
+12. **Windows 文件图标**：`SHGFI_USEFILEATTRIBUTES` 取不到格式专属图标（txt/图片等都退化为通用图标），必须访问真实文件（`SHGetFileInfoW` 不带该 flag）再回退；按扩展名缓存会污染同扩展名所有文件，按路径缓存
 
 ## 代码查询规则（必须遵守）
 

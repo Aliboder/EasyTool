@@ -23,6 +23,7 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useHorizontalWheel } from "@/lib/use-horizontal-wheel";
 import { ClipSettings } from "./ClipSettings";
 
 interface ItemDto {
@@ -75,20 +76,6 @@ function fmtTime(ts: number): string {
   const d = new Date(ts);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-function useHorizontalWheel<T extends HTMLElement>() {
-  return useCallback((node: T | null) => {
-    if (!node) return;
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY !== 0 && node.scrollWidth > node.clientWidth) {
-        node.scrollLeft += e.deltaY;
-        e.preventDefault();
-      }
-    };
-    node.addEventListener("wheel", onWheel, { passive: false });
-    return () => node.removeEventListener("wheel", onWheel);
-  }, []);
 }
 
 // 固定板块内可拖拽排序的小条目包装（小尺寸元素，transform 不会触发大卡片渲染问题）
@@ -377,8 +364,8 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
         },
       ];
 
-  const imgScrollRef = useHorizontalWheel<HTMLDivElement>();
-  const fileScrollRef = useHorizontalWheel<HTMLDivElement>();
+  const { ref: imgScrollRef } = useHorizontalWheel<HTMLDivElement>();
+  const { ref: fileScrollRef } = useHorizontalWheel<HTMLDivElement>();
   const gridRef = useRef<HTMLDivElement | null>(null);
   const gridStep = () => {
     const el = gridRef.current;

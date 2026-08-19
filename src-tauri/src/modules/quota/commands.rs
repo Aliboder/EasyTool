@@ -208,6 +208,18 @@ pub fn get_stats_data(app: AppHandle) -> StatsData {
     }
 }
 
+/// 完整消费历史（每日，最早记录日到今天），消费历史时间线用
+#[tauri::command]
+pub fn get_daily_history(app: AppHandle) -> Vec<DailyPoint> {
+    use chrono::Local;
+    let records = history::load(&history_path(&app));
+    let today = Local::now().date_naive();
+    history::daily_series_all(&records, today)
+        .into_iter()
+        .map(|(d, a)| DailyPoint { date: d, amount: a })
+        .collect()
+}
+
 use super::history_path;
 
 #[cfg(test)]

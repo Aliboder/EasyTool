@@ -129,6 +129,27 @@ pub fn daily_series(records: &[Record], days: u32, today: NaiveDate) -> Vec<(Str
         .collect()
 }
 
+/// 完整消费时间线：从最早有记录的日期到今天，每日消费序列 [0]=最早 ... [n-1]=今天；
+/// 无记录或有余额上升的日期为 0
+pub fn daily_series_all(records: &[Record], today: NaiveDate) -> Vec<(String, f64)> {
+    let mut first: Option<NaiveDate> = None;
+    for r in records {
+        let t = r.time.date_naive();
+        if t > today {
+            continue;
+        }
+        first = Some(match first {
+            Some(f) => f.min(t),
+            None => t,
+        });
+    }
+    let Some(first) = first else {
+        return Vec::new();
+    };
+    let days = (today - first).num_days() as u32 + 1;
+    daily_series(records, days, today)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

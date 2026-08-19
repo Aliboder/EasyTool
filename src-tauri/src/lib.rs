@@ -433,6 +433,7 @@ pub fn run() {
             modules::quota::commands::set_go_key,
             modules::quota::commands::test_key,
             modules::quota::commands::get_stats_data,
+            modules::quota::commands::get_daily_history,
         ])
         .on_window_event(|window, event| {
             match event {
