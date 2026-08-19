@@ -17,11 +17,10 @@ import { loadCatalog, type Catalog, type GroupDto } from "./api";
 import { SmartEmoji } from "./SmartEmoji";
 
 const GROUP_TABS = [
-  { id: "all", zh: "全部" },
+  { id: "smileys", zh: "表情" },
   { id: "recent", zh: "最近" },
   { id: "mine", zh: "我的表情" },
   { id: "favorite", zh: "收藏" },
-  { id: "smileys", zh: "表情" },
   { id: "hearts", zh: "爱心" },
   { id: "gestures", zh: "手势" },
   { id: "people", zh: "人物" },
@@ -43,7 +42,7 @@ const GROUP_TABS = [
 
 export function EmojiPage() {
   const [cat, setCat] = useState<Catalog | null>(null);
-  const [tab, setTab] = useState("all");
+  const [tab, setTab] = useState("smileys");
   const [q, setQ] = useState("");
   const [customGroups, setCustomGroups] = useState<GroupDto[]>([]);
   const [showSettings, setShowSettings] = useState(false);
@@ -117,7 +116,7 @@ export function EmojiPage() {
     let list = cat.emoji;
     if (tab === "recent") list = list.filter((e) => e.last_used_at != null);
     else if (tab === "favorite") list = list.filter((e) => e.is_favorite);
-    else if (tab !== "all" && tab !== "mine") list = list.filter((e) => e.group === tab);
+    else if (tab !== "mine") list = list.filter((e) => e.group === tab);
     if (ql) {
       list = list.filter(
         (e) =>
@@ -134,14 +133,11 @@ export function EmojiPage() {
     let list = cat.customs;
     if (tab === "favorite") list = list.filter((c) => c.is_favorite);
     else if (tab === "recent") list = list.filter((c) => c.last_used_at != null);
-    else if (
-      tab !== "all" &&
-      tab !== "favorite" &&
-      tab !== "recent" &&
-      tab !== "mine"
-    ) {
+    else if (tab !== "mine") {
+      // 自定义分组 Tab：显示组内图片表情；普通分类 Tab：不含图片表情
       const gid = customGroups.find((g) => g.id === Number(tab))?.id;
-      if (gid !== undefined) list = list.filter((c) => c.group_id === gid);
+      if (gid === undefined) return [];
+      list = list.filter((c) => c.group_id === gid);
     }
     if (ql) list = list.filter((c) => c.name.toLowerCase().includes(ql));
     return list;

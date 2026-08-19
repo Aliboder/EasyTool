@@ -11,7 +11,6 @@ const TABS = [
   "smileys",
   "recent",
   "mine",
-  "all",
   "favorite",
   "hearts",
   "gestures",
@@ -32,7 +31,6 @@ const TABS = [
   "flags",
 ];
 const TAB_ZH: Record<string, string> = {
-  all: "全部",
   recent: "最近",
   mine: "我的表情",
   favorite: "收藏",
@@ -87,7 +85,7 @@ export function EmojiPopup() {
       emojis = emojis.filter((e) => e.last_used_at != null);
     } else if (tab === "favorite") {
       emojis = emojis.filter((e) => e.is_favorite);
-    } else if (tab !== "all" && tab !== "mine") {
+    } else if (tab !== "mine") {
       emojis = emojis.filter((e) => e.group === tab);
     }
     if (tab === "mine") {
@@ -106,14 +104,13 @@ export function EmojiPopup() {
         (e) => e.name_en.toLowerCase().includes(ql) || e.keywords_zh.some((k) => k.includes(q.trim())),
       );
     }
+    // 图片表情只出现在「最近/收藏」；分类 Tab 只显示 Emoji
     const customs =
       tab === "favorite"
         ? cat.customs.filter((c) => c.is_favorite)
-        : tab === "mine"
-          ? []
-          : tab === "recent"
-            ? cat.customs.filter((c) => c.last_used_at != null)
-            : cat.customs;
+        : tab === "recent"
+          ? cat.customs.filter((c) => c.last_used_at != null)
+          : [];
     const items = [
       ...customs.map((c) => ({
         type: "custom" as const,
