@@ -1,8 +1,30 @@
 // 智能 Emoji 渲染：优先系统字体（字符），系统字体不支持（豆腐块）时回退 Twemoji 图片。
-// canvas 像素检测「中心是否有字形」，结果按字符缓存（module 级，运行期内一次检测）。
+// canvas 像素检测，结果持久化到 localStorage（跨启动复用，无需每次重测）。
 import { useMemo } from "react";
 
-const SUPPORT_CACHE = new Map<string, boolean>();
+const STORAGE_KEY = "easytool_emoji_supported_v1";
+
+function loadCache(): Map<string, boolean> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      return new Map(Object.entries(JSON.parse(raw) as Record<string, boolean>));
+    }
+  } catch {
+    // localStorage 不可用时退化为空缓存
+  }
+  return new Map();
+}
+
+function persistCache() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(SUPPORT_CACHE)));
+  } catch {
+    // 忽略写入失败（配额/隐私模式）
+  }
+}
+
+const SUPPORT_CACHE = loadCache();
 const BASE = import.meta.env.BASE_URL;
 
 function isSystemSupported(char: string): boolean {
@@ -47,6 +69,7 @@ function isSystemSupported(char: string): boolean {
     result = true; // 检测失败时按支持处理（回退到字符）
   }
   SUPPORT_CACHE.set(char, result);
+  persistCache();
   return result;
 }
 
