@@ -8,6 +8,8 @@ import { loadCatalog, type Catalog } from "./api";
 
 const TABS = [
   "smileys",
+  "recent",
+  "mine",
   "all",
   "favorite",
   "people",
@@ -21,6 +23,8 @@ const TABS = [
 ];
 const TAB_ZH: Record<string, string> = {
   all: "全部",
+  recent: "最近",
+  mine: "我的表情",
   favorite: "收藏",
   smileys: "笑脸",
   people: "人物",
@@ -58,14 +62,37 @@ export function EmojiPopup() {
     if (!cat) return [];
     const ql = q.trim().toLowerCase();
     let emojis = cat.emoji;
-    if (tab === "favorite") emojis = emojis.filter((e) => e.is_favorite);
-    else if (tab !== "all" && tab !== "favorite") emojis = emojis.filter((e) => e.group === tab);
+    if (tab === "recent") {
+      emojis = emojis.filter((e) => e.last_used_at != null);
+    } else if (tab === "favorite") {
+      emojis = emojis.filter((e) => e.is_favorite);
+    } else if (tab !== "all" && tab !== "mine") {
+      emojis = emojis.filter((e) => e.group === tab);
+    }
+    if (tab === "mine") {
+      // 我的表情：仅图片表情
+      const items = cat.customs.map((c) => ({
+        type: "custom" as const,
+        id: String(c.id),
+        label: c.name,
+        thumb: c.thumb,
+        ts: c.last_used_at ?? 0,
+      }));
+      return items.sort((a, b) => b.ts - a.ts);
+    }
     if (ql) {
       emojis = emojis.filter(
         (e) => e.name_en.toLowerCase().includes(ql) || e.keywords_zh.some((k) => k.includes(q.trim())),
       );
     }
-    const customs = tab === "favorite" ? cat.customs.filter((c) => c.is_favorite) : cat.customs;
+    const customs =
+      tab === "favorite"
+        ? cat.customs.filter((c) => c.is_favorite)
+        : tab === "mine"
+          ? []
+          : tab === "recent"
+            ? cat.customs.filter((c) => c.last_used_at != null)
+            : cat.customs;
     const items = [
       ...customs.map((c) => ({
         type: "custom" as const,

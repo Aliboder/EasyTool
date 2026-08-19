@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
 import { getConfig } from "@/lib/api";
-import { Search, Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2 } from "lucide-react";
+import { Search, Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -311,6 +311,16 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       setPreview(null);
     } finally {
       setPreviewLoading(false);
+    }
+  };
+
+  const addAsEmoji = async (item: ItemDto) => {
+    setMenu(null);
+    try {
+      await invoke("add_clipboard_item_as_emoji", { id: item.id });
+      alert("已添加为表情");
+    } catch (e) {
+      alert(String(e));
     }
   };
 
@@ -880,6 +890,15 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
             <Copy className="size-3.5" />
             复制到剪贴板
           </button>
+          {isImageItem(menu.item) && (
+            <button
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
+              onClick={() => addAsEmoji(menu.item)}
+            >
+              <Smile className="size-3.5" />
+              添加为表情
+            </button>
+          )}
           {isImageItem(menu.item) && (
             <button
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"

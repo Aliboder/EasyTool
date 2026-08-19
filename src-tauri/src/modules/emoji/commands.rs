@@ -202,24 +202,53 @@ pub fn import_emoji_files(
     Ok(ids)
 }
 
-/// 从剪贴板添加图片为表情（读 CF_DIB → 存 PNG → 入库）
+/// 把剪贴板历史中的一张图片条目存为表情（image 类型用原图路径，files 图片用文件路径）
 #[tauri::command]
-pub fn add_emoji_from_clipboard(app: AppHandle, state: State<'_, Db>) -> R<i64> {
-    let Some((rgba, w, h)) = clipboard::read_image_rgba() else {
-        return Err("剪贴板中没有图片".into());
+pub fn add_clipboard_item_as_emoji(app: AppHandle, state: State<'_, Db>, id: i64) -> R<i64> {
+    use crate::modules::clipboard::models::ItemKind;
+    let clip = app.state::<crate::modules::clipboard::state::AppState>();
+    let item = {
+        let db = clip.db.lock().unwrap();
+        db.get_item(id).map_err(|e| e.to_string())?.ok_or("条目不存在")?
     };
-    let png = clipboard::rgba_to_png(&rgba, w, h).map_err(|e| e.to_string())?;
+    // 确定源文件路径：image 类型取原图，files 类型取列表首个文件
+    let src = match item.kind {
+        ItemKind::Image => item.image_path.ok_or("图片文件缺失")?,
+        ItemKind::Files => {
+            let paths: Vec<String> =
+                serde_json::from_str(item.file_paths.as_deref().unwrap_or("[]"))
+                    .unwrap_or_default();
+            paths.into_iter().next().ok_or("文件列表为空")?
+        }
+        ItemKind::Text => return Err("该条目不是图片".into()),
+    };
+    let src_path = Path::new(&src);
+    let ext = src_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .unwrap_or_else(|| "png".into());
+    const EXTS: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
+    if !EXTS.contains(&ext.as_str()) {
+        return Err(format!("不支持的图片类型: {ext}"));
+    }
     let dir = module_dir(&app);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let id = state
-        .insert_custom("", "剪贴板图片")
-        .map_err(|e| e.to_string())?;
-    let dst = dir.join(format!("{id}.png"));
-    std::fs::write(&dst, &png).map_err(|e| e.to_string())?;
+    let name = src_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("表情")
+        .to_string();
+    let eid = state.insert_custom("", &name).map_err(|e| e.to_string())?;
+    let dst = dir.join(format!("{eid}.{ext}"));
+    if std::fs::copy(&src_path, &dst).is_err() {
+        let _ = state.delete_custom(eid);
+        return Err("复制文件失败".into());
+    }
     state
-        .set_custom_path(id, dst.to_string_lossy().as_ref())
+        .set_custom_path(eid, dst.to_string_lossy().as_ref())
         .map_err(|e| e.to_string())?;
-    Ok(id)
+    Ok(eid)
 }
 
 #[tauri::command]

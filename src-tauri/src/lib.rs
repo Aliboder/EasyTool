@@ -645,7 +645,7 @@ pub fn run() {
             modules::emoji::commands::get_emoji_dynamic,
             modules::emoji::commands::get_groups,
             modules::emoji::commands::import_emoji_files,
-            modules::emoji::commands::add_emoji_from_clipboard,
+            modules::emoji::commands::add_clipboard_item_as_emoji,
             modules::emoji::commands::delete_custom_emoji,
             modules::emoji::commands::rename_custom_emoji,
             modules::emoji::commands::move_custom_emoji,

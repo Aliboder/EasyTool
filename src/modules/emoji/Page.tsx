@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   Search,
   Upload,
-  ClipboardPaste,
   FolderPlus,
   Trash2,
   Star,
@@ -17,6 +16,8 @@ import { loadCatalog, type Catalog, type GroupDto } from "./api";
 
 const GROUP_TABS = [
   { id: "all", zh: "全部" },
+  { id: "recent", zh: "最近" },
+  { id: "mine", zh: "我的表情" },
   { id: "favorite", zh: "收藏" },
   { id: "smileys", zh: "笑脸" },
   { id: "people", zh: "人物" },
@@ -35,6 +36,21 @@ export function EmojiPage() {
   const [q, setQ] = useState("");
   const [customGroups, setCustomGroups] = useState<GroupDto[]>([]);
   const [showSettings, setShowSettings] = useState(false);
+  // 增量渲染：不限制总数，滚动到底加载下一批（避免一次性渲染 1900+ 节点）
+  const [visible, setVisible] = useState(240);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setVisible(240);
+  }, [tab, q]);
+
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+      setVisible((v) => v + 240);
+    }
+  }, []);
 
   const load = async () => {
     const c = await loadCatalog();
@@ -54,8 +70,9 @@ export function EmojiPage() {
     if (!cat) return [];
     const ql = q.trim().toLowerCase();
     let list = cat.emoji;
-    if (tab === "favorite") list = list.filter((e) => e.is_favorite);
-    else if (tab !== "all") list = list.filter((e) => e.group === tab);
+    if (tab === "recent") list = list.filter((e) => e.last_used_at != null);
+    else if (tab === "favorite") list = list.filter((e) => e.is_favorite);
+    else if (tab !== "all" && tab !== "mine") list = list.filter((e) => e.group === tab);
     if (ql) {
       list = list.filter(
         (e) =>
@@ -71,7 +88,13 @@ export function EmojiPage() {
     const ql = q.trim().toLowerCase();
     let list = cat.customs;
     if (tab === "favorite") list = list.filter((c) => c.is_favorite);
-    else if (tab !== "all" && tab !== "favorite") {
+    else if (tab === "recent") list = list.filter((c) => c.last_used_at != null);
+    else if (
+      tab !== "all" &&
+      tab !== "favorite" &&
+      tab !== "recent" &&
+      tab !== "mine"
+    ) {
       const gid = customGroups.find((g) => g.id === Number(tab))?.id;
       if (gid !== undefined) list = list.filter((c) => c.group_id === gid);
     }
@@ -118,19 +141,6 @@ export function EmojiPage() {
           className="flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
         >
           <Upload className="size-3.5" /> 导入图片
-        </button>
-        <button
-          onClick={async () => {
-            try {
-              await invoke("add_emoji_from_clipboard");
-              await refreshCustom();
-            } catch (e) {
-              console.error(e);
-            }
-          }}
-          className="flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
-        >
-          <ClipboardPaste className="size-3.5" /> 从剪贴板添加
         </button>
         <button
           onClick={async () => {
@@ -189,10 +199,10 @@ export function EmojiPage() {
         ))}
       </div>
 
-      <div className="mt-3 flex-1 overflow-y-auto">
-        {visibleEmoji.length > 0 && (
+      <div ref={scrollRef} onScroll={onScroll} className="mt-3 flex-1 overflow-y-auto">
+        {visibleEmoji.slice(0, visible).length > 0 && (
           <div className="grid grid-cols-[repeat(auto-fill,40px)] gap-1">
-            {visibleEmoji.map((e) => (
+            {visibleEmoji.slice(0, visible).map((e) => (
               <button
                 key={e.char}
                 title={`${e.name_en}`}
@@ -213,9 +223,9 @@ export function EmojiPage() {
             ))}
           </div>
         )}
-        {visibleCustoms.length > 0 && (
+        {visibleCustoms.slice(0, visible).length > 0 && (
           <div className="mt-3 grid grid-cols-[repeat(auto-fill,56px)] gap-2">
-            {visibleCustoms.map((c) => (
+            {visibleCustoms.slice(0, visible).map((c) => (
               <div key={c.id} className="group relative">
                 <button
                   onClick={() => onPick("custom", String(c.id))}
