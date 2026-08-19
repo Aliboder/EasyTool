@@ -49,20 +49,26 @@ export function EmojiPage() {
   const [visible, setVisible] = useState(240);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const listLenRef = useRef(0);
+  const lastLoadRef = useRef(0);
 
-  // 切换分类/搜索时：重置渲染批次并回到列表顶部
+  // 切换分类/搜索时：重置渲染批次（列表容器用 key 强制重建，滚动位置自然归零）
   useEffect(() => {
     setVisible(240);
-    scrollRef.current?.scrollTo(0, 0);
   }, [tab, q]);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // 内容不足一屏：无需增量加载（条件恒真会误触发累积）
+    if (el.scrollHeight <= el.clientHeight) return;
+    // 节流：200ms 内只响应一次
+    const now = Date.now();
+    if (now - lastLoadRef.current < 200) return;
     const max = listLenRef.current;
     setVisible((v) => {
       if (v >= max) return v; // 已全部渲染，停止加载
       if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+        lastLoadRef.current = Date.now();
         return Math.min(v + 240, max);
       }
       return v;
@@ -218,7 +224,7 @@ export function EmojiPage() {
         ))}
       </div>
 
-      <div ref={scrollRef} onScroll={onScroll} className="mt-3 flex-1 overflow-y-auto">
+      <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="mt-3 flex-1 overflow-y-auto">
         {visibleEmoji.slice(0, visible).length > 0 && (
           <div className="grid grid-cols-[repeat(auto-fill,40px)] gap-1">
             {visibleEmoji.slice(0, visible).map((e) => (

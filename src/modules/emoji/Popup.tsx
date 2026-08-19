@@ -65,6 +65,7 @@ export function EmojiPopup() {
   const [visible, setVisible] = useState(BATCH);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const listLenRef = useRef(0);
+  const lastLoadRef = useRef(0);
 
   useEffect(() => {
     loadCatalog()
@@ -72,10 +73,9 @@ export function EmojiPopup() {
       .catch(console.error);
   }, []);
 
-  // 切换分类/搜索时：重置渲染批次并回到列表顶部（避免停在旧滚动位置看到末尾）
+  // 切换分类/搜索时：重置渲染批次（列表容器用 key 强制重建，滚动位置自然归零）
   useEffect(() => {
     setVisible(BATCH);
-    scrollRef.current?.scrollTo(0, 0);
   }, [tab, q]);
 
   const list = useMemo(() => {
@@ -138,10 +138,16 @@ export function EmojiPopup() {
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // 内容不足一屏：无需增量加载（scrollTop+clientHeight >= scrollHeight-200 恒真会误触发累积）
+    if (el.scrollHeight <= el.clientHeight) return;
+    // 节流：200ms 内只响应一次，避免 scrollTo/内容重排的多重事件风暴
+    const now = Date.now();
+    if (now - lastLoadRef.current < 200) return;
     const max = listLenRef.current;
     setVisible((v) => {
       if (v >= max) return v; // 已全部渲染，停止加载
       if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+        lastLoadRef.current = Date.now();
         return Math.min(v + BATCH, max);
       }
       return v;
@@ -183,7 +189,7 @@ export function EmojiPopup() {
           </button>
         ))}
       </div>
-      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-2">
+      <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-2">
         <div className="grid grid-cols-[repeat(auto-fill,40px)] gap-1">
           {shown.map((item) => (
             <button
