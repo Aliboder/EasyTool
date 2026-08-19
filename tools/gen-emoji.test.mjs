@@ -13,7 +13,7 @@ for (const e of list) {
   if (e.code !== undefined && (typeof e.code !== "string" || e.code.length === 0)) throw new Error("bad code");
   groups.add(e.group);
 }
-const expect = ["smileys", "people", "animals", "food", "travel", "activities", "objects", "symbols", "flags"];
+const expect = ["smileys","hearts","gestures","people","people-active","animals","plants","food","sport","activities","transport","places","sky","time","objects","tech","symbols","flags"];
 for (const g of expect) if (!groups.has(g)) throw new Error(`missing group ${g}`);
 const withCode = list.filter((e) => e.code).length;
 console.log(`OK: ${list.length} emoji, ${groups.size} groups, ${withCode} with twemoji image`);

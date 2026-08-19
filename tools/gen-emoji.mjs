@@ -7,17 +7,67 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const [, , input, output, twemojiDir] = process.argv;
 const raw = JSON.parse(readFileSync(input, "utf8"));
 
-// 官方分类 → 内部 group id + 中文名
-const GROUP_MAP = {
-  "Smileys & Emotion": ["smileys", "笑脸"],
-  "People & Body": ["people", "人物"],
-  "Animals & Nature": ["animals", "动物与自然"],
-  "Food & Drink": ["food", "食物"],
-  "Travel & Places": ["travel", "旅行与地点"],
-  "Activities": ["activities", "活动"],
-  "Objects": ["objects", "物品"],
-  "Symbols": ["symbols", "符号"],
-  "Flags": ["flags", "旗帜"],
+// 官方大类（仅用于过滤 Component 等非完整表情）
+const GROUPS = new Set([
+  "Smileys & Emotion", "People & Body", "Animals & Nature", "Food & Drink",
+  "Travel & Places", "Activities", "Objects", "Symbols", "Flags",
+]);
+
+// Unicode 细分类(subcategory) → 用户友好分类 [group id, 中文名]
+const SUBCAT_MAP = {
+  "face-smiling": ["smileys", "表情"], "face-affection": ["smileys", "表情"],
+  "face-tongue": ["smileys", "表情"], "face-hand": ["smileys", "表情"],
+  "face-neutral-skeptical": ["smileys", "表情"], "face-sleepy": ["smileys", "表情"],
+  "face-unwell": ["smileys", "表情"], "face-hat": ["smileys", "表情"],
+  "face-glasses": ["smileys", "表情"], "face-concerned": ["smileys", "表情"],
+  "face-negative": ["smileys", "表情"], "face-costume": ["smileys", "表情"],
+  "cat-face": ["smileys", "表情"], "monkey-face": ["smileys", "表情"],
+  emotion: ["smileys", "表情"], heart: ["hearts", "爱心"],
+  "hand-fingers-open": ["gestures", "手势"], "hand-fingers-partial": ["gestures", "手势"],
+  "hand-single-finger": ["gestures", "手势"], "hand-fingers-closed": ["gestures", "手势"],
+  hands: ["gestures", "手势"], "hand-prop": ["gestures", "手势"],
+  "body-parts": ["gestures", "手势"],
+  person: ["people", "人物"], "person-gesture": ["people", "人物"],
+  "person-role": ["people", "人物"], "person-fantasy": ["people", "人物"],
+  "person-symbol": ["people", "人物"], "person-resting": ["people", "人物"],
+  family: ["people", "人物"], "person-activity": ["people-active", "人物活动"],
+  "person-sport": ["people-active", "人物活动"],
+  "animal-mammal": ["animals", "动物"], "animal-bird": ["animals", "动物"],
+  "animal-reptile": ["animals", "动物"], "animal-amphibian": ["animals", "动物"],
+  "animal-marine": ["animals", "动物"], "animal-bug": ["animals", "动物"],
+  "plant-flower": ["plants", "植物"], "plant-other": ["plants", "植物"],
+  "food-fruit": ["food", "食物"], "food-vegetable": ["food", "食物"],
+  "food-prepared": ["food", "食物"], "food-asian": ["food", "食物"],
+  "food-marine": ["food", "食物"], "food-sweet": ["food", "食物"],
+  drink: ["food", "食物"], dishware: ["food", "食物"],
+  sport: ["sport", "运动"], event: ["activities", "活动娱乐"],
+  game: ["activities", "活动娱乐"], "award-medal": ["activities", "活动娱乐"],
+  "arts & crafts": ["activities", "活动娱乐"],
+  "transport-ground": ["transport", "交通"], "transport-water": ["transport", "交通"],
+  "transport-air": ["transport", "交通"], "transport-signal": ["transport", "交通"],
+  "place-map": ["places", "地点建筑"], "place-geographic": ["places", "地点建筑"],
+  "place-building": ["places", "地点建筑"], "place-religious": ["places", "地点建筑"],
+  "place-other": ["places", "地点建筑"], hotel: ["places", "地点建筑"],
+  "sky & weather": ["sky", "天空天气"], time: ["time", "时间"],
+  clothing: ["objects", "物品"], household: ["objects", "物品"],
+  office: ["objects", "物品"], "book-paper": ["objects", "物品"],
+  writing: ["objects", "物品"], money: ["objects", "物品"],
+  mail: ["objects", "物品"], lock: ["objects", "物品"],
+  "other-object": ["objects", "物品"],
+  computer: ["tech", "科技工具"], phone: ["tech", "科技工具"],
+  science: ["tech", "科技工具"], tool: ["tech", "科技工具"],
+  "light & video": ["tech", "科技工具"], sound: ["tech", "科技工具"],
+  music: ["tech", "科技工具"], "musical-instrument": ["tech", "科技工具"],
+  medical: ["tech", "科技工具"],
+  keycap: ["symbols", "符号"], alphanum: ["symbols", "符号"],
+  "av-symbol": ["symbols", "符号"], "transport-sign": ["symbols", "符号"],
+  geometric: ["symbols", "符号"], currency: ["symbols", "符号"],
+  warning: ["symbols", "符号"], arrow: ["symbols", "符号"],
+  religion: ["symbols", "符号"], math: ["symbols", "符号"],
+  punctuation: ["symbols", "符号"], gender: ["symbols", "符号"],
+  zodiac: ["symbols", "符号"], "other-symbol": ["symbols", "符号"],
+  flag: ["flags", "旗帜"], "country-flag": ["flags", "旗帜"],
+  "subdivision-flag": ["flags", "旗帜"],
 };
 
 // 高频中文关键词（覆盖常用搜索词；未覆盖的回退英文 shortcode）
@@ -83,11 +133,16 @@ function twemojiKey(unified) {
   return unified.split("-").filter((h) => h !== "FE0F").map((h) => parseInt(h, 16).toString(16)).join("-");
 }
 
-const groups = new Set(Object.keys(GROUP_MAP));
 const out = { emoji: [] };
+const unmapped = new Set();
 for (const e of raw) {
-  if (!groups.has(e.category)) continue; // 过滤 Component 等非完整表情
-  const [group, groupZh] = GROUP_MAP[e.category];
+  if (!GROUPS.has(e.category)) continue; // 过滤 Component 等非完整表情
+  const mapped = SUBCAT_MAP[e.subcategory];
+  if (!mapped) {
+    unmapped.add(`${e.category}/${e.subcategory}`);
+    continue;
+  }
+  const [group, groupZh] = mapped;
   const keywords = [...new Set([e.short_name, ...(e.short_names || [])])];
   const zh = ZH_HINTS[e.short_name] || [];
   const nameEn = (e.name || "").toLowerCase().replace(/_/g, " ");
@@ -106,6 +161,10 @@ for (const e of raw) {
     }
   }
   out.emoji.push(entry);
+}
+if (unmapped.size) {
+  console.error("UNMAPPED subcategories:", [...unmapped].join(", "));
+  process.exit(1);
 }
 out.emoji.sort((a, b) => a.keywords[0].localeCompare(b.keywords[0]));
 writeFileSync(output, JSON.stringify(out));
