@@ -22,11 +22,38 @@
 16. **窗口入场动画**：用共享 `useWindowEntrance`（失焦时内容置透明、聚焦时重放动画），避免「先显示完整界面再补动画」闪烁；不要重挂载根节点触发（会丢子组件状态）
 17. **SQLite 建索引必须在列添加之后**：索引引用的列若在版本迁移中才添加（如 `pin_order`），索引创建要放迁移之后，否则新库建表失败
 18. **焦点事件 ≠ 窗口可见性**：拖动/切焦点会触发失焦，不要把「失焦」当「隐藏」；动画/显隐判断用 `isVisible()` 守卫（见 useWindowEntrance）
+19. **多会话并发改同一批文件会互相覆盖**：另一个窗口/AI 会话在开发别的模块时可能临时注释你的 `pub mod emoji;`、改 `lib.rs` 热键等。提交前 `git status` + 重新 `cargo build` 确认，避免把他人半成品混入自己 commit（文件级 git add 无法拆分同文件内他人的改动）
+20. **纯前端过滤代替后端检索**：Emoji 全量 1906 条在内存过滤（中文名/英文名/shortcode）毫秒级完成，无需后端 `search` 命令——写了 `data::search` 是死代码，删掉避免 warning
+21. **Emoji 数据源**：`emoji-datasource` npm 包（`package/emoji.json`）含 1911 条 + 英文分类/shortcode，一次生成 `emoji.json` 资源（~234KB）提交仓库即可，无运行时依赖；中文名用高频映射表兜底
+22. **文件选择用 plugin-dialog**：WebView 原生 `<input type="file">` 拿不到绝对路径（Tauri v2 无 File.path），导入图片需装 `@tauri-apps/plugin-dialog` + `tauri-plugin-dialog`（Cargo 依赖 + `.plugin(init())` + capabilities `dialog:default` 三处联动）
 
 ---
 
 ## 按日期记录
 
+### 表情模块新增：数据源、并发开发、死代码
+
+**问题描述**：新增 emoji 模块过程中遇到三类问题：1) 与另一个窗口的开发会话并发改同一批文件（`pub mod emoji;` 被临时注释、lib.rs 热键被重写）；2) 计划里设计的后端 `search` 函数实际没人调用；3) 计划写的过程中用 PowerShell 改写 md 导致中文乱码。
+
+**根本原因**：
+1. 项目允许多个 AI 会话/窗口并行开发不同模块，都落在 `lib.rs`/`modules/mod.rs` 等共享文件上；
+2. Emoji 全量数据在前端内存过滤足够快，后端检索函数是投机扩展；
+3. 违反 module-guide 坑 1（用 PowerShell `Get-Content`/`Set-Content` 改写 UTF-8 文件）。
+
+**解决方案**：
+1. 开发前 `git status` + 提交前 `cargo build` 双重确认；被注释的模块声明恢复；接受共享文件内他人改动随自己 commit 一起进（告知用户）；
+2. 删除 `data::search`/`groups`/`keywords` 字段及对应测试（YAGNI），只留 `load`；
+3. 用编辑器 write 工具重建损坏的计划文件。
+
+**教训**：并发开发要勤看 `git status`；不要为"可能用到"写抽象（前端本地过滤够用）；UTF-8 文件禁用 PowerShell 改写。
+
+**相关代码**：
+- `src-tauri/src/modules/emoji/`（新模块：db/data/commands/paste/mod）
+- `tools/gen-emoji.mjs`（数据生成脚本）
+- `src/modules/emoji/`（Page/Settings/Popup）
+- `docs/superpowers/specs/2026-08-20-emoji-module-design.md`、`docs/superpowers/plans/2026-08-20-emoji-module.md`
+
+---
 
 ### 虚拟列表导致文本卡片重叠
 
