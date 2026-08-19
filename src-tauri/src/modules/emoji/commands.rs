@@ -2,7 +2,9 @@
 use super::db::{CustomRow, Db};
 use crate::modules::clipboard::{clipboard, monitor::base64_encode};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Manager, State};
 
 // 为满足 tauri::command 返回类型，直接返回 Result<T, String>
@@ -15,18 +17,39 @@ fn module_dir(app: &AppHandle) -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("emojis"))
 }
 
+/// 图片表情缩略图缓存（避免每次打开面板重复解码，上限 200 防内存膨胀）
+static THUMB_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+const THUMB_CACHE_MAX: usize = 200;
+
 fn thumb_png(path: &str) -> Option<String> {
-    let img = image::open(path).ok()?;
-    let thumb = img.thumbnail(96, 96);
-    let mut buf = Vec::new();
-    thumb
-        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
-        .ok()?;
-    Some(base64_encode(&buf))
+    let cache = THUMB_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    {
+        let map = cache.lock().unwrap();
+        if let Some(v) = map.get(path) {
+            return v.clone();
+        }
+    }
+    let v = (|| {
+        let img = image::open(path).ok()?;
+        let thumb = img.thumbnail(96, 96);
+        let mut buf = Vec::new();
+        thumb
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .ok()?;
+        Some(base64_encode(&buf))
+    })();
+    let mut map = cache.lock().unwrap();
+    if map.len() >= THUMB_CACHE_MAX {
+        if let Some(old) = map.keys().next().cloned() {
+            map.remove(&old);
+        }
+    }
+    map.insert(path.to_string(), v.clone());
+    v
 }
 
 #[derive(Serialize, Clone)]
-pub struct EmojiDto {
+pub struct StaticEmojiDto {
     pub char: String,
     pub group: String,
     pub group_zh: String,
@@ -34,9 +57,6 @@ pub struct EmojiDto {
     pub keywords_zh: Vec<String>,
     /// Twemoji 图片文件名；None = 无图，前端回退字符渲染
     pub code: Option<String>,
-    pub is_favorite: bool,
-    pub use_count: i64,
-    pub last_used_at: Option<i64>,
 }
 
 #[derive(Serialize, Clone)]
@@ -57,33 +77,53 @@ pub struct GroupDto {
 }
 
 #[derive(Serialize, Clone)]
-pub struct EmojiCatalog {
-    pub emoji: Vec<EmojiDto>,
+pub struct UsageInfo {
+    pub is_favorite: bool,
+    pub use_count: i64,
+    pub last_used_at: Option<i64>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct DynamicData {
+    pub usage: HashMap<String, UsageInfo>,
     pub groups: Vec<GroupDto>,
     pub customs: Vec<CustomDto>,
 }
 
-/// 获取全量数据（内置 emoji + 分组 + 图片表情），前端一次拉取
+/// 静态 Emoji 列表（不含使用数据/图片表情，内容不变，前端可缓存）
 #[tauri::command]
-pub fn get_emoji_all(app: AppHandle, state: State<'_, Db>) -> R<EmojiCatalog> {
+pub fn get_emoji_static(app: AppHandle) -> R<Vec<StaticEmojiDto>> {
     let dir = crate::modules::modules_dir(&app);
     let entries = super::data::load(&dir);
-    let usage = state.usage_map().map_err(|e| e.to_string())?;
-    let emoji: Vec<EmojiDto> = entries
+    Ok(entries
         .iter()
-        .map(|e| {
-            let u = usage.get(&e.char).copied().unwrap_or((0, 0, 0));
-            EmojiDto {
-                char: e.char.clone(),
-                group: e.group.clone(),
-                group_zh: e.group_zh.clone(),
-                name_en: e.name_en.clone(),
-                keywords_zh: e.keywords_zh.clone(),
-                code: e.code.clone(),
-                is_favorite: u.0 != 0,
-                use_count: u.1,
-                last_used_at: if u.2 != 0 { Some(u.2) } else { None },
-            }
+        .map(|e| StaticEmojiDto {
+            char: e.char.clone(),
+            group: e.group.clone(),
+            group_zh: e.group_zh.clone(),
+            name_en: e.name_en.clone(),
+            keywords_zh: e.keywords_zh.clone(),
+            code: e.code.clone(),
+        })
+        .collect())
+}
+
+/// 动态数据（收藏/使用统计 + 分组 + 图片表情）
+#[tauri::command]
+pub fn get_emoji_dynamic(state: State<'_, Db>) -> R<DynamicData> {
+    let usage = state
+        .usage_map()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|(k, (fav, count, ts))| {
+            (
+                k,
+                UsageInfo {
+                    is_favorite: fav != 0,
+                    use_count: count,
+                    last_used_at: if ts != 0 { Some(ts) } else { None },
+                },
+            )
         })
         .collect();
     let groups = state
@@ -106,8 +146,8 @@ pub fn get_emoji_all(app: AppHandle, state: State<'_, Db>) -> R<EmojiCatalog> {
             thumb: thumb_png(&c.file_path),
         })
         .collect();
-    Ok(EmojiCatalog {
-        emoji,
+    Ok(DynamicData {
+        usage,
         groups,
         customs,
     })

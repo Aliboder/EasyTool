@@ -13,36 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmojiSettings } from "./Settings";
-
-interface EmojiDto {
-  char: string;
-  group: string;
-  group_zh: string;
-  name_en: string;
-  keywords_zh: string[];
-  code: string | null;
-  is_favorite: boolean;
-  use_count: number;
-  last_used_at: number | null;
-}
-interface CustomDto {
-  id: number;
-  name: string;
-  group_id: number | null;
-  is_favorite: boolean;
-  use_count: number;
-  last_used_at: number | null;
-  thumb: string | null;
-}
-interface GroupDto {
-  id: number;
-  name: string;
-}
-interface Catalog {
-  emoji: EmojiDto[];
-  groups: GroupDto[];
-  customs: CustomDto[];
-}
+import { loadCatalog, type Catalog, type GroupDto } from "./api";
 
 const GROUP_TABS = [
   { id: "all", zh: "全部" },
@@ -66,7 +37,7 @@ export function EmojiPage() {
   const [showSettings, setShowSettings] = useState(false);
 
   const load = async () => {
-    const c = await invoke<Catalog>("get_emoji_all");
+    const c = await loadCatalog();
     setCat(c);
   };
   useEffect(() => {
@@ -233,6 +204,7 @@ export function EmojiPage() {
                     src={`${import.meta.env.BASE_URL}twemoji/${e.code}.svg`}
                     className="size-7"
                     alt=""
+                    loading="lazy"
                   />
                 ) : (
                   e.char

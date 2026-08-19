@@ -1,36 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getConfig } from "@/lib/api";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface EmojiDto {
-  char: string;
-  group: string;
-  name_en: string;
-  keywords_zh: string[];
-  code: string | null;
-  is_favorite: boolean;
-  use_count: number;
-  last_used_at: number | null;
-}
-interface CustomDto {
-  id: number;
-  name: string;
-  thumb: string | null;
-  is_favorite: boolean;
-  last_used_at: number | null;
-}
-interface Catalog {
-  emoji: EmojiDto[];
-  customs: CustomDto[];
-}
+import { loadCatalog, type Catalog } from "./api";
 
 const TABS = [
+  "smileys",
   "all",
   "favorite",
-  "smileys",
   "people",
   "animals",
   "food",
@@ -54,22 +33,33 @@ const TAB_ZH: Record<string, string> = {
   flags: "旗帜",
 };
 
+// 增量渲染：单批渲染数量，滚动到底部再加载下一批（避免一次性渲染 1900+ 节点与 SVG 请求）
+const BATCH = 240;
+
 export function EmojiPopup() {
   const [cat, setCat] = useState<Catalog | null>(null);
-  const [tab, setTab] = useState("all");
+  const [tab, setTab] = useState("smileys");
   const [q, setQ] = useState("");
+  const [visible, setVisible] = useState(BATCH);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  const load = async () => setCat(await invoke<Catalog>("get_emoji_all"));
   useEffect(() => {
-    load().catch(console.error);
+    loadCatalog()
+      .then(setCat)
+      .catch(console.error);
   }, []);
+
+  // 切换分类/搜索时重置渲染批次
+  useEffect(() => {
+    setVisible(BATCH);
+  }, [tab, q]);
 
   const list = useMemo(() => {
     if (!cat) return [];
     const ql = q.trim().toLowerCase();
     let emojis = cat.emoji;
     if (tab === "favorite") emojis = emojis.filter((e) => e.is_favorite);
-    else if (tab !== "all") emojis = emojis.filter((e) => e.group === tab);
+    else if (tab !== "all" && tab !== "favorite") emojis = emojis.filter((e) => e.group === tab);
     if (ql) {
       emojis = emojis.filter(
         (e) => e.name_en.toLowerCase().includes(ql) || e.keywords_zh.some((k) => k.includes(q.trim())),
@@ -95,6 +85,16 @@ export function EmojiPopup() {
     ];
     return items.sort((a, b) => b.ts - a.ts);
   }, [cat, tab, q]);
+
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+      setVisible((v) => Math.min(v + BATCH, list.length));
+    }
+  }, [list.length]);
+
+  const shown = list.slice(0, visible);
 
   const pick = async (type: "emoji" | "custom", key: string) => {
     await invoke("apply_emoji", { kind: type, key });
@@ -129,9 +129,9 @@ export function EmojiPopup() {
           </button>
         ))}
       </div>
-      <div className="flex-1 overflow-y-auto p-2">
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-2">
         <div className="grid grid-cols-[repeat(auto-fill,40px)] gap-1">
-          {list.map((item) => (
+          {shown.map((item) => (
             <button
               key={item.type + item.id}
               title={item.label}
@@ -149,6 +149,7 @@ export function EmojiPopup() {
                   src={`${import.meta.env.BASE_URL}twemoji/${item.code}.svg`}
                   className="size-7"
                   alt=""
+                  loading="lazy"
                 />
               ) : (
                 item.id
