@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
 use super::api::GoQuota;
+use super::db::QuotaDb;
 use super::{account_configs, find_account, history, module_config, AccountConfig, AccountKind, QuotaState};
 
 #[derive(Debug, Serialize)]
@@ -30,6 +31,8 @@ pub struct AccountPayload {
     pub kind: String,
     pub name: String,
     pub balance: Option<f64>,
+    pub granted: f64,
+    pub topped_up: f64,
     pub available: bool,
     pub error: Option<String>,
     pub go_windows: Vec<GoQuotaPayload>,
@@ -53,6 +56,8 @@ pub fn get_status(state: State<'_, Mutex<QuotaState>>) -> StatusPayload {
                 kind: a.kind.as_str().into(),
                 name: a.name.clone(),
                 balance: a.balance,
+                granted: a.granted,
+                topped_up: a.topped_up,
                 available: a.available,
                 error: a.error.clone(),
                 go_windows: a.go_windows.iter().map(GoQuotaPayload::from).collect(),
@@ -73,6 +78,7 @@ pub struct AccountInfo {
 pub struct QuotaSettings {
     pub refresh_interval_sec: i64,
     pub warn_threshold: f64,
+    pub critical_threshold: f64,
     pub notify_low: bool,
     pub notify_surge: bool,
     pub accounts: Vec<AccountInfo>,
@@ -86,6 +92,7 @@ pub fn get_settings(app: AppHandle) -> QuotaSettings {
     let getb = |key: &str, default: bool| {
         cfg.get(key).and_then(|v| v.as_bool()).unwrap_or(default)
     };
+    let warn = get("warn_threshold", 10.0);
     let accounts = account_configs(&app)
         .into_iter()
         .map(|a| AccountInfo {
@@ -97,7 +104,8 @@ pub fn get_settings(app: AppHandle) -> QuotaSettings {
         .collect();
     QuotaSettings {
         refresh_interval_sec: get("refresh_interval_sec", 30.0) as i64,
-        warn_threshold: get("warn_threshold", 10.0),
+        warn_threshold: warn,
+        critical_threshold: get("critical_threshold", warn / 2.0),
         notify_low: getb("notify_low", true),
         notify_surge: getb("notify_surge", true),
         accounts,
@@ -113,6 +121,7 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
         if let Some(v) = cfg.modules.get_mut("quota") {
             v["refresh_interval_sec"] = serde_json::json!(settings.refresh_interval_sec);
             v["warn_threshold"] = serde_json::json!(settings.warn_threshold);
+            v["critical_threshold"] = serde_json::json!(settings.critical_threshold);
             v["notify_low"] = serde_json::json!(settings.notify_low);
             v["notify_surge"] = serde_json::json!(settings.notify_surge);
         }
@@ -137,7 +146,7 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
     Ok(())
 }
 
-/// 面板卡片顺序（拖拽排序记忆）
+/// 面板卡片顺序（拖拽排序记忆；前端已不再使用，待 lib.rs 一并清理）
 #[tauri::command]
 pub fn get_panel_order(app: AppHandle) -> Vec<String> {
     let cfg = module_config(&app);
@@ -309,7 +318,9 @@ pub struct StatsData {
 #[tauri::command]
 pub fn get_stats_data(app: AppHandle, account_id: String) -> StatsData {
     use chrono::Local;
-    let records = history::load(&super::history_path(&app, &account_id));
+    let db_guard = app.state::<Mutex<QuotaDb>>();
+    let db = db_guard.lock().unwrap();
+    let records = history::load(&db, &account_id);
     let today = Local::now().date_naive();
     let today_spend = history::today_spend(&records, today);
     let avg7 = history::avg_daily_spent(&records, 7, today);
@@ -328,10 +339,59 @@ pub fn get_stats_data(app: AppHandle, account_id: String) -> StatsData {
 #[tauri::command]
 pub fn get_daily_history(app: AppHandle, account_id: String) -> Vec<DailyPoint> {
     use chrono::Local;
-    let records = history::load(&super::history_path(&app, &account_id));
+    let db_guard = app.state::<Mutex<QuotaDb>>();
+    let db = db_guard.lock().unwrap();
+    let records = history::load(&db, &account_id);
     let today = Local::now().date_naive();
     history::daily_series_all(&records, today)
         .into_iter()
         .map(|(d, a)| DailyPoint { date: d, amount: a })
+        .collect()
+}
+
+#[derive(Debug, Serialize)]
+pub struct GoPoint {
+    pub time: i64, // unix ms
+    pub used_percent: i32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GoCyclePayload {
+    pub cycle_start: i64,
+    pub cycle_end: Option<i64>,
+    pub peak_utilization: f64,
+    pub total_delta: f64,
+}
+
+/// Go 窗口利用率时间序列（近 days 天，前端趋势图用）
+#[tauri::command]
+pub fn get_go_history(app: AppHandle, account_id: String, window: String, days: i64) -> Vec<GoPoint> {
+    let since_ms = chrono::Utc::now().timestamp_millis() - days * 86_400_000;
+    let db_guard = app.state::<Mutex<QuotaDb>>();
+    let db = db_guard.lock().unwrap();
+    db.go_series(&account_id, &window, since_ms)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| GoPoint {
+            time: s.captured_at,
+            used_percent: s.used_percent,
+        })
+        .collect()
+}
+
+/// Go 窗口重置周期历史（每窗口峰值/总消耗）
+#[tauri::command]
+pub fn get_go_cycles(app: AppHandle, account_id: String, window: String) -> Vec<GoCyclePayload> {
+    let db_guard = app.state::<Mutex<QuotaDb>>();
+    let db = db_guard.lock().unwrap();
+    db.cycle_history(&account_id, &window, 20)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| GoCyclePayload {
+            cycle_start: c.cycle_start,
+            cycle_end: c.cycle_end,
+            peak_utilization: c.peak_utilization,
+            total_delta: c.total_delta,
+        })
         .collect()
 }

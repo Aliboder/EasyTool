@@ -26,6 +26,10 @@ pub type QuotaResult<T> = Result<T, QuotaError>;
 #[derive(Debug, Clone)]
 pub struct Balance {
     pub amount: f64,
+    /// 赠送余额（granted_balance，0 表示接口未提供）
+    pub granted: f64,
+    /// 充值余额（topped_up_balance，0 表示接口未提供）
+    pub topped_up: f64,
     pub available: bool,
 }
 
@@ -83,6 +87,10 @@ fn parse_balance(body: &str) -> QuotaResult<Balance> {
     struct Info {
         currency: String,
         total_balance: String,
+        #[serde(default)]
+        granted_balance: Option<String>,
+        #[serde(default)]
+        topped_up_balance: Option<String>,
     }
     #[derive(Deserialize)]
     struct Doc {
@@ -100,8 +108,11 @@ fn parse_balance(body: &str) -> QuotaResult<Balance> {
         .total_balance
         .parse::<f64>()
         .map_err(|e| QuotaError::ParseError(e.to_string()))?;
+    let parse = |s: &Option<String>| s.as_deref().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
     Ok(Balance {
         amount,
+        granted: parse(&picked.granted_balance),
+        topped_up: parse(&picked.topped_up_balance),
         available: doc.is_available,
     })
 }
@@ -251,9 +262,11 @@ mod tests {
 
     #[test]
     fn parse_balance_cny() {
-        let body = r#"{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"12.34"},{"currency":"USD","total_balance":"1.0"}]}"#;
+        let body = r#"{"is_available":true,"balance_infos":[{"currency":"CNY","total_balance":"12.34","granted_balance":"2.00","topped_up_balance":"10.34"},{"currency":"USD","total_balance":"1.0"}]}"#;
         let b = parse_balance(body).unwrap();
         assert_eq!(b.amount, 12.34);
+        assert_eq!(b.granted, 2.0);
+        assert_eq!(b.topped_up, 10.34);
         assert!(b.available);
     }
 
@@ -262,6 +275,8 @@ mod tests {
         let body = r#"{"is_available":false,"balance_infos":[{"currency":"USD","total_balance":"2.5"}]}"#;
         let b = parse_balance(body).unwrap();
         assert_eq!(b.amount, 2.5);
+        assert_eq!(b.granted, 0.0); // 字段缺失时默认 0
+        assert_eq!(b.topped_up, 0.0);
         assert!(!b.available);
     }
 

@@ -11,6 +11,15 @@ pub fn should_warn_balance(prev: Option<f64>, cur: f64, threshold: f64) -> bool 
     }
 }
 
+/// 是否触发余额恢复提醒：仅当上次余额低于阈值、本次回升到阈值及以上时返回 true
+/// （prev=None 表示首次查询，不提醒，避免启动轰炸）
+pub fn should_recover(prev: Option<f64>, cur: f64, threshold: f64) -> bool {
+    match prev {
+        Some(p) => p < threshold && cur >= threshold,
+        None => false,
+    }
+}
+
 /// 是否触发消费突增提醒：今日消费 > 近 7 天日均 * 3
 /// （无历史基线或今日无消费时不判断）
 pub fn is_spike(today_spend: f64, avg_7d: f64) -> bool {
@@ -37,5 +46,14 @@ mod tests {
         assert!(!is_spike(5.0, 0.0)); // 无历史不算
         assert!(!is_spike(0.0, 3.0)); // 今日无消费不算
         assert!(!is_spike(1.0, 1.0));
+    }
+
+    #[test]
+    fn recover_only_at_crossing() {
+        assert!(should_recover(Some(8.0), 12.0, 10.0)); // 临界恢复
+        assert!(!should_recover(Some(20.0), 15.0, 10.0)); // 从未低于阈值
+        assert!(!should_recover(Some(12.0), 8.0, 10.0)); // 从上方跌落，不算恢复
+        assert!(!should_recover(Some(5.0), 8.0, 10.0)); // 仍低于阈值，不重复
+        assert!(!should_recover(None, 12.0, 10.0)); // 首次不提醒
     }
 }

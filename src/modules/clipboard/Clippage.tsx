@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
 import { getConfig } from "@/lib/api";
+import { Drawer } from "@/components/ui/drawer";
 import { Search, Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile } from "lucide-react";
 import {
   DndContext,
@@ -640,7 +641,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
     <div
       ref={popup ? entranceRef : undefined}
       className={cn(
-        "flex h-full flex-col bg-background text-foreground",
+        "relative flex h-full flex-col bg-background text-foreground",
         popup && "animate-in fade-in-0 duration-150",
       )}
       onKeyDown={onKeyDown}
@@ -683,20 +684,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
         )}
       </div>
 
-      {showSettings ? (
-        <div className="flex-1 overflow-y-auto">
-          <ClipSettings
-            maxItems={clipCfg?.maxItems ?? 500}
-            hotkey={clipCfg?.hotkey ?? "Ctrl+Shift+V"}
-            followMouse={clipCfg?.followMouse ?? true}
-            onMaxItems={refreshClipCfg}
-            onHotkey={refreshClipCfg}
-            onFollowMouse={refreshClipCfg}
-            onRefresh={refreshClipCfg}
-          />
-        </div>
-      ) : (
-        <>
+      <>
       <div className="flex gap-1 border-b px-2 py-1">
         {FILTERS.map((f) => (
           <button
@@ -867,7 +855,6 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
         </div>
       )}
         </>
-      )}
 
       {menu && (
         <div
@@ -965,6 +952,18 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           </div>
         </div>
       )}
+
+      <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="剪贴板设置">
+        <ClipSettings
+          maxItems={clipCfg?.maxItems ?? 500}
+          hotkey={clipCfg?.hotkey ?? "Ctrl+Shift+V"}
+          followMouse={clipCfg?.followMouse ?? true}
+          onMaxItems={refreshClipCfg}
+          onHotkey={refreshClipCfg}
+          onFollowMouse={refreshClipCfg}
+          onRefresh={refreshClipCfg}
+        />
+      </Drawer>
     </div>
   );
 }

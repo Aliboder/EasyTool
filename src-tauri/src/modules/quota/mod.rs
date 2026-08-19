@@ -1,6 +1,7 @@
 pub mod alerts;
 pub mod api;
 pub mod commands;
+pub mod db;
 pub mod history;
 
 use std::sync::Mutex;
@@ -12,6 +13,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::config::ConfigState;
 use api::GoQuota;
+use db::{now_ms, GoSnapshot, QuotaDb};
 
 /// 账户类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +56,8 @@ pub struct AccountStatus {
     pub kind: AccountKind,
     pub name: String,
     pub balance: Option<f64>,
+    pub granted: f64,
+    pub topped_up: f64,
     pub available: bool,
     pub error: Option<String>,
     pub go_windows: Vec<GoQuota>,
@@ -110,14 +114,6 @@ fn cfg_bool(cfg: &serde_json::Value, key: &str, default: bool) -> bool {
     cfg.get(key)
         .and_then(|v| v.as_bool())
         .unwrap_or(default)
-}
-
-/// 账户历史文件路径（按账户分开，消费统计互不干扰）
-pub fn history_path(app: &AppHandle, account_id: &str) -> std::path::PathBuf {
-    app.path()
-        .app_data_dir()
-        .unwrap()
-        .join(format!("balance_history_{account_id}.json"))
 }
 
 /// 兼容旧 keyring 槽位：key_ref 为空时按 kind 推导旧槽位名
@@ -231,6 +227,7 @@ fn sync_accounts(st_accounts: &mut Vec<AccountStatus>, configs: &[AccountConfig]
 pub fn fetch_once(app: &AppHandle) {
     let cfg = module_config(app);
     let threshold = cfg_f64(&cfg, "warn_threshold", 10.0);
+    let critical = cfg_f64(&cfg, "critical_threshold", threshold / 2.0);
     let notify_low = cfg_bool(&cfg, "notify_low", true);
     let notify_surge = cfg_bool(&cfg, "notify_surge", true);
 
@@ -242,9 +239,9 @@ pub fn fetch_once(app: &AppHandle) {
     for acc in &accounts {
         match acc.kind {
             AccountKind::Deepseek => {
-                fetch_deepseek(app, &mut st, acc, threshold, notify_low, notify_surge)
+                fetch_deepseek(app, &mut st, acc, threshold, critical, notify_low, notify_surge)
             }
-            AccountKind::Go => fetch_go(&mut st, acc, notify_surge),
+            AccountKind::Go => fetch_go(app, &mut st, acc),
         }
     }
 
@@ -257,12 +254,12 @@ fn fetch_deepseek(
     st: &mut QuotaState,
     acc: &AccountConfig,
     threshold: f64,
+    critical_threshold: f64,
     notify_low: bool,
     notify_surge: bool,
 ) {
     let status = st.accounts.iter_mut().find(|s| s.id == acc.id).unwrap();
     let key = get_account_key(acc);
-    let hpath = history_path(app, &acc.id);
     if key.trim().is_empty() {
         status.error = Some("未配置密钥".into());
         return;
@@ -271,12 +268,25 @@ fn fetch_deepseek(
     match api::fetch_balance(&key) {
         Ok(b) => {
             let today = Local::now().date_naive();
-            let warn = alerts::should_warn_balance(status.last_balance, b.amount, threshold);
+            let prev = status.last_balance;
+            let warn = alerts::should_warn_balance(prev, b.amount, threshold);
+            let critical = alerts::should_warn_balance(prev, b.amount, critical_threshold);
+            let recover = alerts::should_recover(prev, b.amount, threshold);
             status.last_balance = Some(b.amount);
             status.balance = Some(b.amount);
+            status.granted = b.granted;
+            status.topped_up = b.topped_up;
             status.available = b.available;
             status.error = None;
 
+            if status.initialized && critical && notify_low {
+                let msg = format!(
+                    "{} 余额已跌破紧急线 ¥{:.2}（当前 ¥{:.2}）",
+                    acc.name, critical_threshold, b.amount
+                );
+                notify(app, "🚨 余额告急", &msg);
+                log::warn!("alert: balance critical, {msg}");
+            }
             if status.initialized && warn && notify_low {
                 let msg = format!(
                     "{} 余额仅剩 ¥{:.2}（预警阈值: ¥{:.2}）",
@@ -285,9 +295,19 @@ fn fetch_deepseek(
                 notify(app, "⚠ 余额不足", &msg);
                 log::warn!("alert: balance low, {msg}");
             }
+            if status.initialized && recover && notify_low {
+                let msg = format!(
+                    "{} 余额已恢复至 ¥{:.2}（阈值: ¥{:.2}）",
+                    acc.name, b.amount, threshold
+                );
+                notify(app, "✅ 余额恢复", &msg);
+                log::info!("alert: balance recovered, {msg}");
+            }
             status.was_low = b.amount < threshold;
 
-            let records = history::load(&hpath);
+            let db_guard = app.state::<Mutex<QuotaDb>>();
+            let db = db_guard.lock().unwrap();
+            let records = history::load(&db, &acc.id);
             let today_spend = history::today_spend(&records, today);
             let avg7 = history::avg_daily_spent(&records, 7, today);
             if status.last_surge_day != Some(today)
@@ -304,7 +324,8 @@ fn fetch_deepseek(
             }
             status.initialized = true;
 
-            history::append(&hpath, b.amount, chrono::Utc::now());
+            history::append(&db, &acc.id, b.amount, b.granted, b.topped_up, chrono::Utc::now());
+            let _ = db.prune_balance(&acc.id, 5000);
         }
         Err(e) => {
             status.error = Some(format!("{e}"));
@@ -314,9 +335,8 @@ fn fetch_deepseek(
 }
 
 /// 查询单个 OpenCode Go 账户套餐用量
-fn fetch_go(st: &mut QuotaState, acc: &AccountConfig, notify_surge: bool) {
+fn fetch_go(app: &AppHandle, st: &mut QuotaState, acc: &AccountConfig) {
     let status = st.accounts.iter_mut().find(|s| s.id == acc.id).unwrap();
-    let _ = notify_surge; // Go 套餐无消费突增概念，仅 DeepSeek 统计消费
     let key = get_account_key(acc);
     if key.trim().is_empty() {
         status.error = Some("未配置密钥".into());
@@ -325,8 +345,9 @@ fn fetch_go(st: &mut QuotaState, acc: &AccountConfig, notify_surge: bool) {
 
     match api::fetch_go_quota(&key) {
         Ok(windows) => {
-            status.go_windows = windows;
+            status.go_windows = windows.clone();
             status.error = None;
+            persist_go(app, &acc.id, &windows);
         }
         Err(e) => {
             log::warn!("{} go quota query failed: {e}", acc.name);
@@ -334,6 +355,61 @@ fn fetch_go(st: &mut QuotaState, acc: &AccountConfig, notify_surge: bool) {
                 status.error = Some(format!("{e}"));
             }
         }
+    }
+}
+
+/// 写入 Go 快照 + 重置周期检测
+fn persist_go(app: &AppHandle, account_id: &str, windows: &[GoQuota]) {
+    let db_guard = app.state::<Mutex<QuotaDb>>();
+    let db = db_guard.lock().unwrap();
+    let now = now_ms();
+    for w in windows {
+        let snap = GoSnapshot {
+            captured_at: now,
+            window: w.window.clone(),
+            used_percent: w.used_percent,
+            resets_at: w.resets_at,
+        };
+        let _ = db.insert_go_snapshot(account_id, &snap);
+        track_go_cycle(&db, account_id, &w.window, &snap);
+    }
+}
+
+/// 周期跟踪：窗口重置（用量骤降或 resetsAt 已过）时关闭旧周期、开新周期。
+/// peak = 周期内最高用量；total_delta = 周期内相邻快照正增量之和（总消耗）
+fn track_go_cycle(db: &QuotaDb, account_id: &str, window: &str, snap: &GoSnapshot) {
+    let prev = db.prev_go_snapshot(account_id, window, snap.captured_at).unwrap_or(None);
+    let reset = match &prev {
+        Some(p) => {
+            let dropped = p.used_percent > snap.used_percent;
+            let resets_passed = p
+                .resets_at
+                .map(|r| r <= snap.captured_at / 1000)
+                .unwrap_or(false);
+            dropped || resets_passed
+        }
+        None => false,
+    };
+    let has_active = db.active_cycle(account_id, window).unwrap_or(None).is_some();
+    if reset && has_active {
+        let _ = db.close_active_cycle(account_id, window, snap.captured_at);
+    }
+    if !has_active || reset {
+        let _ = db.start_cycle(account_id, window, snap.captured_at);
+    }
+    let prev_used = prev.map(|p| p.used_percent as f64).unwrap_or(0.0);
+    let delta = if reset {
+        0.0
+    } else {
+        (snap.used_percent as f64 - prev_used).max(0.0)
+    };
+    if let Some(c) = db.active_cycle(account_id, window).unwrap_or(None) {
+        let _ = db.update_active_cycle(
+            account_id,
+            window,
+            c.peak_utilization.max(snap.used_percent as f64),
+            c.total_delta + delta,
+        );
     }
 }
 
@@ -369,10 +445,95 @@ fn poll_loop(app: AppHandle) {
     }
 }
 
+/// 打开并托管 QuotaDb（幂等：重复调用直接跳过管理）
+fn setup_db(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if app.try_state::<Mutex<QuotaDb>>().is_some() {
+        return Ok(());
+    }
+    let data_dir = app.path().app_data_dir()?;
+    std::fs::create_dir_all(&data_dir)?;
+    let db = QuotaDb::open(&data_dir.join("quota.db"))
+        .map_err(|e| tauri::Error::Io(std::io::Error::other(e)))?;
+    app.manage(Mutex::new(db));
+    Ok(())
+}
+
+/// 旧 JSON 余额历史一次性导入 SQLite（幂等：每账户导入后写标记；旧文件保留不删）
+fn import_json_history(app: &AppHandle) {
+    let data_dir = match app.path().app_data_dir() {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let accounts = account_configs(app);
+    let db_guard = app.state::<Mutex<QuotaDb>>();
+    let db = db_guard.lock().unwrap();
+    for acc in accounts {
+        let flag = format!("json_imported_{}", acc.id);
+        if db.get_setting(&flag).is_some() {
+            continue;
+        }
+        let path = data_dir.join(format!("balance_history_{}.json", acc.id));
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            if let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(records) = doc.get("records").and_then(|r| r.as_array()) {
+                    for r in records {
+                        let t = r
+                            .get("time")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                            .map(|dt| dt.timestamp_millis());
+                        let b = r.get("balance").and_then(|v| v.as_f64());
+                        if let (Some(t), Some(b)) = (t, b) {
+                            let _ = db.append_balance(&acc.id, b, 0.0, 0.0, t);
+                        }
+                    }
+                    let _ = db.prune_balance(&acc.id, 5000);
+                    log::info!("quota: JSON history imported for {}", acc.id);
+                }
+            }
+        }
+        let _ = db.set_setting(&flag, "1");
+    }
+}
+
+/// 启动时从 SQLite 回填最新余额/Go 快照，避免等首次轮询才有数字
+fn restore_from_db(app: &AppHandle) {
+    let accounts = account_configs(app);
+    let st_guard = app.state::<Mutex<QuotaState>>();
+    let mut st = st_guard.lock().unwrap();
+    sync_accounts(&mut st.accounts, &accounts);
+    let db_guard = app.state::<Mutex<QuotaDb>>();
+    let db = db_guard.lock().unwrap();
+    for s in st.accounts.iter_mut() {
+        if let Some((_t, balance, granted, topped_up)) = db.latest_balance(&s.id).unwrap_or(None) {
+            s.balance = Some(balance);
+            s.last_balance = Some(balance);
+            s.granted = granted;
+            s.topped_up = topped_up;
+        }
+        if s.kind == AccountKind::Go {
+            let latest = db.latest_go_snapshots(&s.id).unwrap_or_default();
+            if !latest.is_empty() {
+                s.go_windows = latest
+                    .into_iter()
+                    .map(|sn| GoQuota {
+                        window: sn.window,
+                        used_percent: sn.used_percent,
+                        resets_at: sn.resets_at,
+                    })
+                    .collect();
+            }
+        }
+    }
+}
+
 /// 初始化额度监控模块：共享状态 + 轮询线程
 pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
     let handle = app.handle().clone();
+    setup_db(&handle)?;
+    import_json_history(&handle);
     app.manage(Mutex::new(QuotaState::default()));
+    restore_from_db(&handle);
     std::thread::spawn(move || poll_loop(handle));
     log::info!("quota module ready");
     Ok(())
@@ -382,8 +543,11 @@ pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
 pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     // 迁移旧账户密钥槽位（多账户支持：旧账户独立槽位，避免串号）
     migrate_account_keyrefs(app);
-    let handle = app.clone();
+    setup_db(app)?;
+    import_json_history(app);
     app.manage(Mutex::new(QuotaState::default()));
+    restore_from_db(app);
+    let handle = app.clone();
     std::thread::spawn(move || poll_loop(handle));
     log::info!("quota module ready");
     Ok(())

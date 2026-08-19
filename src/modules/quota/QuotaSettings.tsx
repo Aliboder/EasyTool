@@ -25,6 +25,7 @@ interface AccountInfo {
 interface QuotaSettings {
   refresh_interval_sec: number;
   warn_threshold: number;
+  critical_threshold: number;
   notify_low: boolean;
   notify_surge: boolean;
   accounts: AccountInfo[];
@@ -340,7 +341,7 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium">预警阈值</div>
-              <div className="text-xs text-muted-foreground">所有 DeepSeek 账户共用此阈值，低于时标红并提醒</div>
+              <div className="text-xs text-muted-foreground">低于此值标橙并提醒一次（所有 DeepSeek 账户共用）</div>
             </div>
             <Input
               type="number"
@@ -348,6 +349,20 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
               min={0}
               value={s.warn_threshold}
               onChange={(e) => set({ warn_threshold: Number(e.target.value) })}
+              className="w-32"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">紧急阈值</div>
+              <div className="text-xs text-muted-foreground">低于此值标红并发出「余额告急」提醒（默认预警阈值的一半）</div>
+            </div>
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              value={s.critical_threshold}
+              onChange={(e) => set({ critical_threshold: Number(e.target.value) })}
               className="w-32"
             />
           </div>

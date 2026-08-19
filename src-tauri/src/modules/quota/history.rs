@@ -1,56 +1,38 @@
-//! 余额历史存储：与 QuotaMonitor 的「余额记录.json」同构（records: [{time, balance}]），
-//! 便于迁移旧数据。统计基于相邻记录余额下降之和。
+//! 余额历史存储：SQLite（quota.db）持久化。统计基于相邻记录余额下降之和。
+//! 纯统计函数（today_spend/avg_daily_spent/daily_series）与存储解耦，便于测试。
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+use super::db::QuotaDb;
+
+#[derive(Debug, Clone)]
 pub struct Record {
     pub time: DateTime<Utc>,
     pub balance: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HistoryDoc {
-    pub records: Vec<Record>,
-}
-
-pub fn load(path: &Path) -> Vec<Record> {
-    match fs::read_to_string(path) {
-        Ok(text) => serde_json::from_str::<HistoryDoc>(&text)
-            .map(|d| d.records)
-            .unwrap_or_default(),
-        Err(_) => Vec::new(),
-    }
-}
-
-pub fn save(path: &Path, records: &[Record]) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let json = serde_json::to_string(&HistoryDoc {
-        records: records.to_vec(),
-    })?;
-    fs::write(path, json)
+/// 按时间升序读取余额历史
+pub fn load(db: &QuotaDb, account_id: &str) -> Vec<Record> {
+    db.load_balance(account_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(time_ms, balance, _granted, _topped_up)| Record {
+            time: DateTime::from_timestamp_millis(time_ms).unwrap_or_else(Utc::now),
+            balance,
+        })
+        .collect()
 }
 
 /// 追加一条记录；相同余额仅刷新时间戳（去重）
-pub fn append(path: &Path, balance: f64, time: DateTime<Utc>) {
-    let mut records = load(path);
-    if let Some(last) = records.last_mut() {
-        if last.balance == balance {
-            last.time = time;
-            let _ = save(path, &records);
-            return;
-        }
-    }
-    records.push(Record { time, balance });
-    if records.len() > 5000 {
-        records = records.split_off(records.len() - 2500);
-    }
-    let _ = save(path, &records);
+pub fn append(
+    db: &QuotaDb,
+    account_id: &str,
+    balance: f64,
+    granted: f64,
+    topped_up: f64,
+    time: DateTime<Utc>,
+) {
+    let _ = db.append_balance(account_id, balance, granted, topped_up, time.timestamp_millis());
 }
 
 fn spent_since(records: &[Record], from: NaiveDate) -> f64 {
@@ -161,14 +143,13 @@ mod tests {
         }
     }
 
-    fn tmp_path() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("easytool-quota-test-{}", std::process::id()))
+    fn mem() -> QuotaDb {
+        QuotaDb::open(std::path::Path::new(":memory:")).unwrap()
     }
 
     #[test]
     fn append_dedups_equal_balance() {
-        let path = tmp_path().join("h.json");
-        let _ = fs::remove_file(&path);
+        let db = mem();
         let t1 = NaiveDate::from_ymd_opt(2026, 8, 18)
             .unwrap()
             .and_hms_opt(10, 0, 0)
@@ -179,12 +160,11 @@ mod tests {
             .and_hms_opt(20, 0, 0)
             .unwrap()
             .and_utc();
-        append(&path, 100.0, t1);
-        append(&path, 100.0, t2); // 同值仅刷新时间
-        let records = load(&path);
+        append(&db, "a", 100.0, 0.0, 100.0, t1);
+        append(&db, "a", 100.0, 0.0, 100.0, t2); // 同值仅刷新时间
+        let records = load(&db, "a");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].time, t2);
-        let _ = fs::remove_file(&path);
     }
 
     #[test]

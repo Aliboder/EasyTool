@@ -26,10 +26,147 @@
 20. **纯前端过滤代替后端检索**：Emoji 全量 1906 条在内存过滤（中文名/英文名/shortcode）毫秒级完成，无需后端 `search` 命令——写了 `data::search` 是死代码，删掉避免 warning
 21. **Emoji 数据源**：`emoji-datasource` npm 包（`package/emoji.json`）含 1911 条 + 英文分类/shortcode，一次生成 `emoji.json` 资源（~234KB）提交仓库即可，无运行时依赖；中文名用高频映射表兜底
 22. **文件选择用 plugin-dialog**：WebView 原生 `<input type="file">` 拿不到绝对路径（Tauri v2 无 File.path），导入图片需装 `@tauri-apps/plugin-dialog` + `tauri-plugin-dialog`（Cargo 依赖 + `.plugin(init())` + capabilities `dialog:default` 三处联动）
+23. **Tauri 命令同名冲突**：`#[tauri::command]` 按**函数名**生成宏符号（`__cmd__xxx`/`__tauri_command_name_xxx`），不同模块同函数名（如 `get_status`/`open_file`/`save_settings`）会 E0428 冲突。`#[tauri::command(rename="...")]` 只改命令名**不解决宏符号冲突**，必须直接改函数名带模块前缀（如 `search_get_status`），invoke 名 = 函数名
+24. **Everything SDK DLL 导出名带后缀**：`Everything64.dll` 导出的是 `Everything_SetSearchW`/`Everything_QueryW`/`Everything_GetResultFullPathNameW` 等完整名（W=宽字符），不是去掉后缀的 `Everything_SetSearch`。用 `GetProcAddress` 动态加载时字符串必须写完整，否则 "missing symbol"（有真实环境探测测试 `real_sdk_probe` 可复现）
+25. **Everything64.dll 需从官方 SDK 包获取**：Everything 安装目录**不含** SDK DLL（只有 exe/ini/lng），`Everything-SDK.zip`（voidtools.com）里才有 `Everything64.dll` + 头文件 + lib。打包放 `src-tauri/modules/search/`（resources），dev 模式 fallback 相对路径。Everything 必须运行（DLL 是 IPC 客户端，与 Everything.exe 通过窗口消息/共享内存通信）
+26. **Everything SDK 有进程级全局状态**：所有查询通过全局 C 静态变量串行，同一进程只能同时一个查询，必须持全局互斥锁（`sdk::sdk_lock`）；查询同步阻塞，放 `spawn_blocking` 后台线程
+27. **动态加载 DLL 用 GetProcAddress 而非静态链接**：Everything64.dll 在 resources 目录（运行时路径不定），静态链接 lib 会找不到 DLL；用 `LoadLibraryW` + `GetProcAddress` 动态解析函数指针，`FARPROC` 转具体签名用 `std::mem::transmute_copy`（`transmute` 对泛型 T 报 E0512 无法固定大小）
+28. **Everything 官方安装器不写 App Paths 注册表**：只写 Uninstall 键（`HKLM\SOFTWARE\...\Uninstall\Everything` 的 `InstallLocation`）。检测是否安装查 App Paths 会误判为「未安装」（即使 Everything 正在运行）。可靠做法：App Paths → Uninstall InstallLocation → 常见安装目录 三路兜底（`search::find_everything_exe`）；真实探测测试 `real_find_everything`（#[ignore]）
+29. **不要靠注册表判断「能否搜索」**：Everything 有便携版/绿色版（不写任何注册表），装在任意目录也能用。判断搜索可用性的**唯一可靠信号是运行探测**——SDK 查询成功 = 已安装且正在运行（SDK 经窗口消息/共享内存与 Everything.exe 通信）。因此 `search_get_status` 只返回 running（查询探测），不再区分「未装/未运行」，前端引导卡统一提示 + 下载/启动/重测三按钮。注册表 `find_everything_exe` 仅用于「尝试自动启动」
+30. **DeepSeek 余额接口带赠送/充值字段**：`/user/balance` 的 `balance_infos` 里每货币还有 `granted_balance`/`topped_up_balance`（赠送/充值），别只取 `total_balance`；字段可能缺失，解析用 `Option<String>`，缺失默认 0
+31. **告警判定要在覆盖状态前取快照**：`fetch_deepseek` 里 `status.last_balance` 若先被新值覆盖再判 `should_recover` 会新旧混淆永不触发；先 `let prev = status.last_balance;` 捕获旧值，warn/recover 都用 prev 计算
+32. **秒级倒计时用独立小组件**：整页每秒 setState 会让图表/拖拽容器频繁重渲染；抽成自持 interval 的 `Countdown` 小组件（只重渲染自身），`fmtCountdown` 保持纯函数
+33. **额度历史改用 SQLite（quota.db）**：`balance_history`/`go_snapshots`/`go_cycles` 三表 + WAL + busy_timeout；旧 `balance_history_<id>.json` 启动时**幂等导入**（db settings 表记 `json_imported_<id>` 标记，旧文件保留不删），统计纯函数与存储解耦
+34. **多 Mutex 锁顺序必须一致**：额度模块 `fetch_once`/`restore_from_db` 都按「QuotaState → QuotaDb」顺序加锁；任何反向加锁（先 db 后 state）都会死锁。跨函数只取一把锁时（如只读 db 的命令）也要保持一致习惯
+35. **useWindowEntrance 动画会让 `fixed` 失效**：入场动画（`zoom-in-95` 等）带 transform + `animation-fill-mode`，使 `position: fixed` 子元素相对动画容器（而非视口）定位。浮层/抽屉遮罩改用页面根节点 `relative` + `absolute inset-0` 代替 `fixed`，避开包含块陷阱
+36. **新增 Tauri 命令必须注册进 `generate_handler!`**：只写 `#[tauri::command]` 函数不注册，前端 invoke 会静默失败（Promise reject，无日志），表现为「操作无效 + UI 回弹」。排查前端调用失败先查 `src-tauri/src/lib.rs` 的 `invoke_handler` 列表
 
 ---
 
 ## 按日期记录
+
+### 额度监控 UI 优化：赠送/充值明细、三级徽章、秒级倒计时、恢复通知、燃尽率
+
+**问题描述**：参考 onWatch 优化额度监控模块 UI 与告警，共 5 项改动：DeepSeek 卡片补赠送/充值明细、状态徽章分三级、Go 卡片倒计时秒级刷新、余额恢复通知、DeepSeek 卡片显示「按近期日均可用约 N 天」。
+
+**方案**：
+- `api.rs`：`Balance` 结构加 `granted`/`topped_up`，`parse_balance` 解析 `granted_balance`/`topped_up_balance`（缺失默认 0）
+- `mod.rs`：`AccountStatus` 加两字段并透传；`fetch_deepseek` 用 `prev` 快照同时判定 warn/recover，新增恢复通知「✅ 余额恢复」
+- `alerts.rs`：新增纯函数 `should_recover`（prev < 阈值 && cur >= 阈值）+ 单测
+- `QuotaPage.tsx`：`DeepseekCard` 显示赠送/充值 + 燃尽率；`AccountBadge` 三级（不足/偏低/正常）；`Countdown` 小组件秒级刷新
+
+**关键点**：
+1. 告警判定必须用更新前的 `last_balance` 快照（prev），否则 recover 永远不触发
+2. 秒级倒计时不能整页每秒 setState，用独立小组件隔离重渲染
+3. 前端统计（`get_stats_data`）只对选中账户加载，燃尽率只在选中账户卡片显示（未选账户 avg7 传 0 不渲染）
+
+**教训**：告警/状态机类逻辑的「旧值判定」要在写入新值前完成；纯函数判定（alerts.rs）+ 隔离重渲染（Countdown）保持可测、可复用。
+
+**相关代码**：
+- `src-tauri/src/modules/quota/api.rs` / `mod.rs` / `alerts.rs` / `commands.rs`
+- `src/modules/quota/QuotaPage.tsx`
+
+---
+
+### 额度监控数据落 SQLite + Go 周期/趋势 + 紧急阈值
+
+**问题描述**：参考 onWatch 把额度监控升级：余额历史从 JSON 迁到 SQLite，新增 Go 快照落盘、Go 重置周期检测、利用率趋势图、卡片点击展开、DeepSeek 紧急阈值、重启回填。
+
+**方案**：
+- 新增 `db.rs`：`QuotaDb`（WAL + busy_timeout）三表 `balance_history`/`go_snapshots`/`go_cycles` + `settings`
+- `history.rs` 持久层从 JSON 换 SQLite（`load/append` 改收 `&QuotaDb` + account_id），纯统计函数与测试保留
+- 启动时 `import_json_history`（幂等，settings 标记）+ `restore_from_db`（回填最新余额/Go 快照）
+- `fetch_go` 每次轮询写快照 + `track_go_cycle` 周期检测（用量骤降或 resetsAt 已过 → 关旧周期开新周期，记峰值/总消耗）
+- 新增命令 `get_go_history`/`get_go_cycles`；`critical_threshold` 配置（默认预警/2）+ 前端徽章三档（红=告急/橙=偏低/绿=正常）+ 设置页输入框
+- 前端 `MiniDailyBars`（DeepSeek 展开柱状图）、`GoSparkline`（Go 展开 SVG 趋势图）
+
+**关键点**：
+1. `QuotaDb` 单独 `app.manage(Mutex<QuotaDb>)`，`QuotaState` 保持 `Default`；锁顺序统一「QuotaState → QuotaDb」
+2. JSON→SQLite 迁移幂等（db settings 表 `json_imported_<id>`），旧文件保留不删，零丢失
+3. 周期检测用「当前窗口最新快照 vs 上一份」：`used_percent` 下降或 `resets_at` 已过视为窗口重置
+4. 前端 Go 趋势图 `preserveAspectRatio="none"` + `vectorEffect="non-scaling-stroke"` 拉伸不糊
+
+**教训**：持久化层与纯计算解耦（history 纯函数可测）；多 Mutex 加锁顺序一致性是死锁防护的根；迁移要幂等 + 保留旧数据。
+
+**相关代码**：
+- `src-tauri/src/modules/quota/db.rs`（新）/ `history.rs` / `mod.rs` / `commands.rs`
+- `src/modules/quota/QuotaPage.tsx` / `QuotaSettings.tsx`
+- `src-tauri/src/lib.rs`（注册 `get_go_history`/`get_go_cycles`）
+
+---
+
+### 额度监控面板重构：去 dnd 拖拽、摘要条、设置抽屉、文件拆分
+
+**问题描述**：QuotaPage.tsx 经 6 轮增量修改膨胀到 741 行，出现历史图表双入口、信息层级混乱、账户选择器分散、dnd 大块拖拽低价值、设置整页切换、无整体摘要等问题。
+
+**方案**：
+- 去掉 dnd-kit 大块拖拽（`SortableBlock`/`panel_order` 及后端命令全删）
+- 新增 `quota-summary.tsx` 摘要条（总余额/告急/偏低/Go 窗口，纯前端计算）
+- 历史图表统一进卡片展开：DeepSeek 卡自取 `get_stats_data` 算燃尽率（不再依赖父级选中账户），`MiniDailyBars`/`GoSparkline` 保留
+- 设置改侧滑抽屉（页面根节点 `relative` + 遮罩/抽屉 `absolute`），不整页替换
+- 文件拆分：`QuotaPage.tsx`（布局+状态）/ `quota-cards.tsx`（卡片+图表+公共工具）/ `quota-summary.tsx`（摘要）
+
+**关键点**：
+1. `fixed` 在 `useWindowEntrance` 动画容器内失效（transform 包含块），抽屉用 `absolute`
+2. 卡片自取数据（DeepseekCard 挂载时 `get_stats_data`）使组件自包含，删掉父级选中账户联动
+3. 删 dnd 后同步删除后端 `get_panel_order`/`save_panel_order` 命令 + lib.rs 注册，避免死代码
+
+**教训**：增量叠加会让单文件腐化，到"重排两块就得改十处"就该重构；UI 浮层定位要考虑动画容器的 transform 包含块；删前端特性时同步清理后端死命令。
+
+**相关代码**：
+- `src/modules/quota/QuotaPage.tsx`（重写）/ `quota-cards.tsx`（新）/ `quota-summary.tsx`（新）
+- `src-tauri/src/modules/quota/commands.rs`（删 panel_order）/ `src-tauri/src/lib.rs`（删注册）
+
+---
+
+### 设置面板统一抽屉式：共享 Drawer 组件
+
+**问题描述**：额度监控改成设置抽屉后与其他模块（整页替换）不一致。用户选定抽屉式，需把剪贴板/表情/搜索的设置也统一成抽屉。
+
+**方案**：
+- 新增共享 `src/components/ui/drawer.tsx`（遮罩 + 右侧 420px 抽屉 + 标题 + 关闭按钮），四模块复用
+- 每个模块根节点加 `relative`，抽屉用 `absolute`（避开 useWindowEntrance 动画 transform 包含块）
+- 把 `{showSettings ? (<设置/全页>) : (主内容)}` 改成「主内容常显 + 末尾挂 `<Drawer open>`」；大 fragment 分支拆开时保留 `<>...</>` 包裹，只在闭合处挂 Drawer
+
+**关键点**：
+1. `fixed` 在动画容器内失效 → 抽屉统一 `absolute`（根节点 `relative`）
+2. 改造大 fragment 三元：把开三元 `{showSettings ? (...) : (<>` 整体换成 `<>`，删掉多余 `)}`，Drawer 加在 fragment 闭合之后
+3. 搜索/剪贴板设置按钮本来就只在 `!popup`（主窗口）显示，弹窗不受影响
+
+**教训**：跨模块统一交互时抽共享组件避免四处复制；改「三元换抽屉」时先定位 fragment 闭合，避免大括号错乱；并行会话在改的文件（SearchView 的 LucideIcon 等错误）不动，避免冲突。
+
+**相关代码**：
+- `src/components/ui/drawer.tsx`（新，共享）
+- `src/modules/quota/QuotaPage.tsx` / `src/modules/clipboard/Clippage.tsx` / `src/modules/emoji/Page.tsx` / `src/modules/search/SearchView.tsx`
+
+---
+
+### 文件搜索模块新增：Everything SDK 集成（DLL 动态加载）
+
+**问题描述**：为 EasyTool 新增 `search` 文件搜索模块（Everything 后端），过程中踩了 4 个关键坑。
+
+**根本原因**：
+1. `#[tauri::command]` 宏按函数名生成符号，与 clipboard/quota 的同名命令冲突；
+2. `Everything64.dll` 导出名带 W 后缀，与头文件宏定义（UNICODE 下自动映射）不一致；
+3. 官方 SDK DLL 不随 Everything 安装包附带，需单独下载；
+4. 进程级全局状态 + 同步阻塞查询需要串行化。
+
+**解决方案**：
+1. 命令函数名带 `search_` 前缀（`search_get_status`/`search_open_file` 等），Tauri 命令名 = 函数名；
+2. `GetProcAddress` 用完整导出名 `Everything_SetSearchW` 等；
+3. 从 voidtools 官方 `Everything-SDK.zip` 下载 `Everything64.dll` 打包进 `modules/search/`；
+4. `sdk::sdk_lock()` 全局互斥锁 + `spawn_blocking` 后台执行。
+
+**教训**：动态链接 DLL 时符号名要核对 DLL 真实导出（可先用 `dumpbin /exports` 或真实探测测试验证）；Tauri 多模块要避免命令函数名全局冲突。
+
+**相关代码**：
+- `src-tauri/src/modules/search/`（sdk/commands/mod）
+- `src/modules/search/`（SearchView/SearchSettings/Page/Popup）
+- `src/search_popup.tsx`、`search_popup.html`
+- `src-tauri/modules/search/`（manifest.json + Everything64.dll）
+- 联动：`src-tauri/src/modules/clipboard/mod.rs` 新增 `record_file_to_history`
+
+---
 
 ### 表情模块新增：数据源、并发开发、死代码
 
@@ -322,6 +459,26 @@
 **相关代码**：
 - `vite.config.ts` - `port: 14200`
 - `src-tauri/tauri.conf.json` - `devUrl: http://localhost:14200`
+
+---
+
+## 2026-08-20
+
+### 模块拖拽排序松手回弹 → 新 Tauri 命令没注册进 generate_handler
+
+**问题描述**：设置页新增模块拖拽排序，拖动后松手又回到原位。
+
+**根本原因**：新增的 `set_module_order` 命令只写了 `#[tauri::command]` 函数，没加进 `lib.rs` 的 `generate_handler!`。前端 `invoke("set_module_order")` 返回未注册命令错误，`onReorder` 里 `await` 抛出未捕获异常，config 未更新，@dnd-kit 因 items 没变回弹原位。
+
+**解决方案**：`lib.rs` `generate_handler!` 补注册 `config::set_module_order`。
+
+**教训**：
+1. 新增 Tauri 命令三处联动：函数 + `generate_handler!` 注册 + 前端 invoke 名一致，漏注册表现为前端静默失败；
+2. @dnd-kit「松手回弹」常是 onDragEnd 里数据源没同步更新（这里因 IPC 报错没走到 setState），排查先确认 onDragEnd 是否真正执行、异步调用是否报错。
+
+**相关代码**：
+- `src-tauri/src/lib.rs` - `generate_handler!` 补 `config::set_module_order`
+- `src-tauri/src/config.rs` - `set_module_order`
 
 ---
 

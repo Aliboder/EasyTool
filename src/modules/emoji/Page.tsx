@@ -78,12 +78,32 @@ export function EmojiPage() {
   }, []);
 
   const load = async () => {
+    const t0 = performance.now();
     const c = await loadCatalog();
+    invoke("log_frontend", {
+      level: "info",
+      msg: `[diag] emoji loadCatalog: ${(performance.now() - t0).toFixed(1)}ms, emoji=${c.emoji.length}, customs=${c.customs.length}`,
+    }).catch(() => {});
     setCat(c);
   };
   useEffect(() => {
     load().catch(console.error);
   }, []);
+
+  // 诊断：cat 加载完成后到内容渲染的耗时
+  useEffect(() => {
+    if (!cat) return;
+    const t0 = performance.now();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        invoke("log_frontend", {
+          level: "info",
+          msg: `[diag] emoji first paint after cat: ${(performance.now() - t0).toFixed(1)}ms, batch=${visible}, emoji=${visibleEmoji.length}, customs=${visibleCustoms.length}`,
+        }).catch(() => {});
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cat]);
 
   const refreshCustom = async () => {
     const g = await invoke<GroupDto[]>("get_groups");
