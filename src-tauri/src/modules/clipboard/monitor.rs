@@ -168,9 +168,16 @@ fn process_clipboard_change() {
 
 /// 读取剪贴板并入库；返回 (条目, 是否新增)。重复内容仅刷新时间（changed=false）
 fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item, bool)>, DbError> {
+    // 记录规则：按类型过滤 + 忽略短文本
+    let cfg = super::module_config(app);
+    let record_files = cfg.get("record_files").and_then(|v| v.as_bool()).unwrap_or(true);
+    let record_image = cfg.get("record_image").and_then(|v| v.as_bool()).unwrap_or(true);
+    let record_text = cfg.get("record_text").and_then(|v| v.as_bool()).unwrap_or(true);
+    let min_text_len = cfg.get("min_text_len").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
     // 0. 文件列表：每个文件单独入库（不再合并成一条），整批处理完后统一通知前端
     if let Some(files) = clipboard::read_files() {
-        if !files.is_empty() {
+        if !files.is_empty() && record_files {
             save_files_batch(state, app, &files)?;
         }
         return Ok(None);
@@ -179,12 +186,21 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
     // 1. 类型判定：图片 > 文本（文本附带富文本 HTML）
     let (kind, content, html, file_paths, image_data, hash) =
         if let Some((rgba, w, h)) = clipboard::read_image_rgba() {
+            if !record_image {
+                return Ok(None);
+            }
             let Some(hash) = dedup::hash_image_rgba(&rgba, w, h) else {
                 return Ok(None);
             };
             (ItemKind::Image, None, None, None, Some((rgba, w, h)), hash)
         } else if let Some(text) = clipboard::read_text() {
+            if !record_text {
+                return Ok(None);
+            }
             if text.trim().is_empty() {
+                return Ok(None);
+            }
+            if min_text_len > 0 && text.chars().count() < min_text_len {
                 return Ok(None);
             }
             let text_hash = dedup::hash_text(&text);

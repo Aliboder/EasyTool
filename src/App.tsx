@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { Sidebar } from "@/components/layout/Sidebar";
 import {
   getConfig,
@@ -6,6 +8,9 @@ import {
   setModuleEnabled,
   setTheme,
   setUnifiedHotkey,
+  setMainHotkey,
+  setMainFollowMouse,
+  saveMainSize,
   type AppConfig,
   type Manifest,
 } from "@/lib/api";
@@ -20,17 +25,10 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Clipboard, Gauge } from "lucide-react";
+import { HotkeyRecorder } from "@/components/hotkey-recorder";
+import { applyTheme } from "@/lib/theme";
 import { Clippage } from "@/modules/clipboard/Clippage";
-import { ClipSettings } from "@/modules/clipboard/ClipSettings";
 import { QuotaPage } from "@/modules/quota/QuotaPage";
-import { QuotaSettings } from "@/modules/quota/QuotaSettings";
-
-function applyTheme(theme: string) {
-  const dark =
-    theme === "dark" ||
-    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", dark);
-}
 
 function SettingsView({
   config,
@@ -38,15 +36,35 @@ function SettingsView({
   onToggle,
   onThemeChange,
   onUnifiedChange,
-  onConfigRefresh,
+  onMainHotkey,
+  onMainFollowMouse,
 }: {
   config: AppConfig;
   manifests: Manifest[];
   onToggle: (id: string, enabled: boolean) => void;
   onThemeChange: (theme: string) => void;
   onUnifiedChange: (enabled: boolean) => void;
-  onConfigRefresh: () => void;
+  onMainHotkey: (hotkey: string) => Promise<void>;
+  onMainFollowMouse: (enabled: boolean) => Promise<void>;
 }) {
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    invoke<boolean>("plugin:autostart|is_enabled")
+      .then(setAutostart)
+      .catch(() => setAutostart(false));
+  }, []);
+
+  const toggleAutostart = async (v: boolean) => {
+    try {
+      if (v) await invoke("plugin:autostart|enable");
+      else await invoke("plugin:autostart|disable");
+      setAutostart(v);
+    } catch (e) {
+      console.error("autostart toggle failed", e);
+    }
+  };
+
   return (
     <div className="mx-auto w-full max-w-xl space-y-6 p-6">
       <div>
@@ -99,10 +117,45 @@ function SettingsView({
       </div>
 
       {Boolean(config.unified_hotkey) && (
-        <p className="text-xs text-muted-foreground">
-          当前全局呼出热键：Ctrl+Shift+E
-        </p>
+        <>
+          <div className="space-y-1">
+            <Label htmlFor="main-hotkey">全局呼出热键</Label>
+            <HotkeyRecorder
+              value={(config.hotkeys.main as string) ?? "Ctrl+Shift+E"}
+              onSave={async (combo) => {
+                try {
+                  await onMainHotkey(combo);
+                } catch (e) {
+                  return String(e);
+                }
+              }}
+              hint="统一呼出模式下，此热键呼出主窗口"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">呼出窗口跟随鼠标</div>
+              <div className="text-xs text-muted-foreground">
+                呼出时窗口出现在鼠标附近，否则停留在上次位置
+              </div>
+            </div>
+            <Switch
+              checked={Boolean(config.main_follow_mouse)}
+              onCheckedChange={(v) => onMainFollowMouse(v)}
+            />
+          </div>
+        </>
       )}
+
+      <Separator />
+
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium">开机自启动</div>
+          <div className="text-xs text-muted-foreground">登录 Windows 后自动启动 EasyTool</div>
+        </div>
+        <Switch checked={autostart ?? false} onCheckedChange={toggleAutostart} />
+      </div>
 
       <Separator />
 
@@ -121,31 +174,6 @@ function SettingsView({
           </SelectContent>
         </Select>
       </div>
-
-      {Boolean(config.modules.clipboard?.enabled) && (
-        <>
-          <Separator />
-          <div>
-            <h3 className="mb-2 text-sm font-semibold">剪贴板设置</h3>
-            <ClipSettings
-              maxItems={(config.modules.clipboard?.max_items as number) ?? 500}
-              hotkey={(config.modules.clipboard?.hotkey as string) ?? "Ctrl+Shift+V"}
-              onMaxItems={onConfigRefresh}
-              onHotkey={onConfigRefresh}
-            />
-          </div>
-        </>
-      )}
-
-      {Boolean(config.modules.quota?.enabled) && (
-        <>
-          <Separator />
-          <div>
-            <h3 className="mb-2 text-sm font-semibold">额度监控设置</h3>
-            <QuotaSettings onRefresh={onConfigRefresh} />
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -164,6 +192,22 @@ function App() {
   useEffect(() => {
     if (config) applyTheme(config.theme);
   }, [config]);
+
+  // 记住主窗口尺寸：调整后防抖保存，重启恢复
+  useEffect(() => {
+    const win = getCurrentWindow();
+    let t: number | null = null;
+    const un = win.onResized(({ payload }) => {
+      if (t) window.clearTimeout(t);
+      t = window.setTimeout(() => {
+        saveMainSize(payload.width, payload.height).catch(console.error);
+      }, 400);
+    });
+    return () => {
+      un.then((fn) => fn());
+      if (t) window.clearTimeout(t);
+    };
+  }, []);
 
   useEffect(() => {
     if (!config) return;
@@ -198,6 +242,16 @@ function App() {
     setConfig(await getConfig());
   };
 
+  const changeMainHotkey = async (hotkey: string) => {
+    await setMainHotkey(hotkey);
+    setConfig(await getConfig());
+  };
+
+  const changeMainFollowMouse = async (enabled: boolean) => {
+    await setMainFollowMouse(enabled);
+    setConfig(await getConfig());
+  };
+
   if (!config) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
@@ -207,10 +261,6 @@ function App() {
   }
 
   const activeModule = enabledModules.find((m) => m.id === active);
-
-  const updateClipMaxItems = async () => {
-    setConfig(await getConfig());
-  };
 
   const renderModule = () => {
     if (!activeModule) {
@@ -235,8 +285,7 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar modules={enabledModules} active={active} onSelect={setActive} />
+    <div className="flex h-screen flex-col overflow-hidden">
       <main className="flex-1 overflow-y-auto">
         {notice && (
           <div className="flex items-center justify-between border-b bg-secondary/50 px-4 py-2 text-sm">
@@ -256,12 +305,14 @@ function App() {
             onToggle={toggleModule}
             onThemeChange={changeTheme}
             onUnifiedChange={changeUnified}
-            onConfigRefresh={updateClipMaxItems}
+            onMainHotkey={changeMainHotkey}
+            onMainFollowMouse={changeMainFollowMouse}
           />
         ) : (
           renderModule()
         )}
       </main>
+      <Sidebar modules={enabledModules} active={active} onSelect={setActive} />
     </div>
   );
 }

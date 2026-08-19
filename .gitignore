@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# CodeGraph 索引与构建产物
+.codegraph/
+src-tauri/target/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

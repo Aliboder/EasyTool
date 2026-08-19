@@ -6,14 +6,14 @@ use std::sync::{Mutex, OnceLock};
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Gdi::{
     DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER,
-    BI_RGB, DIB_RGB_COLORS, HGDIOBJ,
+    BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
 };
 use windows::Win32::UI::Shell::{
     SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_USEFILEATTRIBUTES,
 };
 use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
 
-/// 按扩展名缓存图标 base64（None = 提取失败，不再重试）
+/// 按路径缓存图标 base64（None = 提取失败，不再重试）
 static ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
 /// 按路径缓存缩略图/大预览 base64（避免同一文件反复解码，上限 200 防内存膨胀）
 static THUMB_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
@@ -43,30 +43,33 @@ fn cache_get_or_insert(
     v
 }
 
-/// 获取文件类型图标（Shell API，与资源管理器一致），返回 PNG base64
+/// 获取文件图标（Shell API，与资源管理器一致），返回 PNG base64
+/// 优先访问真实文件取「格式专属图标」（如 txt/图片/exe 各自独立图标）；
+/// 文件不存在时回退按扩展名取关联图标，保证始终有图标显示
 pub fn file_icon_png(path: &str) -> Option<String> {
-    let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
-    let cache = ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(cached) = cache.lock().unwrap().get(&ext).cloned() {
-        return cached;
-    }
-    let result = unsafe { extract_icon(path) }.map(|png| base64_encode(&png));
-    cache.lock().unwrap().insert(ext, result.clone());
-    result
+    cache_get_or_insert(&ICON_CACHE, path, || {
+        let png = unsafe { extract_icon(path, false) }
+            .or_else(|| unsafe { extract_icon(path, true) })?;
+        Some(base64_encode(&png))
+    })
 }
 
 /// 通过 SHGetFileInfo 拿 HICON，再提取像素编码 PNG
-unsafe fn extract_icon(path: &str) -> Option<Vec<u8>> {
+/// use_attributes=true 时不访问文件本体（仅按扩展名关联取图标，用于文件已被移动/删除的情况）
+unsafe fn extract_icon(path: &str, use_attributes: bool) -> Option<Vec<u8>> {
     let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
     let mut info = SHFILEINFOW::default();
+    let flags = if use_attributes {
+        SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES
+    } else {
+        SHGFI_ICON | SHGFI_LARGEICON
+    };
     let ret = SHGetFileInfoW(
         PCWSTR(wide.as_ptr()),
         Default::default(),
         Some(&mut info),
         std::mem::size_of::<SHFILEINFOW>() as u32,
-        // USEFILEATTRIBUTES：不访问文件本体，仅按扩展名关联取系统图标——
-        // 剪贴板记录的是路径引用，原文件可能已被移动/删除，图标仍应正确显示
-        SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES,
+        flags,
     );
     if ret == 0 || info.hIcon.0.is_null() {
         return None;
@@ -91,41 +94,14 @@ unsafe fn extract_icon(path: &str) -> Option<Vec<u8>> {
             let _ = DeleteObject(HGDIOBJ(icon_info.hbmMask.0));
             return None;
         }
-        let mut bi = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: w,
-                biHeight: -h, // top-down，避免行序翻转
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
-                ..Default::default()
-            },
-            bmiColors: [Default::default()],
-        };
-        let mut pixels = vec![0u8; (w * h * 4) as usize];
         let hdc = GetDC(None);
-        let lines = GetDIBits(
-            hdc,
-            hbm,
-            0,
-            h as u32,
-            Some(pixels.as_mut_ptr() as *mut core::ffi::c_void),
-            &mut bi,
-            DIB_RGB_COLORS,
-        );
+        // 先 top-down，个别图标/DC 组合不支持时再试 bottom-up
+        let rgba = read_icon_pixels(hdc, hbm, w, h, true)
+            .or_else(|| read_icon_pixels(hdc, hbm, w, h, false));
         let _ = ReleaseDC(None, hdc);
         let _ = DeleteObject(HGDIOBJ(hbm.0));
         let _ = DeleteObject(HGDIOBJ(icon_info.hbmMask.0));
-        if lines == 0 {
-            return None;
-        }
-        // BGRA → RGBA
-        let mut rgba = Vec::with_capacity(pixels.len());
-        for px in pixels.chunks_exact(4) {
-            let (b, g, r, a) = (px[0], px[1], px[2], px[3]);
-            rgba.extend_from_slice(&[r, g, b, a]);
-        }
+        let rgba = rgba?;
         let img = image::RgbaImage::from_raw(w as u32, h as u32, rgba)?;
         let mut buf = Vec::new();
         img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
@@ -134,6 +110,51 @@ unsafe fn extract_icon(path: &str) -> Option<Vec<u8>> {
     })();
     let _ = DestroyIcon(hicon);
     result
+}
+
+/// 读取位图像素并转为 RGBA；top_down 控制行序（false 时翻转 bottom-up 行序）
+unsafe fn read_icon_pixels(
+    hdc: HDC,
+    hbm: HBITMAP,
+    w: i32,
+    h: i32,
+    top_down: bool,
+) -> Option<Vec<u8>> {
+    let mut bi = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: w,
+            biHeight: if top_down { -h } else { h },
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        bmiColors: [Default::default()],
+    };
+    let mut bgra = vec![0u8; (w as usize) * (h as usize) * 4];
+    let lines = GetDIBits(
+        hdc,
+        hbm,
+        0,
+        h as u32,
+        Some(bgra.as_mut_ptr() as *mut core::ffi::c_void),
+        &mut bi,
+        DIB_RGB_COLORS,
+    );
+    if lines == 0 {
+        return None;
+    }
+    let mut rgba = Vec::with_capacity(bgra.len());
+    for y in 0..h as usize {
+        let row = if top_down { y } else { h as usize - 1 - y };
+        let row_slice = &bgra[row * (w as usize) * 4..(row + 1) * (w as usize) * 4];
+        for px in row_slice.chunks_exact(4) {
+            let (b, g, r, a) = (px[0], px[1], px[2], px[3]);
+            rgba.extend_from_slice(&[r, g, b, a]);
+        }
+    }
+    Some(rgba)
 }
 
 /// 图片文件缩略图（PNG base64，最长边 256，保持比例；按路径缓存）
@@ -160,4 +181,28 @@ pub fn file_preview_png(path: &str) -> Option<String> {
             .ok()?;
         Some(base64_encode(&buf))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 验证各常见扩展名都能取到图标（真实文件优先，回退按扩展名关联）
+    #[test]
+    fn probe_icons() {
+        let dir = std::env::temp_dir().join(format!("easytool-icon-probe-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let names = ["a.txt", "b.png", "c.exe", "d.docx", "e.zip", "noext"];
+        let mut seen = std::collections::HashSet::new();
+        for n in names {
+            let p = dir.join(n);
+            std::fs::write(&p, b"x").unwrap();
+            let got = file_icon_png(p.to_str().unwrap());
+            assert!(got.is_some(), "{n} 应能取到图标");
+            assert!(got.as_ref().unwrap().len() > 100, "{n} 图标过小");
+            seen.insert(got.unwrap());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(seen.len() > 1, "图标应按格式区分，而非全部通用");
+    }
 }

@@ -50,12 +50,6 @@ pub struct QuotaSettings {
     pub warn_threshold: f64,
     pub notify_low: bool,
     pub notify_surge: bool,
-    pub float_enabled: bool,
-    pub font_size: f64,
-    pub opacity: f64,
-    pub dim_level: f64,
-    pub corner_radius: f64,
-    pub lock_passthrough: bool,
     /// 只读：DeepSeek 密钥是否已配置（来自系统密钥库）
     pub ds_configured: bool,
     /// 只读：OpenCode Go 密钥是否已配置
@@ -75,12 +69,6 @@ pub fn get_settings(app: AppHandle) -> QuotaSettings {
         warn_threshold: get("warn_threshold", 10.0),
         notify_low: getb("notify_low", true),
         notify_surge: getb("notify_surge", true),
-        float_enabled: getb("float_enabled", true),
-        font_size: get("font_size", 14.0),
-        opacity: get("opacity", 100.0),
-        dim_level: get("dim_level", 60.0),
-        corner_radius: get("corner_radius", 10.0),
-        lock_passthrough: getb("lock_passthrough", false),
         ds_configured: !super::get_key("deepseek").is_empty(),
         go_configured: !super::get_key("opencode-go").is_empty(),
     }
@@ -97,12 +85,6 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
             v["warn_threshold"] = serde_json::json!(settings.warn_threshold);
             v["notify_low"] = serde_json::json!(settings.notify_low);
             v["notify_surge"] = serde_json::json!(settings.notify_surge);
-            v["float_enabled"] = serde_json::json!(settings.float_enabled);
-            v["font_size"] = serde_json::json!(settings.font_size);
-            v["opacity"] = serde_json::json!(settings.opacity);
-            v["dim_level"] = serde_json::json!(settings.dim_level);
-            v["corner_radius"] = serde_json::json!(settings.corner_radius);
-            v["lock_passthrough"] = serde_json::json!(settings.lock_passthrough);
         }
         crate::config::save_config(&app, &cfg)?;
     } // ConfigState 锁在此释放，避免 fetch_once 二次加锁死锁
@@ -121,6 +103,34 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
                 settings.warn_threshold
             );
         }
+    }
+    Ok(())
+}
+
+/// 面板卡片顺序（拖拽排序记忆）
+#[tauri::command]
+pub fn get_panel_order(app: AppHandle) -> Vec<String> {
+    let cfg = module_config(&app);
+    cfg.get("panel_order")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_else(|| vec!["stats".into(), "chart".into(), "go".into()])
+}
+
+/// 保存面板卡片顺序
+#[tauri::command]
+pub fn save_panel_order(app: AppHandle, order: Vec<String>) -> Result<(), String> {
+    {
+        let state = app.state::<crate::config::ConfigState>();
+        let mut cfg = state.0.lock().unwrap();
+        if let Some(v) = cfg.modules.get_mut("quota") {
+            v["panel_order"] = serde_json::json!(order);
+        }
+        crate::config::save_config(&app, &cfg)?;
     }
     Ok(())
 }

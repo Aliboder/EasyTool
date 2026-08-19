@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -21,12 +19,6 @@ interface QuotaSettings {
   warn_threshold: number;
   notify_low: boolean;
   notify_surge: boolean;
-  float_enabled: boolean;
-  font_size: number;
-  opacity: number;
-  dim_level: number;
-  corner_radius: number;
-  lock_passthrough: boolean;
   ds_configured: boolean;
   go_configured: boolean;
 }
@@ -124,6 +116,8 @@ function KeyField({
         <Button variant="outline" onClick={() => setShow((v) => !v)} className="shrink-0">
           {show ? "隐藏" : "显示"}
         </Button>
+      </div>
+      <div className="flex items-center gap-2">
         <Button variant="outline" onClick={testKey} disabled={busy} className="shrink-0">
           测试
         </Button>
@@ -148,7 +142,7 @@ function KeyField({
   );
 }
 
-export function QuotaSettings({ onRefresh }: { onRefresh: () => void }) {
+export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
   const [s, setS] = useState<QuotaSettings | null>(null);
 
   useEffect(() => {
@@ -160,18 +154,6 @@ export function QuotaSettings({ onRefresh }: { onRefresh: () => void }) {
     const next = { ...s, ...patch };
     setS(next);
     invoke("save_settings", { settings: next }).then(onRefresh).catch(console.error);
-  };
-
-  const toggleFloat = (show: boolean) => {
-    set({ float_enabled: show });
-    WebviewWindow.getByLabel("quota_float").then((w) => {
-      if (show) {
-        w?.show();
-        w?.setFocus();
-      } else {
-        w?.hide();
-      }
-    });
   };
 
   const reloadSettings = () => {
@@ -255,80 +237,6 @@ export function QuotaSettings({ onRefresh }: { onRefresh: () => void }) {
               <div className="text-xs text-muted-foreground">今日消费超近7天日均3倍时提醒</div>
             </div>
             <Switch checked={s.notify_surge} onCheckedChange={(v) => set({ notify_surge: v })} />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">悬浮窗</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">显示悬浮窗</div>
-              <div className="text-xs text-muted-foreground">桌面常驻显示当前额度</div>
-            </div>
-            <Switch checked={s.float_enabled} onCheckedChange={toggleFloat} />
-          </div>
-          <Separator />
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs">
-              <span>字号</span>
-              <span className="text-muted-foreground">{s.font_size}</span>
-            </div>
-            <Slider
-              min={12}
-              max={48}
-              value={[s.font_size]}
-              onValueChange={([v]) => set({ font_size: v })}
-            />
-          </div>
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs">
-              <span>整体透明度</span>
-              <span className="text-muted-foreground">{s.opacity}%</span>
-            </div>
-            <Slider
-              min={30}
-              max={100}
-              value={[s.opacity]}
-              onValueChange={([v]) => set({ opacity: v })}
-            />
-          </div>
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs">
-              <span>鼠标离开暗度</span>
-              <span className="text-muted-foreground">{s.dim_level}%</span>
-            </div>
-            <Slider
-              min={10}
-              max={100}
-              value={[s.dim_level]}
-              onValueChange={([v]) => set({ dim_level: v })}
-            />
-          </div>
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs">
-              <span>圆角</span>
-              <span className="text-muted-foreground">{s.corner_radius}</span>
-            </div>
-            <Slider
-              min={0}
-              max={30}
-              value={[s.corner_radius]}
-              onValueChange={([v]) => set({ corner_radius: v })}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">锁定穿透</div>
-              <div className="text-xs text-muted-foreground">鼠标事件穿透悬浮窗，不影响下层操作</div>
-            </div>
-            <Switch
-              checked={s.lock_passthrough}
-              onCheckedChange={(v) => set({ lock_passthrough: v })}
-            />
           </div>
         </CardContent>
       </Card>

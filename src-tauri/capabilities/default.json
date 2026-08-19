@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "clipboard_popup", "quota_float"],
+  "windows": ["main", "clipboard_popup"],
   "permissions": [
     "core:default",
     "opener:default",
@@ -10,6 +10,7 @@
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-unregister-all",
+    "autostart:default",
     "core:window:allow-hide",
     "core:window:allow-show",
     "core:window:allow-set-focus",
@@ -17,7 +18,6 @@
     "core:window:allow-set-size",
     "core:window:allow-start-dragging",
     "core:window:allow-set-always-on-top",
-    "core:window:allow-set-ignore-cursor-events",
     "core:event:default",
     "notification:default"
   ]

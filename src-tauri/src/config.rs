@@ -11,6 +11,10 @@ pub struct AppConfig {
     pub migrated: Vec<String>,
     /// 统一呼出主窗口模式：开启时只注册主窗口热键，模块独立热键全部禁用
     pub unified_hotkey: bool,
+    /// 主窗口尺寸记忆 {w,h}（重启恢复）
+    pub main_size: Option<serde_json::Value>,
+    /// 统一模式下呼出主窗口时是否跟随鼠标
+    pub main_follow_mouse: bool,
 }
 
 impl Default for AppConfig {
@@ -18,7 +22,19 @@ impl Default for AppConfig {
         let mut modules = HashMap::new();
         modules.insert(
             "clipboard".into(),
-            serde_json::json!({ "enabled": true, "max_items": 500, "hotkey": "Ctrl+Shift+V" }),
+            serde_json::json!({
+                "enabled": true,
+                "max_items": 500,
+                "hotkey": "Ctrl+Shift+V",
+                "follow_mouse": true,
+                "record_text": true,
+                "record_image": true,
+                "record_files": true,
+                "min_text_len": 0,
+                "cell_size": 80,
+                "text_lines": 2,
+                "show_timestamps": true
+            }),
         );
         modules.insert(
             "quota".into(),
@@ -27,7 +43,7 @@ impl Default for AppConfig {
         let mut hotkeys = HashMap::new();
         hotkeys.insert("clipboard".into(), "Ctrl+Shift+V".into());
         hotkeys.insert("main".into(), "Ctrl+Shift+E".into());
-        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], unified_hotkey: true }
+        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], unified_hotkey: true, main_size: None, main_follow_mouse: false }
     }
 }
 
@@ -98,7 +114,55 @@ pub fn set_unified_hotkey(
         save_config(&app, &cfg)?;
     }
     crate::reapply_hotkeys(&app);
+    crate::apply_main_window_mode(&app);
     Ok(())
+}
+
+/// 自定义主窗口全局呼出热键（统一呼出模式下唯一热键），立即生效并持久化
+#[tauri::command]
+pub fn set_main_hotkey(
+    app: AppHandle,
+    state: State<ConfigState>,
+    hotkey: String,
+) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    // 先验证新键可用，失败时旧热键仍有效
+    app.global_shortcut()
+        .register(hotkey.as_str())
+        .map_err(|e| format!("快捷键无效或已被其他程序占用：{e}"))?;
+    let _ = app.global_shortcut().unregister_all();
+    let mut cfg = state.0.lock().unwrap();
+    cfg.hotkeys.insert("main".into(), hotkey.clone());
+    save_config(&app, &cfg)?;
+    drop(cfg);
+    crate::reapply_hotkeys(&app);
+    log::info!("main hotkey changed to {hotkey}");
+    Ok(())
+}
+
+/// 保存主窗口尺寸（重启恢复）
+#[tauri::command]
+pub fn save_main_size(
+    app: AppHandle,
+    state: State<ConfigState>,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let mut cfg = state.0.lock().unwrap();
+    cfg.main_size = Some(serde_json::json!({ "w": width, "h": height }));
+    save_config(&app, &cfg)
+}
+
+/// 统一模式下呼出主窗口是否跟随鼠标
+#[tauri::command]
+pub fn set_main_follow_mouse(
+    app: AppHandle,
+    state: State<ConfigState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut cfg = state.0.lock().unwrap();
+    cfg.main_follow_mouse = enabled;
+    save_config(&app, &cfg)
 }
 
 #[cfg(test)]

@@ -202,8 +202,14 @@ impl Db {
                 args.push(Box::new(k.to_string()));
             }
         }
-        // 排序：一律时间倒序（固定条目不置顶、无手动排序，与普通条目混排）
-        sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+        // 排序：固定 Tab 按手动排序（pin_order，NULL 未排过序的排最后、其次按时间倒序）；其余按时间倒序
+        if kind == Some("pinned") {
+            sql.push_str(
+                " ORDER BY pin_order IS NULL, pin_order ASC, created_at DESC LIMIT ? OFFSET ?",
+            );
+        } else {
+            sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+        }
         args.push(Box::new(limit));
         args.push(Box::new(offset));
         let mut stmt = self.conn.prepare(&sql)?;
@@ -226,6 +232,17 @@ impl Db {
             )?
         };
         Ok(n > 0)
+    }
+
+    /// 按传入顺序给固定条目写入排序值（0,1,2...），固定 Tab 拖拽排序用
+    pub fn set_pin_orders(&self, ids: &[i64]) -> Result<(), DbError> {
+        for (i, id) in ids.iter().enumerate() {
+            self.conn.execute(
+                "UPDATE items SET pin_order = ?1 WHERE id = ?2 AND pinned = 1",
+                params![i as i64, id],
+            )?;
+        }
+        Ok(())
     }
 
     /// 图片落盘后回填路径

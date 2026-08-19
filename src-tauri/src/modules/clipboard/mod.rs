@@ -97,9 +97,26 @@ fn popup_position_physical(hwnd: windows::Win32::Foundation::HWND) -> (i32, i32)
     }
 }
 
+/// 把窗口定位到鼠标附近（统一模式主窗口呼出用，与弹窗同口径）
+pub(crate) fn position_at_cursor(win: &tauri::WebviewWindow) {
+    if let Ok(hwnd) = win.hwnd() {
+        let (x, y) = popup_position_physical(hwnd);
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                x,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+        }
+    }
+}
+
 /// 记录唤起前的窗口上下文（供粘贴回原窗口），由任何窗口唤起入口调用
-pub fn record_foreground_state(app: &tauri::AppHandle) {
-    if let Some(state) = app.try_state::<AppState>() {
+pub fn record_foreground_state(app: &tauri::AppHandle) {    if let Some(state) = app.try_state::<AppState>() {
         let ctx = paste::record_foreground();
         state
             .prev_foreground
@@ -121,7 +138,24 @@ pub fn on_hotkey(app: &tauri::AppHandle) {
     record_foreground_state(app);
     if let Some(win) = app.get_webview_window(POPUP_WINDOW_LABEL) {
         if let Ok(hwnd) = win.hwnd() {
-            let (x, y) = popup_position_physical(hwnd);
+            // 位置模式：跟随鼠标（默认）或记住的固定位置
+            let cfg = module_config(app);
+            let follow_mouse = cfg
+                .get("follow_mouse")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let (x, y) = if follow_mouse {
+                popup_position_physical(hwnd)
+            } else {
+                cfg.get("fixed_pos")
+                    .and_then(|p| {
+                        Some((
+                            p.get("x")?.as_i64()? as i32,
+                            p.get("y")?.as_i64()? as i32,
+                        ))
+                    })
+                    .unwrap_or_else(|| popup_position_physical(hwnd))
+            };
             unsafe {
                 let _ = SetWindowPos(
                     hwnd,

@@ -85,6 +85,14 @@ pub fn pin_item(state: State<'_, AppState>, id: i64, pinned: bool) -> CmdResult<
     Ok(db.set_pinned(id, pinned)?)
 }
 
+/// 保存固定条目拖拽排序（按传入 id 顺序）
+#[tauri::command]
+pub fn set_pin_order(state: State<'_, AppState>, ids: Vec<i64>) -> CmdResult<()> {
+    let db = state.db.lock().unwrap();
+    db.set_pin_orders(&ids)?;
+    Ok(())
+}
+
 /// 删除单条（含磁盘文件）
 #[tauri::command]
 pub fn delete_item(state: State<'_, AppState>, id: i64) -> CmdResult<bool> {
@@ -186,6 +194,54 @@ pub fn set_max_items(
     crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
 }
 
+/// 设置剪贴板弹窗位置模式：跟随鼠标 / 固定位置
+#[tauri::command]
+pub fn set_follow_mouse(app: AppHandle, follow: bool) -> CmdResult<()> {
+    let cfg_state = app.state::<crate::config::ConfigState>();
+    let mut cfg = cfg_state.0.lock().unwrap();
+    if let Some(v) = cfg.modules.get_mut("clipboard") {
+        v["follow_mouse"] = serde_json::json!(follow);
+    }
+    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
+}
+
+/// 保存固定位置（物理像素坐标，弹窗拖动后由前端上报）
+#[tauri::command]
+pub fn save_fixed_pos(app: AppHandle, x: i32, y: i32) -> CmdResult<()> {
+    let cfg_state = app.state::<crate::config::ConfigState>();
+    let mut cfg = cfg_state.0.lock().unwrap();
+    if let Some(v) = cfg.modules.get_mut("clipboard") {
+        v["fixed_pos"] = serde_json::json!({ "x": x, "y": y });
+    }
+    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
+}
+
+/// 保存弹窗尺寸（物理像素，弹窗调整大小后由前端上报）
+#[tauri::command]
+pub fn save_popup_size(app: AppHandle, width: u32, height: u32) -> CmdResult<()> {
+    let cfg_state = app.state::<crate::config::ConfigState>();
+    let mut cfg = cfg_state.0.lock().unwrap();
+    if let Some(v) = cfg.modules.get_mut("clipboard") {
+        v["popup_size"] = serde_json::json!({ "w": width, "h": height });
+    }
+    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
+}
+
+/// 通用剪贴板设置项写入（合并进 modules.clipboard，前端传 {key: value} 部分更新）
+#[tauri::command]
+pub fn save_clipboard_settings(app: AppHandle, settings: serde_json::Value) -> CmdResult<()> {
+    let cfg_state = app.state::<crate::config::ConfigState>();
+    let mut cfg = cfg_state.0.lock().unwrap();
+    if let Some(m) = cfg.modules.get_mut("clipboard") {
+        if let Some(obj) = settings.as_object() {
+            for (k, v) in obj {
+                m[k] = v.clone();
+            }
+        }
+    }
+    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
+}
+
 /// 设置全局呼出热键（立即生效并持久化）
 #[tauri::command]
 pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
@@ -207,22 +263,13 @@ pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
         .map_err(|e| CommandError {
             message: format!("快捷键无效或已被其他程序占用：{e}"),
         })?;
-    // 成功：注销全部后只重新注册剪贴板热键与主窗口热键，保证唯一
+    // 成功：注销全部后只重新注册剪贴板热键（非统一模式下主窗口热键失效）
     let _ = app.global_shortcut().unregister_all();
     app.global_shortcut()
         .register(hotkey.as_str())
         .map_err(|e| CommandError {
             message: format!("快捷键无效或已被其他程序占用：{e}"),
         })?;
-    let main_hotkey = {
-        let state = app.state::<crate::config::ConfigState>();
-        let cfg = state.0.lock().unwrap();
-        cfg.hotkeys
-            .get("main")
-            .cloned()
-            .unwrap_or_else(|| "Ctrl+Shift+E".into())
-    };
-    let _ = app.global_shortcut().register(main_hotkey.as_str());
     // 写入 config
     let cfg_state = app.state::<crate::config::ConfigState>();
     let mut cfg = cfg_state.0.lock().unwrap();
@@ -330,6 +377,16 @@ pub fn get_image(state: State<'_, AppState>, id: i64) -> CmdResult<Option<String
     Ok(std::fs::read(&path)
         .ok()
         .map(|b| super::monitor::base64_encode(&b)))
+}
+
+/// 图片原图磁盘路径（「查看大图」交给系统默认看图程序打开）
+#[tauri::command]
+pub fn get_image_path(state: State<'_, AppState>, id: i64) -> CmdResult<Option<String>> {
+    let db = state.db.lock().unwrap();
+    let Some(item) = db.get_item(id)? else {
+        return Ok(None);
+    };
+    Ok(item.image_path)
 }
 
 /// 文件类型图标（Shell API，按文件路径；异步执行避免阻塞 IPC 串行线程）

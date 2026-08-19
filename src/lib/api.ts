@@ -14,6 +14,7 @@ export interface AppConfig {
   theme: string;
   migrated: string[];
   unified_hotkey: boolean;
+  main_follow_mouse: boolean;
 }
 
 export const getConfig = () => invoke<AppConfig>("get_config");
@@ -22,4 +23,9 @@ export const setModuleEnabled = (id: string, enabled: boolean) =>
 export const setTheme = (theme: string) => invoke<void>("set_theme", { theme });
 export const setUnifiedHotkey = (enabled: boolean) =>
   invoke<void>("set_unified_hotkey", { enabled });
+export const setMainHotkey = (hotkey: string) => invoke<void>("set_main_hotkey", { hotkey });
+export const saveMainSize = (width: number, height: number) =>
+  invoke<void>("save_main_size", { width, height });
+export const setMainFollowMouse = (enabled: boolean) =>
+  invoke<void>("set_main_follow_mouse", { enabled });
 export const getManifests = () => invoke<Manifest[]>("get_manifests");

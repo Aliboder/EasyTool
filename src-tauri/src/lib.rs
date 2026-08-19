@@ -111,6 +111,54 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// 统一模式下：热键切换主窗口呼出/隐藏（呼出时记录唤起前窗口供跟手粘贴）
+fn toggle_main(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+        } else {
+            if clipboard_enabled(app) {
+                modules::clipboard::record_foreground_state(app);
+            }
+            // 可选手：呼出时跟随鼠标定位
+            let follow_mouse = app
+                .state::<ConfigState>()
+                .0
+                .lock()
+                .unwrap()
+                .main_follow_mouse;
+            if follow_mouse {
+                modules::clipboard::position_at_cursor(&win);
+            }
+            show_main(app);
+        }
+    }
+}
+
+/// 统一模式下把主窗口调成"面板"形态：置顶 + 隐藏任务栏图标；关闭模式时还原
+pub fn apply_main_window_mode(app: &tauri::AppHandle) {
+    let unified = app
+        .try_state::<ConfigState>()
+        .map(|s| s.0.lock().unwrap().unified_hotkey)
+        .unwrap_or(false);
+    if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        let _ = win.set_always_on_top(unified);
+        let _ = win.set_skip_taskbar(unified);
+    }
+}
+
+/// 失焦 200ms 后仍未聚焦则隐藏（点外部关闭；边缘缩放等瞬时失焦不误关）
+fn hide_after_blur_grace(win: &tauri::Window) {
+    let win = win.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let still_unfocused = win.is_focused().map(|f| !f).unwrap_or(true);
+        if still_unfocused {
+            let _ = win.hide();
+        }
+    });
+}
+
 fn clipboard_enabled(app: &tauri::AppHandle) -> bool {
     app.try_state::<ConfigState>()
         .map(|s| {
@@ -168,7 +216,7 @@ fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
 
 /// 按统一呼出模式重新注册全局热键：
 /// - unified=true：只注册主窗口热键，模块独立热键全部禁用
-/// - unified=false：主窗口热键 + 各模块热键共存
+/// - unified=false：只注册各模块独立热键，主窗口呼出热键失效（改用托盘呼出）
 pub fn reapply_hotkeys(app: &tauri::AppHandle) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     let _ = app.global_shortcut().unregister_all();
@@ -178,16 +226,10 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
             Ok(_) => log::info!("[unified] main hotkey registered: {}", hk.main_hotkey),
             Err(e) => log::error!("failed to register main hotkey: {e}"),
         }
-    } else {
-        if clipboard_enabled(app) {
-            match app.global_shortcut().register(hk.clip_hotkey.as_str()) {
-                Ok(_) => log::info!("clipboard hotkey registered: {}", hk.clip_hotkey),
-                Err(e) => log::error!("failed to register clipboard hotkey: {e}"),
-            }
-        }
-        match app.global_shortcut().register(hk.main_hotkey.as_str()) {
-            Ok(_) => log::info!("main hotkey registered: {}", hk.main_hotkey),
-            Err(e) => log::error!("failed to register main hotkey: {e}"),
+    } else if clipboard_enabled(app) {
+        match app.global_shortcut().register(hk.clip_hotkey.as_str()) {
+            Ok(_) => log::info!("clipboard hotkey registered: {}", hk.clip_hotkey),
+            Err(e) => log::error!("failed to register clipboard hotkey: {e}"),
         }
     }
 }
@@ -210,6 +252,11 @@ pub fn run() {
             show_main(app);
         }))
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -253,11 +300,16 @@ pub fn run() {
                         log::info!("clipboard hotkey matched, showing popup");
                         modules::clipboard::on_hotkey(app);
                     } else if main_match {
-                        // 主窗口呼出：先记录唤起前窗口，供剪贴板跟手粘贴
-                        if clipboard_enabled(app) {
-                            modules::clipboard::record_foreground_state(app);
+                        if unified {
+                            log::info!("main hotkey toggling main window");
+                            toggle_main(app);
+                        } else {
+                            // 主窗口呼出：先记录唤起前窗口，供剪贴板跟手粘贴
+                            if clipboard_enabled(app) {
+                                modules::clipboard::record_foreground_state(app);
+                            }
+                            show_main(app);
                         }
-                        show_main(app);
                     }
                 })
                 .build(),
@@ -283,30 +335,56 @@ pub fn run() {
                 .decorations(false)
                 .skip_taskbar(true)
                 .inner_size(620.0, 480.0)
+                .min_inner_size(400.0, 300.0)
+                .resizable(true)
                 .always_on_top(true)
                 .build()?;
+                // 应用记住的弹窗尺寸
+                let saved_size = {
+                    let state = app.state::<ConfigState>();
+                    let c = state.0.lock().unwrap();
+                    c.modules
+                        .get("clipboard")
+                        .and_then(|m| m.get("popup_size"))
+                        .cloned()
+                };
+                if let Some(size) = saved_size {
+                    if let (Some(w), Some(h)) = (
+                        size.get("w").and_then(|v| v.as_u64()),
+                        size.get("h").and_then(|v| v.as_u64()),
+                    ) {
+                        let _ = popup.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+                    }
+                }
                 popup.hide()?;
             }
 
             // 额度监控模块
             if quota_enabled(app.handle()) {
                 modules::quota::setup(app)?;
-                let float_win = tauri::WebviewWindowBuilder::new(
-                    app,
-                    modules::quota::FLOAT_WINDOW_LABEL,
-                    tauri::WebviewUrl::App("float_window.html".into()),
-                )
-                .decorations(false)
-                .shadow(false)
-                .skip_taskbar(true)
-                .always_on_top(true)
-                .inner_size(220.0, 80.0)
-                .build()?;
-                float_win.hide()?;
             }
 
             // 全局热键（按统一呼出模式注册）
             reapply_hotkeys(app.handle());
+            // 主窗口形态：统一模式下置顶 + 隐藏任务栏
+            apply_main_window_mode(app.handle());
+
+            // 恢复主窗口记住的尺寸
+            let saved_main_size = {
+                let state = app.state::<ConfigState>();
+                let c = state.0.lock().unwrap();
+                c.main_size.clone()
+            };
+            if let Some(size) = saved_main_size {
+                if let (Some(w), Some(h)) = (
+                    size.get("w").and_then(|v| v.as_u64()),
+                    size.get("h").and_then(|v| v.as_u64()),
+                ) {
+                    if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                        let _ = win.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+                    }
+                }
+            }
 
             build_tray(app)?;
             Ok(())
@@ -317,9 +395,13 @@ pub fn run() {
             config::set_module_enabled,
             config::set_theme,
             config::set_unified_hotkey,
+            config::set_main_hotkey,
+            config::save_main_size,
+            config::set_main_follow_mouse,
             modules::get_manifests,
             modules::clipboard::commands::get_history,
             modules::clipboard::commands::pin_item,
+            modules::clipboard::commands::set_pin_order,
             modules::clipboard::commands::delete_item,
             modules::clipboard::commands::clear_history,
             modules::clipboard::commands::clear_all_history,
@@ -329,17 +411,24 @@ pub fn run() {
             modules::clipboard::commands::open_file,
             modules::clipboard::commands::set_max_items,
             modules::clipboard::commands::set_hotkey,
+            modules::clipboard::commands::set_follow_mouse,
+            modules::clipboard::commands::save_fixed_pos,
+            modules::clipboard::commands::save_popup_size,
+            modules::clipboard::commands::save_clipboard_settings,
             modules::clipboard::commands::get_data_dir,
             modules::clipboard::commands::open_data_dir,
             modules::clipboard::commands::get_stats,
             modules::clipboard::commands::get_thumb,
             modules::clipboard::commands::get_image,
+            modules::clipboard::commands::get_image_path,
             modules::clipboard::commands::get_file_icon,
             modules::clipboard::commands::get_file_thumb,
             modules::clipboard::commands::get_file_preview,
             modules::quota::commands::get_status,
             modules::quota::commands::get_settings,
             modules::quota::commands::save_settings,
+            modules::quota::commands::get_panel_order,
+            modules::quota::commands::save_panel_order,
             modules::quota::commands::set_deepseek_key,
             modules::quota::commands::set_go_key,
             modules::quota::commands::test_key,
@@ -354,8 +443,21 @@ pub fn run() {
                     }
                 }
                 WindowEvent::Focused(false) => {
-                    if window.label() == modules::clipboard::POPUP_WINDOW_LABEL {
-                        let _ = window.hide();
+                    let label = window.label().to_string();
+                    if label == modules::clipboard::POPUP_WINDOW_LABEL {
+                        hide_after_blur_grace(window);
+                    } else if label == MAIN_WINDOW_LABEL {
+                        // 统一模式下点外部即隐藏主窗口（面板行为）
+                        let unified = window
+                            .app_handle()
+                            .state::<ConfigState>()
+                            .0
+                            .lock()
+                            .unwrap()
+                            .unified_hotkey;
+                        if unified {
+                            hide_after_blur_grace(window);
+                        }
                     }
                 }
                 _ => {}

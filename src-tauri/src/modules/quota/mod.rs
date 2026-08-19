@@ -12,10 +12,6 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::config::ConfigState;
 use api::GoQuota;
 
-/// 悬浮窗窗口 label（Task 6 使用）
-#[allow(dead_code)]
-pub const FLOAT_WINDOW_LABEL: &str = "quota_float";
-
 /// 共享监控状态
 #[derive(Default)]
 pub struct QuotaState {
