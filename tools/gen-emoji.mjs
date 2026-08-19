@@ -91,6 +91,8 @@ for (const e of raw) {
     name_en: nameEn,
     keywords,
     keywords_zh: zh,
+    sheet_x: e.sheet_x ?? 0,
+    sheet_y: e.sheet_y ?? 0,
   });
 }
 out.emoji.sort((a, b) => a.keywords[0].localeCompare(b.keywords[0]));

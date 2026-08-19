@@ -9,6 +9,9 @@ pub struct EmojiEntry {
     pub group_zh: String,
     pub name_en: String,
     pub keywords_zh: Vec<String>,
+    /// Apple 雪碧图坐标（32px 格，含 1px 边框，格子 34px）
+    pub sheet_x: i32,
+    pub sheet_y: i32,
 }
 
 #[derive(Debug, Clone, Deserialize)]

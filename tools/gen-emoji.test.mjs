@@ -10,6 +10,7 @@ for (const e of list) {
   if (typeof e.group !== "string" || typeof e.group_zh !== "string") throw new Error("bad group");
   if (!Array.isArray(e.keywords) || e.keywords.length === 0) throw new Error("bad keywords");
   if (!Array.isArray(e.keywords_zh)) throw new Error("bad keywords_zh");
+  if (typeof e.sheet_x !== "number" || typeof e.sheet_y !== "number") throw new Error("bad sheet coords");
   groups.add(e.group);
 }
 const expect = ["smileys", "people", "animals", "food", "travel", "activities", "objects", "symbols", "flags"];

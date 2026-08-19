@@ -4,12 +4,15 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getConfig } from "@/lib/api";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmojiSprite } from "./EmojiSprite";
 
 interface EmojiDto {
   char: string;
   group: string;
   name_en: string;
   keywords_zh: string[];
+  sheet_x: number;
+  sheet_y: number;
   is_favorite: boolean;
   use_count: number;
   last_used_at: number | null;
@@ -82,6 +85,8 @@ export function EmojiPopup() {
         label: c.name,
         thumb: c.thumb,
         ts: c.last_used_at ?? 0,
+        sx: -1,
+        sy: -1,
       })),
       ...emojis.map((e) => ({
         type: "emoji" as const,
@@ -89,6 +94,8 @@ export function EmojiPopup() {
         label: e.name_en,
         thumb: null,
         ts: e.last_used_at ?? 0,
+        sx: e.sheet_x,
+        sy: e.sheet_y,
       })),
     ];
     return items.sort((a, b) => b.ts - a.ts);
@@ -134,7 +141,7 @@ export function EmojiPopup() {
               key={item.type + item.id}
               title={item.label}
               onClick={() => pick(item.type, item.id)}
-              className="flex size-9 items-center justify-center overflow-hidden rounded-md text-2xl hover:bg-accent"
+              className="flex size-9 items-center justify-center overflow-hidden rounded-md hover:bg-accent"
             >
               {item.thumb ? (
                 <img
@@ -143,7 +150,7 @@ export function EmojiPopup() {
                   alt=""
                 />
               ) : (
-                item.id
+                <EmojiSprite x={item.sx} y={item.sy} />
               )}
             </button>
           ))}
