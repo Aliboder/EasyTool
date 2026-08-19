@@ -9,6 +9,8 @@ pub struct EmojiEntry {
     pub group_zh: String,
     pub name_en: String,
     pub keywords_zh: Vec<String>,
+    /// Twemoji 图片文件名（如 "1f1e8-1f1f3"）；None = 无图，前端回退字符渲染
+    pub code: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

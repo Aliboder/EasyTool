@@ -61,3 +61,7 @@ npm run tauri build    # 打包（NSIS 安装包）
 - Tauri 2（Rust）+ WebView2
 - React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui + @dnd-kit
 - SQLite（rusqlite）、keyring（密钥加密）、reqwest（API 查询）
+
+## 致谢
+
+- 表情模块的 Emoji 图片来自 [Twemoji](https://github.com/jdecked/twemoji)（Twitter Emoji，图片采用 CC-BY 4.0 许可）

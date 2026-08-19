@@ -10,6 +10,7 @@ interface EmojiDto {
   group: string;
   name_en: string;
   keywords_zh: string[];
+  code: string | null;
   is_favorite: boolean;
   use_count: number;
   last_used_at: number | null;
@@ -89,6 +90,7 @@ export function EmojiPopup() {
         label: e.name_en,
         thumb: null,
         ts: e.last_used_at ?? 0,
+        code: e.code,
       })),
     ];
     return items.sort((a, b) => b.ts - a.ts);
@@ -140,6 +142,12 @@ export function EmojiPopup() {
                 <img
                   src={`data:image/png;base64,${item.thumb}`}
                   className="h-full w-full object-contain"
+                  alt=""
+                />
+              ) : item.type === "emoji" && item.code ? (
+                <img
+                  src={`${import.meta.env.BASE_URL}twemoji/${item.code}.svg`}
+                  className="size-7"
                   alt=""
                 />
               ) : (

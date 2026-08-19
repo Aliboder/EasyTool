@@ -32,6 +32,8 @@ pub struct EmojiDto {
     pub group_zh: String,
     pub name_en: String,
     pub keywords_zh: Vec<String>,
+    /// Twemoji 图片文件名；None = 无图，前端回退字符渲染
+    pub code: Option<String>,
     pub is_favorite: bool,
     pub use_count: i64,
     pub last_used_at: Option<i64>,
@@ -77,6 +79,7 @@ pub fn get_emoji_all(app: AppHandle, state: State<'_, Db>) -> R<EmojiCatalog> {
                 group_zh: e.group_zh.clone(),
                 name_en: e.name_en.clone(),
                 keywords_zh: e.keywords_zh.clone(),
+                code: e.code.clone(),
                 is_favorite: u.0 != 0,
                 use_count: u.1,
                 last_used_at: if u.2 != 0 { Some(u.2) } else { None },

@@ -10,8 +10,10 @@ for (const e of list) {
   if (typeof e.group !== "string" || typeof e.group_zh !== "string") throw new Error("bad group");
   if (!Array.isArray(e.keywords) || e.keywords.length === 0) throw new Error("bad keywords");
   if (!Array.isArray(e.keywords_zh)) throw new Error("bad keywords_zh");
+  if (e.code !== undefined && (typeof e.code !== "string" || e.code.length === 0)) throw new Error("bad code");
   groups.add(e.group);
 }
 const expect = ["smileys", "people", "animals", "food", "travel", "activities", "objects", "symbols", "flags"];
 for (const g of expect) if (!groups.has(g)) throw new Error(`missing group ${g}`);
-console.log(`OK: ${list.length} emoji, ${groups.size} groups`);
+const withCode = list.filter((e) => e.code).length;
+console.log(`OK: ${list.length} emoji, ${groups.size} groups, ${withCode} with twemoji image`);

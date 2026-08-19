@@ -20,6 +20,7 @@ interface EmojiDto {
   group_zh: string;
   name_en: string;
   keywords_zh: string[];
+  code: string | null;
   is_favorite: boolean;
   use_count: number;
   last_used_at: number | null;
@@ -227,7 +228,15 @@ export function EmojiPage() {
                 onClick={() => onPick("emoji", e.char)}
                 className="flex size-9 items-center justify-center rounded-md text-2xl hover:bg-accent"
               >
-                {e.char}
+                {e.code ? (
+                  <img
+                    src={`${import.meta.env.BASE_URL}twemoji/${e.code}.svg`}
+                    className="size-7"
+                    alt=""
+                  />
+                ) : (
+                  e.char
+                )}
               </button>
             ))}
           </div>

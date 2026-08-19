@@ -1,8 +1,10 @@
 // 从 emoji-datasource 的 emoji.json 生成 EasyTool 需要的精简数据。
-// 用法: node tools/gen-emoji.mjs <input.json> <output.json>
-import { readFileSync, writeFileSync } from "node:fs";
+// 用法: node tools/gen-emoji.mjs <input.json> <output.json> [twemoji-svg-dir]
+// 可选第三参数指向 twemoji SVG 目录：为每个 emoji 计算 twemoji 文件名（去 FE0F、去前导零），
+// 文件存在则写入 code 字段（前端用图渲染，无图回退字符）。
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
-const [, , input, output] = process.argv;
+const [, , input, output, twemojiDir] = process.argv;
 const raw = JSON.parse(readFileSync(input, "utf8"));
 
 // 官方分类 → 内部 group id + 中文名
@@ -76,6 +78,11 @@ function toChar(unified) {
   return unified.split(" ").map((h) => String.fromCodePoint(parseInt(h, 16))).join("");
 }
 
+// twemoji 文件名：去掉 FE0F、每个码位去前导零（如 0023-FE0F-20E3 → 23-20e3）
+function twemojiKey(unified) {
+  return unified.split("-").filter((h) => h !== "FE0F").map((h) => parseInt(h, 16).toString(16)).join("-");
+}
+
 const groups = new Set(Object.keys(GROUP_MAP));
 const out = { emoji: [] };
 for (const e of raw) {
@@ -84,14 +91,21 @@ for (const e of raw) {
   const keywords = [...new Set([e.short_name, ...(e.short_names || [])])];
   const zh = ZH_HINTS[e.short_name] || [];
   const nameEn = (e.name || "").toLowerCase().replace(/_/g, " ");
-  out.emoji.push({
+  const entry = {
     char: toChar(e.unified),
     group,
     group_zh: groupZh,
     name_en: nameEn,
     keywords,
     keywords_zh: zh,
-  });
+  };
+  if (twemojiDir) {
+    const code = twemojiKey(e.unified);
+    if (existsSync(`${twemojiDir}/${code}.svg`)) {
+      entry.code = code;
+    }
+  }
+  out.emoji.push(entry);
 }
 out.emoji.sort((a, b) => a.keywords[0].localeCompare(b.keywords[0]));
 writeFileSync(output, JSON.stringify(out));
