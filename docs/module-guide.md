@@ -13,8 +13,12 @@ src/modules/<id>/                      # React 前端组件
 ```
 
 - 模块在设置页可独立**启用/禁用**，配置项随模块独立保存
-- 侧边栏与模块页由 manifest 驱动，新增模块后**壳 UI 自动出现该模块**，无需改侧边栏
-- 模块可拥有独立窗口（如剪贴板弹窗、额度悬浮窗），也可仅作为主窗口内的一个页面
+- 侧边栏/底部导航栏与模块页由 manifest 驱动，新增模块后**壳 UI 自动出现该模块**，无需改导航栏
+- 模块可拥有独立窗口（目前仅剪贴板弹窗），也可仅作为主窗口内的一个页面
+- **复用共享前端工具**（不要重复造轮子）：
+  - `src/lib/theme.ts` 的 `applyTheme`（弹窗等独立窗口跟随主题）
+  - `src/lib/use-horizontal-wheel.ts` 的 `useHorizontalWheel`（滚轮→横向滚动，如历史列表）
+  - `src/components/hotkey-recorder.tsx` 的 `HotkeyRecorder`（热键录制式设置）
 
 ## 2. 新增模块完整步骤（以模块 `foo` 为例）
 
@@ -129,6 +133,12 @@ export function FooPage() {
 }
 ```
 
+前端约定与可复用件：
+- **列表/网格 + 拖拽排序**：用已装的 `@dnd-kit`（参考 quota 面板与剪贴板固定板块）。⚠️ 拖拽对象为**小尺寸条目**时安全；大卡片注意「坑 9」
+- **热键设置**：用共享 `HotkeyRecorder`（录制式），格式为 `Ctrl/Shift/Alt/Super + 键名`
+- **横向滚动列表**：用共享 `useHorizontalWheel`（返回 `{ ref, nodeRef }`，nodeRef 用于读取滚动位置）
+- **独立窗口跟随主题**：入口调用 `applyTheme(theme)`（参考 `clipboard_popup.tsx`）
+
 接入 `src/App.tsx`：
 
 ```tsx
@@ -156,9 +166,9 @@ switch (activeModule.id) {
 
 ### Step 5（可选）：独立窗口
 
-若模块需要独立窗口（如弹窗、悬浮窗）：
+若模块需要独立窗口（如弹窗）：
 
-1. 根目录新建 `foo_window.html`（参考 `float_window.html`），脚本指向新入口：
+1. 根目录新建 `foo_window.html`（参考 `clipboard_popup.html`），脚本指向新入口：
    ```html
    <script type="module" src="/src/foo_window.tsx"></script>
    ```
@@ -166,8 +176,8 @@ switch (activeModule.id) {
    ```ts
    foo_window: path.resolve(__dirname, "foo_window.html"),
    ```
-3. `src/foo_window.tsx`：独立 React 挂载入口（参考 `src/float_window.tsx`）
-4. Rust 侧动态建窗（参考 lib.rs 中 clipboard_popup / quota_float）：
+3. `src/foo_window.tsx`：独立 React 挂载入口（参考 `src/clipboard_popup.tsx`，记得调 `applyTheme` 跟随主题）
+4. Rust 侧动态建窗（参考 lib.rs 中 clipboard_popup）：
    ```rust
    let win = tauri::WebviewWindowBuilder::new(
        app, "foo_win", tauri::WebviewUrl::App("foo_window.html".into()),
@@ -187,7 +197,7 @@ switch (activeModule.id) {
 
 ### Step 7：测试
 
-后端纯逻辑加 `#[cfg(test)]` 单元测试（参考 clipboard 的 24 个、quota 的 10 个），`cargo test` 全绿。前端无测试框架，靠人工验收。
+后端纯逻辑加 `#[cfg(test)]` 单元测试（参考 clipboard 的 24 个、quota 的 10 个，当前共 37+），`cargo test` 全绿。前端无测试框架，靠人工验收。
 
 ## 3. 数据与配置规范
 
@@ -195,6 +205,8 @@ switch (activeModule.id) {
 - 模块私有数据：`app.path().app_data_dir()/<你的文件>`，即 `%APPDATA%\com.aliboder.easytool\`
 - 密钥：`keyring::Entry::new("com.aliboder.easytool", <用户标识>)`，参考 quota 的 `set_key`/`get_key`
 - 配置迁移、旧数据导入：写进 `src-tauri/src/migrate.rs`（一次性，`config.migrated` 标记）
+- **时间序列数据**（余额历史/消费历史）：`balance_history.json`（`{"records":[{time,balance}]}`，ISO 时间），quota 用 `history::daily_series_all` 聚合完整每日序列
+- **条目顺序持久化**：数据库加排序列（如剪贴板 `items.pin_order`，NULL=未排过序排最后），查询 `ORDER BY col IS NULL, col ASC`，新增 `set_xxx_order(ids)` 命令保存
 
 ## 4. 关键坑（新增模块时必须遵守）
 
@@ -206,6 +218,12 @@ switch (activeModule.id) {
 6. **新增前端入口**要同时改 4 处：vite `rollupOptions.input`、根目录 `.html`、Rust 建窗（`WebviewUrl::App`）、capabilities 的 `windows` 数组与权限
 7. **keyring 必须启用 `features = ["windows-native"]`**（Cargo.toml），否则 `Entry::new().unwrap()` 直接 panic
 8. **新增模块后跑 `codegraph init`** 重建索引，保持 `.codegraph/` 与磁盘一致
+9. **@dnd-kit 拖拽 + WebView2 渲染变形**：**大尺寸卡片 + opacity + transform 组合会让窗口形状变形**（压扁）。不要给被拖的大卡片加透明度；DragOverlay 方案也会出问题。额度面板用 `verticalListSortingStrategy` + `will-change: transform` + 拖动中禁 transition。**小尺寸条目（如剪贴板固定板块）拖拽安全**
+10. **ResizeObserver 绑定异步挂载节点要用回调 ref**：空依赖 `useEffect` 只在组件挂载时跑一次，若目标节点是异步渲染的（如数据加载后），观察器绑不上。用 `useCallback` 回调 ref（React 19 支持 ref 清理）
+11. **横向滚动**：滚轮→`scrollLeft` 用共享 `useHorizontalWheel`；注意 `overflow-x-auto` 会把 `overflow-y` 也变 auto，**悬浮元素（tooltip）别放超出滚动容器顶部**，否则被裁掉
+12. **热键录制格式**：global-hotkey crate 接受 `Ctrl/Shift/Alt/Super`（Windows 键是 **Super**，不是 Win）+ 键名（`A-Z/0-9/F1-F24/ArrowUp/Enter/Space` 等）。用共享 `HotkeyRecorder` 组件
+13. **版本号三处同步**：改版本需同时改 `package.json`、`tauri.conf.json`、`src-tauri/Cargo.toml`；当前 Tauri CLI **不支持 portable** 打包目标（仅 msi/nsis）
+14. **Windows 文件图标**：`SHGFI_USEFILEATTRIBUTES` 取不到格式专属图标（txt/图片等退化为通用图标），须访问真实文件再回退；缓存按路径而非扩展名
 
 ## 5. 完成清单
 
@@ -213,10 +231,12 @@ switch (activeModule.id) {
 
 - [ ] manifest.json 字段齐全（id/name/icon/enabled/default_config）
 - [ ] `modules/mod.rs` 已声明 `pub mod foo`；lib.rs setup 与 invoke_handler 已注册
-- [ ] 前端页面/设置已接入 App.tsx（侧边栏自动出现）
+- [ ] 前端页面/设置已接入 App.tsx（导航栏自动出现）
 - [ ] 独立窗口的 4 处联动齐全，capabilities 权限完备
 - [ ] 配置读写走 `module_config` + `save_config`，无持锁嵌套调用
 - [ ] 网络/耗时操作在后台线程
+- [ ] 拖拽排序：小条目用 @dnd-kit；大卡片注意坑 9（不加 opacity、will-change、禁 transition）
+- [ ] 横向滚动 / 热键录制 / 主题复用共享组件（useHorizontalWheel / HotkeyRecorder / applyTheme）
 - [ ] `cargo test` 全绿、`npx tsc --noEmit` 无错
 - [ ] 手动验收清单已给用户（启动命令 + 验证点）
 - [ ] `codegraph init` 重建索引后提交
@@ -225,5 +245,5 @@ switch (activeModule.id) {
 
 新增模块时对照这两个现成模块：
 
-- **clipboard**：有独立弹窗窗口 + 系统剪贴板监听 + 文件存储，最完整的模块参照
-- **quota**：有独立悬浮窗 + 后台轮询线程 + 密钥加密存储 + 告警通知，后台任务类模块参照
+- **clipboard**：独立弹窗窗口 + 系统剪贴板监听 + 文件存储（缩略图/图标）+ 固定板块拖拽排序（小条目 @dnd-kit）+ 弹窗位置/尺寸记忆 + 监听规则，最完整的模块参照
+- **quota**：后台轮询线程 + 密钥加密存储（keyring）+ 告警通知 + 消费历史完整时间线（横向滚动）+ 面板卡片拖拽排序（@dnd-kit + will-change），后台任务/数据可视化类模块参照
