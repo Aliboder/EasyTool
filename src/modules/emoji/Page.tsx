@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmojiSettings } from "./Settings";
-import { EmojiSprite } from "./EmojiSprite";
 
 interface EmojiDto {
   char: string;
@@ -21,8 +20,6 @@ interface EmojiDto {
   group_zh: string;
   name_en: string;
   keywords_zh: string[];
-  sheet_x: number;
-  sheet_y: number;
   is_favorite: boolean;
   use_count: number;
   last_used_at: number | null;
@@ -228,9 +225,9 @@ export function EmojiPage() {
                 key={e.char}
                 title={`${e.name_en}`}
                 onClick={() => onPick("emoji", e.char)}
-                className="flex size-9 items-center justify-center rounded-md hover:bg-accent"
+                className="flex size-9 items-center justify-center rounded-md text-2xl hover:bg-accent"
               >
-                <EmojiSprite x={e.sheet_x} y={e.sheet_y} />
+                {e.char}
               </button>
             ))}
           </div>
