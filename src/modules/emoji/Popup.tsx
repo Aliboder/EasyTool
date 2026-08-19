@@ -5,6 +5,7 @@ import { getConfig } from "@/lib/api";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadCatalog, type Catalog } from "./api";
+import { SmartEmoji } from "./SmartEmoji";
 
 const TABS = [
   "smileys",
@@ -204,13 +205,8 @@ export function EmojiPopup() {
                   className="h-full w-full object-contain"
                   alt=""
                 />
-              ) : item.type === "emoji" && item.code ? (
-                <img
-                  src={`${import.meta.env.BASE_URL}twemoji/${item.code}.svg`}
-                  className="size-7"
-                  alt=""
-                  loading="lazy"
-                />
+              ) : item.type === "emoji" ? (
+                <SmartEmoji char={item.id} code={item.code} size={28} />
               ) : (
                 item.id
               )}

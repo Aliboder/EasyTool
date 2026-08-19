@@ -11,8 +11,10 @@ import {
   Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Drawer } from "@/components/ui/drawer";
 import { EmojiSettings } from "./Settings";
 import { loadCatalog, type Catalog, type GroupDto } from "./api";
+import { SmartEmoji } from "./SmartEmoji";
 
 const GROUP_TABS = [
   { id: "all", zh: "全部" },
@@ -132,13 +134,8 @@ export function EmojiPage() {
   listLenRef.current = Math.max(visibleEmoji.length, visibleCustoms.length);
 
   return (
-    <div className="flex h-full flex-col p-4">
-      {showSettings ? (
-        <div className="flex-1 overflow-y-auto">
-          <EmojiSettings onRefresh={load} />
-        </div>
-      ) : (
-        <>
+    <div className="relative flex h-full flex-col p-4">
+      <>
       <div className="flex items-center gap-2 border-b pb-3">
         <div className="relative flex-1">
           <Search className="absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -234,16 +231,7 @@ export function EmojiPage() {
                 onClick={() => onPick("emoji", e.char)}
                 className="flex size-9 items-center justify-center rounded-md text-2xl hover:bg-accent"
               >
-                {e.code ? (
-                  <img
-                    src={`${import.meta.env.BASE_URL}twemoji/${e.code}.svg`}
-                    className="size-7"
-                    alt=""
-                    loading="lazy"
-                  />
-                ) : (
-                  e.char
-                )}
+                <SmartEmoji char={e.char} code={e.code} size={28} />
               </button>
             ))}
           </div>
@@ -299,7 +287,10 @@ export function EmojiPage() {
         )}
       </div>
         </>
-      )}
+
+      <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="表情设置">
+        <EmojiSettings onRefresh={load} />
+      </Drawer>
     </div>
   );
 }
