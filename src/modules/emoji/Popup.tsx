@@ -64,6 +64,7 @@ export function EmojiPopup() {
   const [q, setQ] = useState("");
   const [visible, setVisible] = useState(BATCH);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const listLenRef = useRef(0);
 
   useEffect(() => {
     loadCatalog()
@@ -71,9 +72,10 @@ export function EmojiPopup() {
       .catch(console.error);
   }, []);
 
-  // 切换分类/搜索时重置渲染批次
+  // 切换分类/搜索时：重置渲染批次并回到列表顶部（避免停在旧滚动位置看到末尾）
   useEffect(() => {
     setVisible(BATCH);
+    scrollRef.current?.scrollTo(0, 0);
   }, [tab, q]);
 
   const list = useMemo(() => {
@@ -131,13 +133,20 @@ export function EmojiPopup() {
     return items.sort((a, b) => b.ts - a.ts);
   }, [cat, tab, q]);
 
+  listLenRef.current = list.length;
+
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
-      setVisible((v) => Math.min(v + BATCH, list.length));
-    }
-  }, [list.length]);
+    const max = listLenRef.current;
+    setVisible((v) => {
+      if (v >= max) return v; // 已全部渲染，停止加载
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+        return Math.min(v + BATCH, max);
+      }
+      return v;
+    });
+  }, []);
 
   const shown = list.slice(0, visible);
 

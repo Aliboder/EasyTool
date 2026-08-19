@@ -48,17 +48,25 @@ export function EmojiPage() {
   // 增量渲染：不限制总数，滚动到底加载下一批（避免一次性渲染 1900+ 节点）
   const [visible, setVisible] = useState(240);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const listLenRef = useRef(0);
 
+  // 切换分类/搜索时：重置渲染批次并回到列表顶部
   useEffect(() => {
     setVisible(240);
+    scrollRef.current?.scrollTo(0, 0);
   }, [tab, q]);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
-      setVisible((v) => v + 240);
-    }
+    const max = listLenRef.current;
+    setVisible((v) => {
+      if (v >= max) return v; // 已全部渲染，停止加载
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+        return Math.min(v + 240, max);
+      }
+      return v;
+    });
   }, []);
 
   const load = async () => {
@@ -114,6 +122,8 @@ export function EmojiPage() {
   const onPick = async (kind: "emoji" | "custom", key: string) => {
     await invoke("apply_emoji", { kind, key });
   };
+
+  listLenRef.current = Math.max(visibleEmoji.length, visibleCustoms.length);
 
   return (
     <div className="flex h-full flex-col p-4">
