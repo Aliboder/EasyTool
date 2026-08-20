@@ -233,6 +233,12 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
 
     let now = now_ms();
 
+    // 2.5 内容指纹比对：与表情/粘贴登记的"待忽略指纹"一致且在窗口内则跳过记录
+    if state.check_pending_ignore(&hash, SELF_WRITE_GUARD_MS, now) {
+        log::debug!("skip by content fingerprint");
+        return Ok(None);
+    }
+
     // 2. 去重：命中则顶到最前；若旧条目无富文本而新捕获有，则升级回填
     {
         let db = state.db.lock().unwrap();

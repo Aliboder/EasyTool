@@ -1,6 +1,6 @@
 //! 表情模块 IPC 命令
 use super::db::{CustomRow, Db};
-use crate::modules::clipboard::{clipboard, monitor::base64_encode};
+use crate::modules::clipboard::{clipboard, dedup, monitor::base64_encode};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -338,10 +338,13 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
     } else if let Ok(id) = key.parse::<i64>() {
         let _ = state.record_use_custom(id);
     }
-    // 写剪贴板成功后立即标记"自身写入"（无论后续粘贴是否成功，都避免被剪贴板监听记录）
-    fn mark_self_write(app: &AppHandle) {
+    // 写剪贴板成功后：标记自身写入 + 登记内容指纹（供剪贴板监听比对跳过记录）
+    fn mark_self_write(app: &AppHandle, signature: Option<String>) {
         if let Some(clip) = app.try_state::<crate::modules::clipboard::state::AppState>() {
             clip.mark_self_write();
+            if let Some(sig) = signature {
+                clip.set_pending_ignore(sig);
+            }
         }
     }
     let app2 = app.clone();
@@ -351,7 +354,7 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
         Box::new(move || {
             let ok = clipboard::write_text_rich(&text, None);
             if ok {
-                mark_self_write(&app2);
+                mark_self_write(&app2, Some(dedup::hash_text(&text)));
             }
             ok
         })
@@ -369,12 +372,15 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
                 .and_then(|b| image::load_from_memory(&b).ok())
                 .map(|img| {
                     let rgba = img.to_rgba8();
-                    clipboard::write_image_rgba(rgba.as_raw(), rgba.width(), rgba.height())
+                    let ok =
+                        clipboard::write_image_rgba(rgba.as_raw(), rgba.width(), rgba.height());
+                    if ok {
+                        let sig = dedup::hash_image_rgba(rgba.as_raw(), rgba.width(), rgba.height());
+                        mark_self_write(&app2, sig);
+                    }
+                    ok
                 })
                 .unwrap_or(false);
-            if ok {
-                mark_self_write(&app2);
-            }
             ok
         })
     };

@@ -16,6 +16,9 @@ pub struct AppState {
     pub self_write: AtomicBool,
     /// 最近一次自身写入时间（Unix 毫秒），配合守卫窗口
     pub last_self_write_ms: AtomicI64,
+    /// 待忽略的剪贴板内容指纹（自身写入时登记：(内容指纹, 时间戳)）。
+    /// 监听侧比对"当前剪贴板内容指纹一致 + 时间窗口内"则跳过记录，避免表情/粘贴被记入历史。
+    pub pending_ignore: Mutex<Option<(String, i64)>>,
     /// 唤起弹出窗前的前台窗口句柄（HWND，0 表示无）
     pub prev_foreground: AtomicIsize,
     /// 唤起前台窗口内的焦点控件句柄（HWND，0 表示无）
@@ -39,6 +42,7 @@ impl AppState {
             max_items: AtomicU64::new(max_items),
             self_write: AtomicBool::new(false),
             last_self_write_ms: AtomicI64::new(0),
+            pending_ignore: Mutex::new(None),
             prev_foreground: AtomicIsize::new(0),
             prev_focus: AtomicIsize::new(0),
             prev_sel_start: AtomicU32::new(0),
@@ -50,5 +54,24 @@ impl AppState {
     pub fn mark_self_write(&self) {
         self.self_write.store(true, Ordering::SeqCst);
         self.last_self_write_ms.store(now_ms(), Ordering::SeqCst);
+    }
+
+    /// 登记一次自身写入的剪贴板内容指纹（供监听侧比对跳过记录）
+    pub fn set_pending_ignore(&self, signature: String) {
+        *self.pending_ignore.lock().unwrap() = Some((signature, now_ms()));
+    }
+
+    /// 检查并消费待忽略指纹：内容指纹一致且在时间窗口内则命中
+    pub fn check_pending_ignore(&self, signature: &str, window_ms: i64, now: i64) -> bool {
+        let mut guard = self.pending_ignore.lock().unwrap();
+        match guard.as_ref() {
+            Some((sig, ts)) if now - *ts < window_ms => *sig == signature,
+            Some(_) => {
+                // 窗口过期，清除残留
+                *guard = None;
+                false
+            }
+            None => false,
+        }
     }
 }
