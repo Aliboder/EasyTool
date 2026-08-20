@@ -88,12 +88,20 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
   }, []);
 
   // keep-alive 下切回模块不重载（避免每次切换全量重建+重渲染卡顿）；
-  // 动态数据（使用次数/收藏）只在跨窗口操作后可能变脏，窗口聚焦时刷新一次（同搜索页策略）
+  // 动态数据（使用次数/收藏）只在跨窗口操作后可能变脏，窗口聚焦时刷新一次（同搜索页策略）。
+  // 呼出时 focus 可能连发多次：防抖只保留最后一次，避免并发全量重载卡顿
   useEffect(() => {
     if (!active) return;
-    const onFocus = () => load().catch(console.error);
+    let timer: number | null = null;
+    const onFocus = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => load().catch(console.error), 150);
+    };
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      if (timer) window.clearTimeout(timer);
+    };
   }, [active]);
 
   // 诊断：cat 加载完成后到内容渲染的耗时

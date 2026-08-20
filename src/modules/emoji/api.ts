@@ -34,8 +34,18 @@ export interface Catalog {
 }
 
 let staticCache: StaticEmoji[] | null = null;
+// 并发合并：focus 风暴/多入口同时加载时共享同一请求，避免重复拉取 + 重复渲染
+let inFlight: Promise<Catalog> | null = null;
 
-export async function loadCatalog(): Promise<Catalog> {
+export function loadCatalog(): Promise<Catalog> {
+  if (inFlight) return inFlight;
+  inFlight = doLoad().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function doLoad(): Promise<Catalog> {
   if (!staticCache) staticCache = await invoke<StaticEmoji[]>("get_emoji_static");
   const dyn = await invoke<{
     usage: Record<string, { is_favorite: boolean; use_count: number; last_used_at: number | null }>;

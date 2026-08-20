@@ -50,6 +50,7 @@
 44. **useState 里 `setState(prev => prev)` 等于没做防抖**：`onSearchChange` 里 setTimeout 包一层 `setSearch(prev => prev)` 值不变不触发重渲染，防抖失效、每次按键立即全量加载。防抖要把「值更新」放进 setTimeout
 45. **Canvas 像素检测别在渲染期同步跑**：`SmartEmoji` 用 `useMemo` 同步做 64×64 canvas 逐像素扫描，首屏几百个不同 emoji 会卡。改为 useState 初始读缓存（未命中先按支持显示字符）+ `requestIdleCallback` 异步检测后 setState，不阻塞首帧
 46. **keep-alive 模块切回不要全量重载 + 逐字符检测要分片**：表情页「每次激活重载数据 + 重建 1906 对象 + 重渲染」且缓存冷时 `requestIdleCallback` 会连续跑 144+ 次 canvas 检测（每次新建 context + 4096 像素扫描 + 全量 localStorage 写）→ 切回卡 200ms+。修复：切回不重载改窗口 `focus` 刷新（同搜索页）；检测复用共享 canvas + 每帧 rAF 分片（24 个/帧）+ localStorage 防抖写（一批只写一次）。判定依据：日志里 `loadCatalog` 4~18ms 很快，而 `first paint after cat` 尖峰 212~262ms，量级正好 ≈ 144 × 单字符检测 ~1.5ms
+47. **窗口「focus 刷新」对呼出场景是并发风暴**：表情页「窗口聚焦时 loadCatalog 刷新」本身没问题，但快捷键呼出时 WebView2 的 focus 事件会连发多次（日志可见单次呼出后 `loadCatalog` 2~6 次连续执行），且每次 `setCat` 传新对象都会重渲染 240 个表情 → 并发重载互相叠加，`loadCatalog` 尖峰 400ms+、`first paint` 250ms+，窗口像冻结。修复两处：`loadCatalog` 加 in-flight 合并（并发调用共享同一 Promise，谁先发起谁执行，其余等同一结果；同一对象 setCat React 跳过重渲染）；焦点刷新加 150ms 防抖（连续 focus 只保留最后一次）。教训：**「按需刷新」也要考虑事件风暴 + 提供合并/防抖**，否则刷新本身就是卡顿源
 
 ---
 
