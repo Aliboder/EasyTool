@@ -339,6 +339,7 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
         let _ = state.record_use_custom(id);
     }
     // 写剪贴板成功后：标记自身写入 + 登记内容指纹（供剪贴板监听比对跳过记录）
+    // 仅图片表情需要（图片必须经剪贴板发送）；文本 Emoji 走 SendInput 直接输入，不碰剪贴板
     fn mark_self_write(app: &AppHandle, signature: Option<String>) {
         if let Some(clip) = app.try_state::<crate::modules::clipboard::state::AppState>() {
             clip.mark_self_write();
@@ -347,43 +348,41 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
             }
         }
     }
+    // 文本 Emoji：粘贴 = SendInput 直接输入（不写剪贴板）；复制 = 写入剪贴板
+    if kind == "emoji" {
+        if click_action == "paste" {
+            return super::paste::apply_text_to_foreground(&key).map_err(|e| e.to_string());
+        }
+        if clipboard::write_text_rich(&key, None) {
+            mark_self_write(&app, Some(dedup::hash_text(&key)));
+            return Ok(());
+        }
+        return Err("写入剪贴板失败".into());
+    }
+    // 图片表情：写剪贴板（CF_DIB）+ Ctrl+V 直接发送到唤起前窗口（与剪贴板模块选图粘贴一致）
+    let id: i64 = key.parse::<i64>().map_err(|e| e.to_string())?;
+    let path = state
+        .get_custom(id)
+        .map_err(|e| e.to_string())?
+        .map(|(p, _)| p)
+        .ok_or("表情不存在")?;
     let app2 = app.clone();
-    let write: Box<dyn FnOnce() -> bool + Send> = if kind == "emoji" {
-        let text = key.clone();
-        let app2 = app2.clone();
-        Box::new(move || {
-            let ok = clipboard::write_text_rich(&text, None);
-            if ok {
-                mark_self_write(&app2, Some(dedup::hash_text(&text)));
-            }
-            ok
-        })
-    } else {
-        let id: i64 = key.parse::<i64>().map_err(|e| e.to_string())?;
-        let path = state
-            .get_custom(id)
-            .map_err(|e| e.to_string())?
-            .map(|(p, _)| p)
-            .ok_or("表情不存在")?;
-        let app2 = app2.clone();
-        Box::new(move || {
-            let ok = std::fs::read(&path)
-                .ok()
-                .and_then(|b| image::load_from_memory(&b).ok())
-                .map(|img| {
-                    let rgba = img.to_rgba8();
-                    let ok =
-                        clipboard::write_image_rgba(rgba.as_raw(), rgba.width(), rgba.height());
-                    if ok {
-                        let sig = dedup::hash_image_rgba(rgba.as_raw(), rgba.width(), rgba.height());
-                        mark_self_write(&app2, sig);
-                    }
-                    ok
-                })
-                .unwrap_or(false);
-            ok
-        })
-    };
+    let write: Box<dyn FnOnce() -> bool + Send> = Box::new(move || {
+        let ok = std::fs::read(&path)
+            .ok()
+            .and_then(|b| image::load_from_memory(&b).ok())
+            .map(|img| {
+                let rgba = img.to_rgba8();
+                let ok = clipboard::write_image_rgba(rgba.as_raw(), rgba.width(), rgba.height());
+                if ok {
+                    let sig = dedup::hash_image_rgba(rgba.as_raw(), rgba.width(), rgba.height());
+                    mark_self_write(&app2, sig);
+                }
+                ok
+            })
+            .unwrap_or(false);
+        ok
+    });
     if click_action == "paste" {
         super::paste::apply_to_foreground(write).map_err(|e| e.to_string())
     } else if write() {

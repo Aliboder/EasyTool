@@ -1,11 +1,11 @@
-//! 粘贴到唤起前窗口：写剪贴板 → 还原前台窗口与焦点控件 → 模拟 Ctrl+V
+//! 粘贴到唤起前窗口：文本 Emoji 用 SendInput 直接输入（不碰剪贴板）；图片走剪贴板 + 模拟 Ctrl+V
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::OnceLock;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
-    VK_CONTROL, VK_V,
+    SendInput, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+    KEYEVENTF_UNICODE, VIRTUAL_KEY, VK_CONTROL, VK_V,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, SendMessageW,
@@ -125,6 +125,36 @@ fn send_ctrl_v() {
     }
 }
 
+/// 直接向目标窗口输入 Unicode 文本（不写剪贴板）：逐 UTF-16 单元发送 KEYEVENTF_UNICODE
+fn send_unicode_text(text: &str) {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let mut inputs: Vec<INPUT> = Vec::with_capacity(units.len() * 2);
+    for unit in units {
+        inputs.push(unicode_input(unit, false));
+        inputs.push(unicode_input(unit, true));
+    }
+    unsafe {
+        let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
+fn unicode_input(unit: u16, keyup: bool) -> INPUT {
+    let mut flags = KEYEVENTF_UNICODE;
+    if keyup {
+        flags |= KEYEVENTF_KEYUP;
+    }
+    let ki = KEYBDINPUT {
+        wVk: VIRTUAL_KEY(0),
+        wScan: unit,
+        dwFlags: flags,
+        ..Default::default()
+    };
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 { ki },
+    }
+}
+
 fn key_input(key: VIRTUAL_KEY, keyup: bool) -> INPUT {
     let mut ki = KEYBDINPUT {
         wVk: key,
@@ -172,5 +202,27 @@ pub fn apply_to_foreground(write: impl FnOnce() -> bool) -> Result<(), String> {
     std::thread::sleep(std::time::Duration::from_millis(60));
     send_ctrl_v();
     log::info!("pasted emoji to hwnd={win_hwnd}");
+    Ok(())
+}
+
+/// 文本 Emoji 直达：还原唤起前窗口焦点后直接输入文本，全程不写剪贴板
+pub fn apply_text_to_foreground(text: &str) -> Result<(), String> {
+    let st = FOREGROUND.get_or_init(ForegroundState::default);
+    let win_hwnd = st.hwnd.load(Ordering::SeqCst);
+    let focus_hwnd = st.focus.load(Ordering::SeqCst);
+    let sel_start = st.sel_start.load(Ordering::SeqCst) as u32;
+    let sel_end = st.sel_end.load(Ordering::SeqCst) as u32;
+    if win_hwnd == 0 {
+        return Err("未找到唤起前窗口".into());
+    }
+    let focus = HWND(focus_hwnd as *mut core::ffi::c_void);
+    let restored = restore_focus(HWND(win_hwnd as *mut core::ffi::c_void), focus);
+    if !restored {
+        return Err("无法还原原窗口焦点".into());
+    }
+    restore_selection(focus, sel_start, sel_end);
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    send_unicode_text(text);
+    log::info!("typed emoji to hwnd={win_hwnd}");
     Ok(())
 }
