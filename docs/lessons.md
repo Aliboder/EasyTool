@@ -585,6 +585,27 @@
 
 ---
 
+## 2026-08-21
+
+### 官网工程：写入新 index.html 未落盘，Vite 把旧静态站 index.html 原样复制进 dist
+
+**问题描述**：把 `website/` 从旧静态站改造成独立 React 工程。写入了新的 `website/index.html`（返回"写入成功"），但磁盘上 `index.html` 仍是旧站文件（时间戳更早、内容是旧站）。`npm run build` 报诡异警告：`<script src="app.js"> in "/index.html" can't be bundled without type="module" attribute`、`styles.css doesn't exist at build time`，且 `dist/index.html` 15917 字节与旧站源文件大小一致——Vite 把旧 index.html 当入口原样拷进 dist，React 应用根本没打包（"2 modules transformed"）。
+
+**根本原因**：`website/index.html` 的写入在磁盘上没有生效（旧文件时间戳早于本次写入，src/ 下其它新文件都正常落盘，唯独 index.html 没覆盖成功）。Vite 以项目根 `index.html` 为入口，读到的仍是旧站 HTML——它不含 `type="module"` 脚本，Vite 不转译、直接复制到 dist。真正的信号不是报错，而是「模块数量异常少」+「dist 体积与旧源文件一致」。
+
+**解决方案**：重新用编辑器工具写入 `website/index.html`，写后**立即 Read 校验内容 + LastWriteTime** 确认生效，再删旧 `dist/` 重跑 `npm run build`——这次 2002 modules transformed，产出正常 `index.html`(0.98kB) + `assets/*.js/css`。
+
+**教训**：
+1. 覆盖已有文件后**必须校验落盘结果**（重新 Read 或看时间戳/长度），不能只信"写入成功"的返回
+2. Vite 构建的坑标志：`dist/index.html` 体积 ≈ 旧源文件、`transformed` 模块数异常少、警告里出现本应已删除的旧资源名（app.js/styles.css）——这些都指向「入口 index.html 不是你以为的那个」
+3. 改造旧静态站为 React 工程时，先确认根 `index.html` 已替换成含 `<script type="module">` 的新文件，再谈构建；残留的旧 `dist/` 也会误导判断，先清掉
+
+**相关代码**：
+- `website/index.html` - 重写后校验通过
+- `website/` - 新 React 工程（Vite + React19 + TS + Tailwind v4 + react-bits BlurText）
+
+---
+
 <!-- 新增教训请添加到上方，格式如下：
 ## YYYY-MM-DD
 
