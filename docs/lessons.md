@@ -536,6 +536,53 @@
 
 ---
 
+## 2026-08-20
+
+### 启动后第一次拖动主窗口突然消失
+
+**问题描述**：软件启动后第一次拖动主窗口（拖系统标题栏），窗口突然消失；之后拖动正常。
+
+**根本原因**：unified 模式下主窗口按「面板」工作，`lib.rs` 的 `on_window_event` 里 `Focused(false)` 会触发 `hide_after_blur_grace`（失焦 200ms 仍未聚焦则隐藏，用于「点外部关闭」）。拖动标题栏时 Windows 进入 move loop，窗口持续失焦；第一次拖动往往从默认位置拖到目标位置、耗时 >200ms，200ms 后 `is_focused()` 仍为 false → 窗口被 `hide()`。之后拖动多为快速微调（<200ms）或拖动松手后焦点及时恢复，所以「只有第一次」。
+
+**解决方案**：`hide_after_blur_grace` 改为循环：200ms 后若未聚焦，先查鼠标左键是否仍按住（`GetAsyncKeyState(VK_LBUTTON)`）——按住说明正在拖动标题栏（move loop 中），继续等待而非隐藏；松手后 move loop 结束焦点恢复，不隐藏。「点外部关闭」时左键早已松开，仍正常隐藏。
+
+**教训**：
+1. 拖动标题栏/边缘缩放会让窗口短暂失焦（move loop），「失焦 → 隐藏」类逻辑必须区分「失焦」与「正在被用户拖动」；鼠标左键按住是判断拖动中的可靠信号（拖动期间左键必按着）
+2. 面板式窗口的失焦隐藏不能只靠延时宽限期兜底，宽限期能覆盖瞬时失焦，覆盖不了持续 >200ms 的拖动
+3. `GetAsyncKeyState` 返回 `i16`（高位 1 表示按下），比较时用 `as u16 & 0x8000`，字面量 `0x8000` 直接与 `i16` 相与会报 overflowing_literals
+
+**相关代码**：
+- `src-tauri/src/lib.rs` - `hide_after_blur_grace` 加左键按住判断（`Win32_UI_Input_KeyboardAndMouse` 依赖已有）
+- `src/lib/use-window-entrance.ts` - 已有「失焦 ≠ 隐藏，用 `isVisible()` 判断」的同类经验
+
+---
+
+## 2026-08-20
+
+### 启动先闪默认尺寸再恢复 + 恢复的尺寸不是上次关闭时的大小
+
+**问题描述**：彻底退出后重开，窗口先按默认尺寸（960×640）闪一下，然后才变成记忆尺寸；有时恢复的尺寸不是上次关闭时的尺寸。
+
+**根本原因**（两个独立问题）：
+1. **闪默认尺寸**：`tauri.conf.json` 主窗口按默认尺寸创建并立即显示，setup 运行后才 `set_size` 恢复记忆尺寸 → 先显示默认再改，视觉上闪一下；
+2. **恢复尺寸不对**：尺寸只靠前端 `onResized` 防抖 400ms 后 `save_main_size` 保存（`App.tsx`）。用户调整尺寸后 400ms 内就点 X 隐藏或托盘退出，防抖还没触发 → 保存的是更早的尺寸，下次启动就恢复到旧尺寸。
+
+**解决方案**：
+1. `tauri.conf.json` main 窗口加 `"visible": false`（初始隐藏），setup 恢复记忆尺寸后再 `win.show()`——启动直接以正确尺寸出现，无闪现；也顺带与前端 `useWindowEntrance` 的「启动从隐藏变可见时播放入场动画」流程天然匹配；
+2. 新增后端 `save_main_window_size()`（`inner_size` + 校验 ≥400×300），在**点 X 隐藏到托盘**（`CloseRequested`）和**托盘「退出」菜单**两个时机主动保存当前尺寸，兜底前端防抖未触发的场景。
+
+**教训**：
+1. 「恢复窗口状态」不能等窗口创建后再改——要么创建前注入，要么初始隐藏 + 恢复后再显示，否则必然闪默认值；
+2. 前端防抖保存（为降 IO 频率）必然牺牲"关窗/退出前最后一刻的状态"——持久化关键状态要在关闭/退出事件里主动兜底，不能只靠防抖；
+3. 保存窗口尺寸统一用 `inner_size`（与前端 `onResized` payload 一致），校验最小尺寸的过滤逻辑要在所有保存入口重复（前端防抖、`save_main_size` 命令、后端兜底）。
+
+**相关代码**：
+- `src-tauri/tauri.conf.json` - main 窗口 `visible: false`
+- `src-tauri/src/lib.rs` - `save_main_window_size`（CloseRequested + 托盘 quit 调用）、setup 恢复尺寸后 `win.show()`
+- `src/App.tsx` - 前端 onResized 防抖保存（保留）
+
+---
+
 <!-- 新增教训请添加到上方，格式如下：
 ## YYYY-MM-DD
 

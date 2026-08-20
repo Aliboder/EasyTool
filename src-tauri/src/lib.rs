@@ -89,7 +89,10 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main(app),
-            "quit" => app.exit(0),
+            "quit" => {
+                save_main_window_size(app);
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -111,6 +114,21 @@ fn show_main(app: &tauri::AppHandle) {
         let _ = win.show();
         let _ = win.unminimize();
         let _ = win.set_focus();
+    }
+}
+
+/// 保存主窗口当前尺寸（点 X 隐藏到托盘 / 托盘退出时调用，兜底前端防抖保存未触发的场景）
+fn save_main_window_size(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if let Ok(size) = win.inner_size() {
+            // 与 save_main_size 一致：忽略 0/极小尺寸（隐藏/最小化时可能报 0x0）
+            if size.width >= 400 && size.height >= 300 {
+                let cfg = app.state::<ConfigState>();
+                let mut cfg = cfg.0.lock().unwrap();
+                cfg.main_size = Some(serde_json::json!({ "w": size.width, "h": size.height }));
+                let _ = config::save_config(app, &cfg);
+            }
+        }
     }
 }
 
@@ -153,15 +171,21 @@ pub fn apply_main_window_mode(app: &tauri::AppHandle) {
     }
 }
 
-/// 失焦 200ms 后仍未聚焦则隐藏（点外部关闭；边缘缩放等瞬时失焦不误关）
+/// 失焦 200ms 后仍未聚焦则隐藏（点外部关闭；拖动标题栏/边缘缩放等瞬时失焦不误关）
 pub(crate) fn hide_after_blur_grace(win: &tauri::Window) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
     let win = win.clone();
-    std::thread::spawn(move || {
+    std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(200));
-        let still_unfocused = win.is_focused().map(|f| !f).unwrap_or(true);
-        if still_unfocused {
-            let _ = win.hide();
+        if win.is_focused().map(|f| f).unwrap_or(false) {
+            return;
         }
+        // 左键仍按住 = 正在拖动窗口标题栏（move loop 中），等松手后再判，避免拖动中误关
+        if (unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } as u16 & 0x8000) != 0 {
+            continue;
+        }
+        let _ = win.hide();
+        return;
     });
 }
 
@@ -582,6 +606,10 @@ pub fn run() {
                     }
                 }
             }
+            // 窗口初始为隐藏（tauri.conf.json visible:false），恢复尺寸后再显示，避免先闪默认尺寸
+            if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                let _ = win.show();
+            }
 
             build_tray(app)?;
             Ok(())
@@ -666,6 +694,7 @@ pub fn run() {
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
                     if window.label() == MAIN_WINDOW_LABEL {
+                        save_main_window_size(window.app_handle());
                         let _ = window.hide();
                         api.prevent_close();
                     }

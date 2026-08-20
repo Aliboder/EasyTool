@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "EasyTool",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "identifier": "com.aliboder.easytool",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -17,7 +17,8 @@
         "width": 960,
         "height": 640,
         "minWidth": 400,
-        "minHeight": 300
+        "minHeight": 300,
+        "visible": false
       }
     ],
     "security": {
