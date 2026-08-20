@@ -87,12 +87,13 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
     load().catch(console.error);
   }, []);
 
-  // 变为可见时刷新数据（keep-alive 下组件常驻，跨页面操作后切回需拿到最新数据）
+  // keep-alive 下切回模块不重载（避免每次切换全量重建+重渲染卡顿）；
+  // 动态数据（使用次数/收藏）只在跨窗口操作后可能变脏，窗口聚焦时刷新一次（同搜索页策略）
   useEffect(() => {
-    if (active) {
-      load().catch(console.error);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!active) return;
+    const onFocus = () => load().catch(console.error);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [active]);
 
   // 诊断：cat 加载完成后到内容渲染的耗时
@@ -156,7 +157,10 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
       await invoke("apply_emoji", { kind, key });
     } catch (e) {
       toast(String(e));
+      return;
     }
+    // 使用后刷新统计（不阻塞交互，后台拉取最新数据）
+    load().catch(console.error);
   };
 
   listLenRef.current = Math.max(visibleEmoji.length, visibleCustoms.length);

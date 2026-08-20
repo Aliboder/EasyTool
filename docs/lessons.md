@@ -49,6 +49,7 @@
 43. **热键匹配不要每次按键都解析 + 持配置锁**：全局热键 handler 每次按键都 `Shortcut::from_str` 解析 4 个热键字符串并全程持锁。把解析结果缓存到 `ResolvedHotkeys`（`reapply_hotkeys` 时重建），handler 只读缓存比较，避免高频事件下反复分配 + 锁竞争
 44. **useState 里 `setState(prev => prev)` 等于没做防抖**：`onSearchChange` 里 setTimeout 包一层 `setSearch(prev => prev)` 值不变不触发重渲染，防抖失效、每次按键立即全量加载。防抖要把「值更新」放进 setTimeout
 45. **Canvas 像素检测别在渲染期同步跑**：`SmartEmoji` 用 `useMemo` 同步做 64×64 canvas 逐像素扫描，首屏几百个不同 emoji 会卡。改为 useState 初始读缓存（未命中先按支持显示字符）+ `requestIdleCallback` 异步检测后 setState，不阻塞首帧
+46. **keep-alive 模块切回不要全量重载 + 逐字符检测要分片**：表情页「每次激活重载数据 + 重建 1906 对象 + 重渲染」且缓存冷时 `requestIdleCallback` 会连续跑 144+ 次 canvas 检测（每次新建 context + 4096 像素扫描 + 全量 localStorage 写）→ 切回卡 200ms+。修复：切回不重载改窗口 `focus` 刷新（同搜索页）；检测复用共享 canvas + 每帧 rAF 分片（24 个/帧）+ localStorage 防抖写（一批只写一次）。判定依据：日志里 `loadCatalog` 4~18ms 很快，而 `first paint after cat` 尖峰 212~262ms，量级正好 ≈ 144 × 单字符检测 ~1.5ms
 
 ---
 
@@ -507,6 +508,31 @@
 
 **相关代码**：
 - `src/modules/search/SearchView.tsx` - 结果滚动容器补 `onScroll`/`scrollRef`，删 `loadMore` 死 `parts`，补 `LucideIcon` 类型导入
+
+---
+
+## 2026-08-20
+
+### 表情模块切换卡顿：激活全量重载 + 逐字符 Canvas 检测阻塞主线程
+
+**问题描述**：主窗口每次切回表情模块都卡顿约 200~260ms；文件搜索结果更多却流畅。
+
+**根本原因**：
+1. `Page.tsx` 有 `useEffect([active])`，每次切回表情页都重新 `loadCatalog()`（重建 1906 个对象）+ `setCat` 全量重渲染 144 个节点——搜索页 keep-alive 后无此逻辑，状态常驻；
+2. `SmartEmoji` 缓存冷时，144 个字符各做一次「新建 64×64 canvas + 2D context → fillText → getImageData 4096 像素 → 双重 for 扫描 → **整个 SUPPORT_CACHE JSON.stringify 写 localStorage**」，单字符约 1.5~3ms，合计 220~430ms，正好吻合日志 `first paint after cat` 尖峰（`loadCatalog` 仅 4~18ms，不是瓶颈）。
+
+**解决方案**：
+- 去掉激活重载，改为窗口 `focus` 时刷新（同搜索页策略）+ 使用表情后后台 `load()` 刷新统计；
+- `SmartEmoji` 检测改造：复用**单个共享 canvas/context**（不再每次新建）；待检测字符入队、**每帧 rAF 只处理 24 个**（片间让出主线程）；localStorage **防抖**（500ms 一批写一次，不再逐字符写全量 Map）。未命中仍先按「支持」渲染字符，检测完再替换 Twemoji。
+
+**教训**：
+1. 排查「数据多却不卡 / 数据少反而卡」先看加载与渲染量是否一致——搜索按页渲染（PAGE_SIZE=100），表情页看似只显示 144 个，但激活时全量重建 + 逐字符检测才是开销来源；
+2. 前端瓶颈判定用已有诊断日志：数据加载耗时 vs 渲染耗时分开看，尖峰量级与每节点成本相乘对比即可定位；
+3. 逐字符的 O(n) 检测要么缓存结果、要么分片让出主线程；持久化写入（localStorage）必须防抖合并，别逐次写全量。
+
+**相关代码**：
+- `src/modules/emoji/SmartEmoji.tsx` - 共享 canvas + 分片队列（`BATCH_PER_FRAME=24`）+ 防抖 `schedulePersist`
+- `src/modules/emoji/Page.tsx` - 去掉 `active` 重载，改 `window focus` 刷新；`onPick` 后后台刷新
 
 ---
 
