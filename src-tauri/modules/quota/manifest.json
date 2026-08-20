@@ -2,6 +2,7 @@
   "id": "quota",
   "name": "额度监控",
   "icon": "gauge",
+  "description": "多账户额度/余额监控与消费告警",
   "enabled": true,
   "default_config": { "refresh_interval_sec": 30, "warn_threshold": 10.0, "hotkey": "" }
 }

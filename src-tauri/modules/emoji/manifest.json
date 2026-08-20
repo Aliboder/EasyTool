@@ -2,6 +2,7 @@
   "id": "emoji",
   "name": "表情",
   "icon": "smile",
+  "description": "常用表情符号，分类检索一键插入",
   "enabled": true,
   "default_config": {
     "hotkey": "Ctrl+Shift+J",

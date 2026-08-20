@@ -15,6 +15,9 @@ pub struct Manifest {
     pub name: String,
     pub icon: String,
     pub enabled: bool,
+    /// 模块一句话说明（manifest.json 可省略，默认空）
+    #[serde(default)]
+    pub description: String,
     pub default_config: serde_json::Value,
 }
 
@@ -56,6 +59,9 @@ pub fn merge_manifests(cfg: &mut AppConfig, manifests: &[Manifest]) {
             value["enabled"] = serde_json::json!(m.enabled);
             cfg.modules.insert(m.id.clone(), value);
         }
+        if !cfg.module_order.contains(&m.id) {
+            cfg.module_order.push(m.id.clone());
+        }
     }
     // quota 多账户：旧配置无 accounts 字段时补默认账户（兼容旧 keyring 槽位）
     if let Some(q) = cfg.modules.get_mut("quota") {
@@ -96,11 +102,16 @@ mod tests {
             name: "剪贴板".into(),
             icon: "clipboard".into(),
             enabled: true,
+            description: "记录剪贴板历史".into(),
             default_config: serde_json::json!({ "max_items": 500 }),
         };
         merge_manifests(&mut cfg, &[manifest]);
         assert!(cfg.modules.contains_key("clipboard"));
         assert_eq!(cfg.modules["clipboard"]["enabled"], serde_json::json!(true));
         assert_eq!(cfg.modules["clipboard"]["max_items"], serde_json::json!(500));
+        assert_eq!(cfg.module_order, vec!["clipboard".to_string()]);
+        // 幂等：再次 merge 不重复追加
+        merge_manifests(&mut cfg, &[Manifest { id: "clipboard".into(), name: "剪贴板".into(), icon: "clipboard".into(), enabled: true, description: String::new(), default_config: serde_json::json!({}) }]);
+        assert_eq!(cfg.module_order, vec!["clipboard".to_string()]);
     }
 }

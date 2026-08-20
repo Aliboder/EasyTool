@@ -15,6 +15,8 @@ pub struct AppConfig {
     pub main_size: Option<serde_json::Value>,
     /// 统一模式下呼出主窗口时是否跟随鼠标
     pub main_follow_mouse: bool,
+    /// 模块显示顺序（底部栏与设置页共用；缺失的模块启动时追加到末尾）
+    pub module_order: Vec<String>,
 }
 
 impl Default for AppConfig {
@@ -43,7 +45,7 @@ impl Default for AppConfig {
         let mut hotkeys = HashMap::new();
         hotkeys.insert("clipboard".into(), "Ctrl+Shift+V".into());
         hotkeys.insert("main".into(), "Ctrl+Shift+E".into());
-        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], unified_hotkey: true, main_size: None, main_follow_mouse: false }
+        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], unified_hotkey: true, main_size: None, main_follow_mouse: false, module_order: vec![] }
     }
 }
 
@@ -91,6 +93,18 @@ pub fn set_module_enabled(
     } else {
         cfg.modules.insert(id, serde_json::json!({ "enabled": enabled }));
     }
+    save_config(&app, &cfg)
+}
+
+/// 保存模块显示顺序（底部栏与设置页排序同步依据）
+#[tauri::command]
+pub fn set_module_order(
+    app: AppHandle,
+    state: State<ConfigState>,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    let mut cfg = state.0.lock().unwrap();
+    cfg.module_order = ids;
     save_config(&app, &cfg)
 }
 
