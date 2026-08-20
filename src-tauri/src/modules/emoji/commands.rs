@@ -359,9 +359,20 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
                 .unwrap_or(false)
         })
     };
+    // 写剪贴板成功后标记"自身写入"，避免被剪贴板监听器记录进历史
+    fn mark_self_write(app: &AppHandle) {
+        if let Some(clip) = app.try_state::<crate::modules::clipboard::state::AppState>() {
+            clip.mark_self_write();
+        }
+    }
     if click_action == "paste" {
-        super::paste::apply_to_foreground(write).map_err(|e| e.to_string())
+        let r = super::paste::apply_to_foreground(write).map_err(|e| e.to_string());
+        if r.is_ok() {
+            mark_self_write(&app);
+        }
+        r
     } else if write() {
+        mark_self_write(&app);
         Ok(())
     } else {
         Err("写入剪贴板失败".into())
