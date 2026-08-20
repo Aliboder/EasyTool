@@ -41,7 +41,7 @@ src/modules/<id>/                      # React 前端组件
 字段说明：
 - `id`：唯一标识，作为 config 中 `modules.<id>` 的键、Rust 模块名、前端模块 id
 - `name`：设置页/侧边栏显示名
-- `icon`：`clipboard`（剪贴板图标）或 `gauge`（仪表图标），暂只支持这两个值；新增图标需同步改 `src/App.tsx` 的图标映射
+- `icon`：`clipboard`（剪贴板图标）/ `gauge`（仪表图标）/ `smile`（表情图标）/ `search`（搜索图标）；新增图标需同步改 `src/App.tsx` 与 `src/components/layout/Sidebar.tsx` 的图标映射
 - `enabled`：默认是否启用
 - `default_config`：模块配置项的默认值（任意 JSON，启动时并入 config）
 
@@ -254,3 +254,4 @@ switch (activeModule.id) {
 
 - **clipboard**：独立弹窗窗口（延迟创建）+ 系统剪贴板监听 + 文件存储（缩略图/图标）+ 固定板块拖拽排序（小条目 @dnd-kit）+ 弹窗位置/尺寸记忆 + 监听规则，最完整的模块参照
 - **quota**：后台轮询线程 + **多账户支持**（账户增删改 + 独立密钥槽位 key_ref + 独立余额/历史）+ 告警通知 + 消费历史按账户分文件 + 完整时间线（横向滚动）+ 面板卡片拖拽排序（@dnd-kit + will-change），后台任务/数据可视化/多实例类模块参照
+- **search**：动态加载第三方 DLL（`Everything64.dll`，MIT，从官方 SDK 下载打包进 `modules/search/`）+ SDK 全局状态用互斥锁串行 + 查询放后台线程 + 复用剪贴板图标/缩略图命令 + 弹窗模式复用，外部依赖/FFI 类模块参照。⚠️ Tauri 命令若与其他模块同名，**函数名须带模块前缀**（`search_get_status`），`#[tauri::command(rename=...)]` 无法解决宏符号冲突

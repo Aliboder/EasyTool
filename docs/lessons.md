@@ -40,6 +40,7 @@
 34. **多 Mutex 锁顺序必须一致**：额度模块 `fetch_once`/`restore_from_db` 都按「QuotaState → QuotaDb」顺序加锁；任何反向加锁（先 db 后 state）都会死锁。跨函数只取一把锁时（如只读 db 的命令）也要保持一致习惯
 35. **useWindowEntrance 动画会让 `fixed` 失效**：入场动画（`zoom-in-95` 等）带 transform + `animation-fill-mode`，使 `position: fixed` 子元素相对动画容器（而非视口）定位。浮层/抽屉遮罩改用页面根节点 `relative` + `absolute inset-0` 代替 `fixed`，避开包含块陷阱
 36. **新增 Tauri 命令必须注册进 `generate_handler!`**：只写 `#[tauri::command]` 函数不注册，前端 invoke 会静默失败（Promise reject，无日志），表现为「操作无效 + UI 回弹」。排查前端调用失败先查 `src-tauri/src/lib.rs` 的 `invoke_handler` 列表
+37. **无限滚动 = 滚动容器必须绑 `onScroll`**：写了 `loadMore`/`onScroll` 但没把 `onScroll` 挂到 `overflow-y-auto` 容器上 = 永不触底加载，只显示第一页 + 计数严重不符。新增分页列表时检查滚动容器有没有 `onScroll`（TS6133「声明未使用」常是这个信号）
 
 ---
 
@@ -479,6 +480,25 @@
 **相关代码**：
 - `src-tauri/src/lib.rs` - `generate_handler!` 补 `config::set_module_order`
 - `src-tauri/src/config.rs` - `set_module_order`
+
+---
+
+## 2026-08-20
+
+### 文件搜索只显示第一页 100 条 → 无限滚动 onScroll 未绑定滚动容器
+
+**问题描述**：搜索框输入 "A"，顶部显示海量总数，但结果面板只渲染有限数量（约 100 条），滚动到底不再加载，显示数与实际严重不符。
+
+**根本原因**：`SearchView.tsx` 已实现 `fetchPage`（offset 分页）、`loadMore`（触底加载）、`onScroll`（滚动检测），但 `onScroll` 从未绑定到结果滚动容器（`<div className="flex-1 overflow-y-auto">` 只写了 overflow，没挂 `onScroll`）。因此 `loadMore` 永不触发，只加载 offset=0 的第一页 100 条，`total` 却显示 Everything 真实全量命中数。后端 `sdk::search` 的 `set_max`/`set_offset`/`get_tot_results` 分页本身正确。
+
+**解决方案**：结果滚动容器补 `ref={scrollRef} onScroll={onScroll}`；顺带删掉 `loadMore` 里未使用的 `parts` 死代码、补漏导的 `import type { LucideIcon }`（最后一条 TS2304）。
+
+**教训**：
+1. 无限滚动的三件套（`loadMore` + `onScroll` + 滚动容器 `onScroll` 绑定）缺一不可，TS6133「声明未使用」是「功能写了一半没接线」的信号；
+2. 排查「列表只显示固定数量 + 计数不符」优先查分页触发器是否真的接上了 UI 事件，而不是先怀疑后端分页。
+
+**相关代码**：
+- `src/modules/search/SearchView.tsx` - 结果滚动容器补 `onScroll`/`scrollRef`，删 `loadMore` 死 `parts`，补 `LucideIcon` 类型导入
 
 ---
 

@@ -11,6 +11,7 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 
 - `clipboard` 剪贴板：监听系统剪贴板，记录文本/图片/文件，固定/拖拽排序/搜索/跟手粘贴；独立弹窗（延迟创建）
 - `quota` 额度监控：DeepSeek / OpenCode Go **多账户**，各账户独立密钥/余额/消费历史/告警；后台轮询
+- `search` 文件搜索：Everything 全文搜索（**需用户安装 Everything**），Everything64.dll 随应用打包（MIT 许可）；独立弹窗 + 模块页双入口；结果列/排序可自定义；复制路径/文件联动写入剪贴板历史
 
 ## 技术栈
 
@@ -37,6 +38,7 @@ src/
 ### 窗口
 - `main` 主窗口：关闭=隐藏到托盘；`unified_hotkey` 开启时按「面板」工作（点外部关闭/热键切换/置顶/跳过任务栏/可选跟随鼠标）
 - `clipboard_popup` 剪贴板弹窗：跟随鼠标或固定位置，失焦自动隐藏；**延迟创建**（首次呼出才建窗，避免启动闪现）
+- `search_popup` 文件搜索弹窗：复用剪贴板弹窗模式（跟随鼠标/失焦隐藏/延迟创建），Everything64.dll 动态加载
 - **坑**：Windows 下透明窗口（`.transparent(true)`）hide 后再 show 会崩溃，已放弃透明方案
 
 ### 全局热键与统一呼出
@@ -48,6 +50,7 @@ src/
 - 数据目录 `%APPDATA%\com.aliboder.easytool\`：`config.json`、`clipboard.db`（SQLite WAL，含 `pin_order` 列）、`images/`、`thumbs/`
 - 额度历史按账户分文件 `balance_history_<account_id>.json`
 - 密钥存 keyring（service `com.aliboder.easytool`），**每账户独立槽位**：默认账户 `deepseek`/`opencode-go`，新增账户 `quota-<id>`（key_ref 字段）；新账户绝不回退旧槽位
+- search 模块：`Everything64.dll` 打包在 `src-tauri/modules/search/`（资源目录，dev fallback 相对路径）；SDK 有进程级全局状态，查询须持全局互斥锁（`sdk::sdk_lock`）且放后台线程（Everything 查询同步阻塞）
 
 ### 额度轮询（多账户）
 - `poll_loop` 后台线程按 `refresh_interval_sec`（≥5s）调 `fetch_once`：遍历 `account_configs` 逐账户查询 → 更新 `QuotaState.accounts` → 逐账户告警（阈值统一）→ 逐账户写历史 → emit `quota://updated`
