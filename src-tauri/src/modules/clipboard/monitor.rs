@@ -23,8 +23,10 @@ static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
 /// 轮询间隔（毫秒）
 const POLL_INTERVAL_MS: u64 = 500;
-/// 自身写入守卫窗口（毫秒）
-const SELF_WRITE_GUARD_MS: i64 = 300;
+/// 自身写入守卫窗口（毫秒）。
+/// 覆盖「write 写剪贴板 → 模拟 Ctrl+V → 目标应用粘贴时可能改写剪贴板」的完整链路，
+/// 避免表情/历史粘贴写入的内容被剪贴板监听记录；配合内容指纹精确比对（内容一致才跳过）。
+const SELF_WRITE_GUARD_MS: i64 = 2000;
 /// 缩略图最长边
 const THUMB_MAX_SIZE: u32 = 256;
 
