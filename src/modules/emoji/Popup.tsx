@@ -9,9 +9,9 @@ import { SmartEmoji } from "./SmartEmoji";
 import { toast } from "@/lib/toast";
 
 const TABS = [
-  "smileys",
-  "recent",
   "favorite",
+  "recent",
+  "smileys",
   "hearts",
   "gestures",
   "people",
@@ -58,7 +58,7 @@ const BATCH = 240;
 
 export function EmojiPopup() {
   const [cat, setCat] = useState<Catalog | null>(null);
-  const [tab, setTab] = useState("smileys");
+  const [tab, setTab] = useState("favorite");
   const [q, setQ] = useState("");
   const [visible, setVisible] = useState(BATCH);
   const scrollRef = useRef<HTMLDivElement | null>(null);

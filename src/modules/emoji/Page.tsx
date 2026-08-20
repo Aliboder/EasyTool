@@ -16,9 +16,9 @@ import { SmartEmoji } from "./SmartEmoji";
 import { toast } from "@/lib/toast";
 
 const GROUP_TABS = [
-  { id: "smileys", zh: "表情" },
-  { id: "recent", zh: "最近" },
   { id: "favorite", zh: "收藏" },
+  { id: "recent", zh: "最近" },
+  { id: "smileys", zh: "表情" },
   { id: "hearts", zh: "爱心" },
   { id: "gestures", zh: "手势" },
   { id: "people", zh: "人物" },
@@ -40,7 +40,7 @@ const GROUP_TABS = [
 
 export function EmojiPage({ active = true }: { active?: boolean }) {
   const [cat, setCat] = useState<Catalog | null>(null);
-  const [tab, setTab] = useState("smileys");
+  const [tab, setTab] = useState("favorite");
   const [q, setQ] = useState("");
   const [customGroups, setCustomGroups] = useState<GroupDto[]>([]);
   const [showSettings, setShowSettings] = useState(false);
@@ -87,8 +87,15 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
     load().catch(console.error);
   }, []);
 
-  // keep-alive 下切回模块不重载（避免每次切换全量重建+重渲染卡顿）；
-  // 动态数据（使用次数/收藏）只在跨窗口操作后可能变脏，窗口聚焦时刷新一次（同搜索页策略）。
+  // 切回模块时刷新（keep-alive 下组件常驻，跨模块操作后需拿到最新数据）。
+  // 早期卡顿源于激活时全量重载 + SmartEmoji 逐字符同步检测；检测已改分片（每帧 24 个），
+  // 现在激活重载仅 loadCatalog ~5ms + 轻量重渲染，不会卡
+  useEffect(() => {
+    if (active) load().catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  // 窗口聚焦时刷新（覆盖停留在表情页、外部窗口操作后数据变脏的场景）。
   // 呼出时 focus 可能连发多次：防抖只保留最后一次，避免并发全量重载卡顿
   useEffect(() => {
     if (!active) return;
