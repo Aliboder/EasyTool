@@ -283,6 +283,18 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     [loadMore],
   );
 
+  // 兜底：自动加载直到填满可视区。全屏/大窗口下第一页撑不满屏幕时无滚动可触发 onScroll，
+  // 这里在每次结果变化后检查容器是否溢出，未填满且有更多结果就继续加载（隐藏容器 clientHeight=0 跳过）
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || el.clientHeight === 0) return;
+    if (total === 0 || loading || loadingMore) return;
+    if (results.length >= total) return;
+    if (el.scrollHeight - el.clientHeight < 40) {
+      loadMore();
+    }
+  }, [results, total, loading, loadingMore, loadMore]);
+
   const onQueryChange = (v: string) => {
     setQuery(v);
     if (debounce.current) window.clearTimeout(debounce.current);
