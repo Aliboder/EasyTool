@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EasyTool — Windows 效率工具箱</title>
+<style>
+  :root {
+    --paper: #f7f7f4;
+    --ink: #131313;
+    --ink-2: #555550;
+    --ink-3: #8a8a84;
+    --red: #e63329;
+    --hairline: #d6d6d0;
+    --hairline-2: #b5b5ae;
+    --code-bg: #131313;
+    --code-ink: #e8e8e4;
+  }
+  [data-theme="dark"] {
+    --paper: #0f0f0e;
+    --ink: #efefe9;
+    --ink-2: #a5a59c;
+    --ink-3: #6e6e66;
+    --red: #ff4b3e;
+    --hairline: #2e2e2b;
+    --hairline-2: #4a4a45;
+    --code-bg: #1a1a18;
+    --code-ink: #d8d8d2;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  ::selection { background: var(--red); color: #fff; }
+  :focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    line-height: 1.65;
+    overflow-x: hidden;
+    transition: background 0.3s ease, color 0.3s ease;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .lat { font-family: "Bahnschrift", "Arial", "Helvetica Neue", sans-serif; }
+  .mono { font-family: "Cascadia Code", "Consolas", monospace; }
+  .serif { font-family: Georgia, "Times New Roman", serif; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
+
+  a { color: var(--ink); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ============ NAV ============ */
+  #progress {
+    position: fixed; top: 0; left: 0; z-index: 100;
+    height: 2px; width: 0;
+    background: var(--red);
+    transition: width 0.1s linear;
+  }
+  header.nav {
+    position: sticky; top: 0; z-index: 50;
+    background: var(--paper);
+    border-bottom: 1px solid var(--hairline);
+  }
+  .nav-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 58px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 700; letter-spacing: 0.5px; }
+  .brand .sq { width: 13px; height: 13px; background: var(--red); display: inline-block; }
+  .nav-links { display: flex; gap: 28px; }
+  .nav-links a {
+    font-size: 13.5px; color: var(--ink-2);
+    display: flex; align-items: baseline; gap: 7px;
+  }
+  .nav-links a b { font-family: var(--lat); font-size: 11px; color: var(--ink-3); font-weight: 600; }
+  .nav-links a:hover { color: var(--ink); text-decoration: none; }
+  .nav-links a.active { color: var(--ink); }
+  .nav-links a.active b { color: var(--red); }
+  .nav-right { display: flex; align-items: center; gap: 14px; }
+
+  .theme-btn {
+    border: none; background: none; cursor: pointer;
+    font-family: var(--lat); font-size: 11.5px; letter-spacing: 1.5px;
+    color: var(--ink-2); text-transform: uppercase;
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 0;
+  }
+  .theme-btn:hover { color: var(--ink); }
+  .theme-btn .sq { width: 9px; height: 9px; border: 1.5px solid var(--ink-2); display: inline-block; }
+  [data-theme="light"] .theme-btn .lbl-d { display: none; }
+  [data-theme="dark"] .theme-btn .lbl-l { display: none; }
+
+  /* ============ HERO (cover) ============ */
+  .hero { padding: 100px 0 0; }
+  .hero .cover {
+    border: 2px solid var(--ink);
+    border-bottom: none;
+    padding: 64px 56px 0;
+    position: relative;
+  }
+  .hero .cover-top {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 2px;
+    color: var(--ink-3); text-transform: uppercase;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .hero .cover-top .ver b { color: var(--red); font-weight: 700; }
+  .hero h1 {
+    font-size: clamp(80px, 15vw, 176px);
+    font-weight: 800;
+    letter-spacing: -4px;
+    line-height: 0.88;
+    padding: 40px 0 8px;
+    text-transform: uppercase;
+  }
+  .hero h1 .red { color: var(--red); }
+  .hero .subline {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 40px;
+    border-top: 2px solid var(--ink);
+    padding: 26px 0 30px;
+  }
+  .hero .subline .cn {
+    font-size: clamp(22px, 3.4vw, 36px);
+    font-weight: 300; letter-spacing: 8px;
+  }
+  .hero .subline .cn b { font-weight: 700; letter-spacing: 0; color: var(--red); }
+  .hero .subline .desc {
+    max-width: 380px; font-size: 13.5px; color: var(--ink-2);
+    text-align: right; border-right: 3px solid var(--red); padding-right: 16px;
+  }
+  .hero .stat-band {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    border: 2px solid var(--ink);
+    margin-top: -2px;
+  }
+  .hero .stat-band .st { padding: 24px 20px 20px; border-right: 1px solid var(--ink); }
+  .hero .stat-band .st:last-child { border-right: none; }
+  .hero .stat-band .st .n { font-family: var(--lat); font-size: 42px; font-weight: 700; letter-spacing: -1px; line-height: 1; }
+  .hero .stat-band .st .n .u { font-size: 19px; color: var(--red); }
+  .hero .stat-band .st .l { font-size: 11.5px; color: var(--ink-3); margin-top: 6px; letter-spacing: 1.5px; text-transform: uppercase; font-family: var(--mono); }
+
+  .hero .cta-row {
+    display: flex; gap: 14px; margin-top: 40px;
+    justify-content: center;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 14px 30px;
+    font-size: 14px; font-weight: 700; letter-spacing: 1px;
+    border: 2px solid var(--ink);
+    transition: all 0.15s;
+  }
+  .btn:hover { text-decoration: none; transform: translate(-2px, -2px); }
+  .btn-solid { background: var(--red); border-color: var(--red); color: #fff; }
+  .btn-solid:hover { background: var(--ink); border-color: var(--ink); }
+  .btn-outline:hover { background: var(--ink); color: var(--paper); }
+
+  /* ============ SECTION ============ */
+  section { padding: 100px 0; border-top: 1px solid var(--hairline); scroll-margin-top: 58px; }
+  .sec-head { display: flex; align-items: baseline; gap: 24px; margin-bottom: 60px; }
+  .sec-head .no {
+    font-family: var(--lat); font-size: 96px; font-weight: 800; letter-spacing: -4px;
+    line-height: 0.8; color: transparent;
+    -webkit-text-stroke: 1.5px var(--ink-3);
+    opacity: 0.5;
+  }
+  .sec-head .titles { display: flex; flex-direction: column; gap: 2px; }
+  .sec-head h2 { font-size: clamp(30px, 4.6vw, 50px); font-weight: 800; letter-spacing: -1.5px; line-height: 1; }
+  .sec-head .en {
+    font-family: var(--lat); font-size: 12px; letter-spacing: 4px;
+    color: var(--ink-3); text-transform: uppercase;
+  }
+  .sec-sub { max-width: 640px; font-size: 14.5px; color: var(--ink-2); margin: -40px 0 48px; padding-left: 20px; border-left: 3px solid var(--red); }
+
+  /* ============ 01 FEATURES ============ */
+  .feat-list { border-top: 2px solid var(--ink); }
+  .feat-row {
+    display: grid; grid-template-columns: 70px 240px 1fr;
+    gap: 24px; align-items: start;
+    padding: 28px 8px;
+    border-bottom: 1px solid var(--hairline);
+    transition: background 0.15s;
+  }
+  .feat-row:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
+  .feat-row .f-no { font-family: var(--lat); font-size: 15px; font-weight: 700; color: var(--red); }
+  .feat-row h3 { font-size: 17px; font-weight: 750; letter-spacing: -0.3px; }
+  .feat-row .f-desc { font-size: 14px; color: var(--ink-2); max-width: 660px; }
+  .feat-row .f-desc b { color: var(--ink); font-weight: 600; }
+  .feat-row .f-spec {
+    margin-top: 12px; display: inline-block;
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
+    border: 1px solid var(--hairline); padding: 3px 10px;
+  }
+
+  /* ============ 02 MODULES ============ */
+  .mod-grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 2px solid var(--ink); }
+  .mod { border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); padding: 36px 32px; transition: background 0.15s; position: relative; overflow: hidden; }
+  .mod:nth-child(2n) { border-right: none; }
+  .mod:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
+  .mod .m-ghost {
+    position: absolute; right: -6px; top: -18px;
+    font-family: var(--lat); font-size: 120px; font-weight: 800;
+    color: transparent; -webkit-text-stroke: 1.5px var(--ink-3);
+    opacity: 0.22; line-height: 1; pointer-events: none;
+  }
+  .mod .m-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; position: relative; z-index: 1; }
+  .mod .m-no { font-family: var(--lat); font-size: 11.5px; font-weight: 700; letter-spacing: 2px; color: var(--red); text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
+  .mod .m-no svg { width: 15px; height: 15px; stroke: var(--red); stroke-width: 2; fill: none; }
+  .mod .m-key { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); border: 1px solid var(--hairline); padding: 3px 9px; }
+  .mod h3 { font-size: 26px; font-weight: 800; letter-spacing: -0.8px; position: relative; z-index: 1; }
+  .mod .m-desc { font-size: 13.5px; color: var(--ink-2); margin-top: 8px; position: relative; z-index: 1; }
+  .mod .m-formats { margin-top: 14px; display: flex; gap: 6px; flex-wrap: wrap; position: relative; z-index: 1; }
+  .mod .m-formats span {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+    border: 1px solid var(--hairline); padding: 2px 8px;
+  }
+  .mod ul { list-style: none; margin-top: 24px; border-top: 1px solid var(--hairline); position: relative; z-index: 1; }
+  .mod ul li {
+    display: flex; gap: 14px; align-items: baseline;
+    padding: 12px 0; border-bottom: 1px solid var(--hairline);
+    font-size: 13.5px; color: var(--ink-2);
+  }
+  .mod ul li::before { content: ""; width: 6px; height: 6px; background: var(--red); flex-shrink: 0; transform: translateY(-2px); }
+  .mod ul li code { font-family: var(--mono); font-size: 12px; color: var(--ink); background: var(--paper); padding: 1px 5px; }
+
+  /* ============ 03 HOTKEYS ============ */
+  .key-table { border-top: 2px solid var(--ink); }
+  .key-row {
+    display: grid; grid-template-columns: 60px 250px 1fr;
+    gap: 24px; align-items: baseline;
+    padding: 17px 8px;
+    border-bottom: 1px solid var(--hairline);
+    transition: background 0.15s;
+  }
+  .key-row:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
+  .key-row .k-no { font-family: var(--lat); font-size: 13px; font-weight: 700; color: var(--ink-3); }
+  .key-row .k-keys { display: flex; gap: 5px; flex-wrap: wrap; }
+  .key-row .k-keys kbd {
+    font-family: var(--mono); font-size: 12px;
+    border: 1px solid var(--hairline-2); border-bottom-width: 2.5px;
+    padding: 3px 10px; background: var(--paper);
+    transition: all 0.15s;
+  }
+  .key-row:hover kbd { border-color: var(--red); }
+  .key-row .k-desc { font-size: 13.5px; color: var(--ink-2); }
+  .key-row .k-desc b { color: var(--ink); font-weight: 600; }
+
+  /* ============ 04 ARCHITECTURE ============ */
+  .arch-visual {
+    border: 2px solid var(--ink);
+    padding: 40px;
+    background: color-mix(in srgb, var(--red) 2.5%, transparent);
+  }
+  .arch-layers { display: flex; flex-direction: column; gap: 18px; }
+  .arch-layer { display: grid; grid-template-columns: 170px 1fr; gap: 20px; align-items: stretch; }
+  .arch-layer .l-label {
+    display: flex; flex-direction: column; justify-content: center;
+    border: 2px solid var(--ink); padding: 14px 18px;
+    font-family: var(--lat); font-weight: 800; font-size: 15px; letter-spacing: 1px; text-transform: uppercase;
+  }
+  .arch-layer .l-label .l-en { font-size: 10px; letter-spacing: 3px; color: var(--ink-3); font-weight: 600; margin-top: 3px; }
+  .arch-layer.l-shell .l-label { background: var(--ink); color: var(--paper); }
+  .arch-layer.l-shell .l-label .l-en { color: var(--ink-3); }
+  .arch-layer.l-reg .l-label { background: var(--red); color: #fff; }
+  .arch-layer.l-reg .l-label .l-en { color: rgba(255,255,255,0.6); }
+  .arch-layer.l-mod .l-label { background: var(--paper); }
+  .arch-layer .l-body {
+    display: grid; gap: 10px;
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .arch-layer.l-shell .l-body { grid-template-columns: repeat(3, 1fr); }
+  .arch-layer.l-reg .l-body { grid-template-columns: repeat(3, 1fr); }
+  .arch-box {
+    border: 1px solid var(--ink);
+    padding: 12px 14px;
+    font-size: 12.5px; background: var(--paper);
+    display: flex; flex-direction: column; gap: 3px;
+    transition: all 0.15s;
+  }
+  .arch-box:hover { border-color: var(--red); transform: translateY(-2px); }
+  .arch-box .ab-t { font-weight: 700; font-size: 13px; }
+  .arch-box .ab-d { font-size: 11px; color: var(--ink-3); font-family: var(--mono); line-height: 1.5; }
+  .arch-box.red { border-color: var(--red); }
+  .arch-box.red .ab-t { color: var(--red); }
+  .arch-data {
+    margin-top: 20px; border-top: 2px dashed var(--hairline-2);
+    padding-top: 18px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  }
+  .arch-data .ab-t { display: flex; align-items: center; gap: 8px; }
+  .arch-data .ab-t::before { content: ""; width: 7px; height: 7px; background: var(--red); }
+  .arch-flow {
+    margin-top: 20px;
+    border-top: 1px solid var(--hairline);
+    padding-top: 18px;
+    font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .arch-flow .step { border: 1px solid var(--hairline); padding: 4px 10px; background: var(--paper); }
+  .arch-flow .step.red { border-color: var(--red); color: var(--red); }
+  .arch-flow .arr { color: var(--ink-3); }
+
+  .arch-note {
+    margin-top: 30px; padding: 22px 26px;
+    border-left: 4px solid var(--red);
+    background: color-mix(in srgb, var(--red) 5%, transparent);
+    font-size: 14px; color: var(--ink-2);
+  }
+  .arch-note b { color: var(--ink); }
+  .arch-note code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); border-bottom: 1px solid var(--hairline-2); padding: 0 2px; }
+
+  .principle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 56px; border-top: 2px solid var(--ink); }
+  .principle { padding: 30px 28px; border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .principle:nth-child(2n) { border-right: none; }
+  .principle .p-no { font-family: var(--lat); font-size: 12px; font-weight: 700; letter-spacing: 2px; color: var(--red); text-transform: uppercase; }
+  .principle h3 { font-size: 18px; font-weight: 750; margin-top: 10px; letter-spacing: -0.3px; }
+  .principle .p-desc { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; }
+  .principle .p-desc b { color: var(--ink); font-weight: 600; }
+  .principle pre.p-code {
+    margin-top: 14px;
+    background: var(--code-bg); color: var(--code-ink);
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.7;
+    padding: 12px 14px; overflow-x: auto;
+  }
+  .principle pre.p-code .hl { color: #ff4b3e; }
+  .principle pre.p-code .cm { color: #7d7d74; }
+
+  /* ============ 05 DATA & SECURITY ============ */
+  .data-table { border-top: 2px solid var(--ink); }
+  .data-row {
+    display: grid; grid-template-columns: 220px 1fr;
+    gap: 24px; align-items: baseline;
+    padding: 20px 8px;
+    border-bottom: 1px solid var(--hairline);
+    transition: background 0.15s;
+  }
+  .data-row:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
+  .data-row .d-cat { font-family: var(--mono); font-size: 12px; letter-spacing: 1.5px; color: var(--ink-3); text-transform: uppercase; }
+  .data-row .d-desc { font-size: 13.5px; color: var(--ink-2); }
+  .data-row .d-desc code {
+    font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+    background: var(--paper); border: 1px solid var(--hairline); padding: 1px 6px;
+  }
+  .data-row .d-desc b { color: var(--ink); font-weight: 600; }
+
+  /* ============ 06 STACK ============ */
+  .stack-table { border-top: 2px solid var(--ink); }
+  .stack-row { display: grid; grid-template-columns: 220px 1fr; gap: 24px; padding: 22px 8px; border-bottom: 1px solid var(--hairline); }
+  .stack-row .s-cat { font-family: var(--mono); font-size: 12px; letter-spacing: 2px; color: var(--ink-3); text-transform: uppercase; padding-top: 4px; }
+  .stack-row .s-items { display: flex; flex-wrap: wrap; gap: 9px; }
+  .stack-row .s-items span {
+    font-family: var(--mono); font-size: 13px; color: var(--ink-2);
+    border: 1px solid var(--hairline); padding: 6px 14px;
+    transition: all 0.15s;
+  }
+  .stack-row .s-items span:hover { color: var(--ink); border-color: var(--ink-2); transform: translateY(-1px); }
+
+  .note-block {
+    margin-top: 40px; padding: 20px 24px;
+    border-left: 4px solid var(--red);
+    background: color-mix(in srgb, var(--red) 5%, transparent);
+    font-size: 13.5px; color: var(--ink-2);
+    max-width: 780px;
+  }
+  .note-block b { color: var(--ink); }
+  .note-block code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); border-bottom: 1px solid var(--hairline-2); padding: 0 2px; }
+
+  /* ============ 07 INSTALL ============ */
+  .install-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; }
+  .inst h3 { font-size: 18px; font-weight: 750; margin-bottom: 6px; display: flex; align-items: center; gap: 12px; }
+  .inst h3 .tag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 1px;
+    color: var(--red); border: 1.5px solid var(--red); padding: 1px 8px; text-transform: uppercase;
+  }
+  .inst p { font-size: 13.5px; color: var(--ink-2); margin-bottom: 18px; }
+  pre.code {
+    background: var(--code-bg); color: var(--code-ink);
+    font-family: var(--mono); font-size: 13px;
+    padding: 16px 18px; line-height: 1.8;
+    overflow-x: auto;
+    position: relative;
+  }
+  pre.code .copy {
+    position: absolute; top: 8px; right: 8px;
+    border: 1px solid #3a3a36; background: none;
+    color: #8a8a82; font-family: var(--mono); font-size: 10.5px;
+    letter-spacing: 1px; padding: 3px 9px; cursor: pointer;
+    text-transform: uppercase; transition: all 0.15s;
+  }
+  pre.code .copy:hover { color: #fff; border-color: #ff4b3e; background: #ff4b3e; }
+  pre.code .copy.done { color: #fff; border-color: #4caf50; background: #4caf50; }
+  .inst .reqs { margin-top: 16px; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: var(--ink-3); }
+  .inst .reqs span { display: flex; gap: 10px; align-items: baseline; }
+  .inst .reqs .sq { width: 6px; height: 6px; background: var(--red); flex-shrink: 0; transform: translateY(-2px); }
+
+  /* ============ 08 CHANGELOG ============ */
+  .key-table { border-top: 2px solid var(--ink); }
+  .key-row { display: grid; grid-template-columns: 70px 1fr; gap: 24px; padding: 17px 8px; border-bottom: 1px solid var(--hairline); transition: background 0.15s; }
+  .key-row:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
+  .key-row .k-no { font-family: var(--lat); font-size: 16px; font-weight: 800; color: var(--red); }
+  .key-row .k-desc { font-size: 13.5px; color: var(--ink-2); }
+  .key-row .k-desc b { color: var(--ink); font-weight: 600; }
+
+  /* ============ 09 FAQ ============ */
+  .faq-list { border-top: 2px solid var(--ink); }
+  .faq-item { border-bottom: 1px solid var(--hairline); }
+  .faq-item details { padding: 22px 8px; }
+  .faq-item summary {
+    display: flex; gap: 14px; align-items: baseline;
+    font-size: 15.5px; font-weight: 700;
+    cursor: pointer; list-style: none;
+    transition: color 0.15s;
+  }
+  .faq-item summary::-webkit-details-marker { display: none; }
+  .faq-item summary:hover { color: var(--red); }
+  .faq-item summary .q-no { font-family: var(--lat); font-size: 13px; color: var(--red); font-weight: 800; }
+  .faq-item summary .mark {
+    margin-left: auto; font-family: var(--mono); font-size: 14px;
+    color: var(--ink-3); transition: transform 0.2s;
+  }
+  .faq-item details[open] summary .mark { transform: rotate(45deg); color: var(--red); }
+  .faq-item .a { margin: 12px 0 0 34px; font-size: 13.5px; color: var(--ink-2); max-width: 720px; }
+  .faq-item .a code {
+    font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+    background: var(--paper); border: 1px solid var(--hairline); padding: 1px 6px;
+  }
+  .faq-item .a b { color: var(--ink); font-weight: 600; }
+
+  /* ============ 10 DOCS ============ */
+  .docs-grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 2px solid var(--ink); }
+  .doc {
+    display: grid; grid-template-columns: 44px 1fr;
+    gap: 14px; padding: 24px 22px;
+    border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+    transition: background 0.15s;
+  }
+  .doc:nth-child(2n) { border-right: none; }
+  .doc:hover { background: color-mix(in srgb, var(--red) 5%, transparent); text-decoration: none; }
+  .doc .d-no { font-family: var(--lat); font-size: 13px; font-weight: 800; color: var(--red); padding-top: 3px; }
+  .doc h3 { font-size: 15.5px; font-weight: 700; }
+  .doc p { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+  .doc .path { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 8px; display: block; }
+
+  /* ============ FOOTER ============ */
+  footer { border-top: 2px solid var(--ink); padding: 44px 0; }
+  .foot { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 30px; font-size: 12.5px; color: var(--ink-3); }
+  .foot .f-brand { font-weight: 800; color: var(--ink); font-size: 15px; display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; }
+  .foot .f-brand .sq { width: 12px; height: 12px; background: var(--red); display: inline-block; }
+  .foot .f-brand .tagline { font-size: 11px; color: var(--ink-3); font-weight: 400; }
+  .foot .f-col { display: flex; flex-direction: column; gap: 5px; }
+  .foot .f-col .h { font-family: var(--mono); font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px; }
+  .foot a:hover { color: var(--ink); }
+
+  /* ============ REVEAL ============ */
+  .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  .reveal.d1 { transition-delay: 0.06s; }
+  .reveal.d2 { transition-delay: 0.12s; }
+  .reveal.d3 { transition-delay: 0.18s; }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width: 900px) {
+    .hero .cover { padding: 40px 24px 0; }
+    .hero .subline { flex-direction: column; align-items: flex-start; gap: 18px; }
+    .hero .subline .desc { text-align: left; border-right: none; border-left: 3px solid var(--red); padding-left: 14px; padding-right: 0; }
+    .hero .stat-band { grid-template-columns: repeat(2, 1fr); }
+    .hero .stat-band .st:nth-child(2) { border-right: none; }
+    .hero .stat-band .st:nth-child(1), .hero .stat-band .st:nth-child(2) { border-bottom: 1px solid var(--ink); }
+    .mod-grid, .docs-grid, .principle-grid { grid-template-columns: 1fr; }
+    .mod, .doc, .principle { border-right: none; }
+    .install-grid { grid-template-columns: 1fr; gap: 36px; }
+    .stack-row, .data-row { grid-template-columns: 1fr; gap: 10px; }
+    .feat-row { grid-template-columns: 50px 1fr; }
+    .feat-row .f-desc { grid-column: 2; }
+    .key-row { grid-template-columns: 50px 1fr; gap: 10px 14px; }
+    .key-row .k-no { grid-column: 1; }
+    .key-row .k-keys { grid-column: 2; }
+    .key-row .k-desc { grid-column: 2; }
+    .arch-layer { grid-template-columns: 1fr; }
+    .arch-layer .l-body { grid-template-columns: repeat(2, 1fr); }
+    .arch-data { grid-template-columns: repeat(2, 1fr); }
+    .arch-flow { gap: 6px; }
+    .nav-links { display: none; }
+    .foot { grid-template-columns: 1fr; gap: 22px; }
+    section { padding: 70px 0; }
+  }
+  @media (max-width: 560px) {
+    .hero .stat-band { grid-template-columns: 1fr; }
+    .hero .stat-band .st { border-right: none; border-bottom: 1px solid var(--ink); }
+    .hero .stat-band .st:last-child { border-bottom: none; }
+    .arch-layer .l-body, .arch-data { grid-template-columns: 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+
+<!-- ============ NAV ============ -->
+<header class="nav" id="top">
+  <div class="wrap nav-inner">
+    <div class="brand"><span class="sq"></span>EASYTOOL</div>
+    <nav class="nav-links">
+      <a href="#features"><b>01</b>特性</a>
+      <a href="#modules"><b>02</b>模块</a>
+      <a href="#hotkeys"><b>03</b>快捷键</a>
+      <a href="#architecture"><b>04</b>架构</a>
+      <a href="#data"><b>05</b>数据</a>
+      <a href="#install"><b>07</b>安装</a>
+    </nav>
+    <div class="nav-right">
+      <button class="theme-btn" id="themeBtn" aria-label="切换主题">
+        <span class="sq"></span>
+        <span class="lbl-d">Light</span>
+        <span class="lbl-l">Dark</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero" style="border-top:none; padding-bottom: 70px;">
+  <div class="wrap">
+    <div class="cover">
+      <div class="cover-top">
+        <span>Windows 效率工具箱</span>
+        <span class="ver">vol. <b>0.4.4</b> · 2026.08</span>
+      </div>
+      <h1>Easy<span class="red">Tool</span></h1>
+      <div class="subline">
+        <span class="cn">剪贴板 · 额度 · 表情 · 秒搜</span>
+        <span class="desc">单应用 + 模块注册表架构，Rust + React 驱动。四个独立模块，本地优先，密钥只进系统钥匙串。</span>
+      </div>
+    </div>
+    <div class="stat-band">
+      <div class="st"><div class="n">04</div><div class="l">功能模块</div></div>
+      <div class="st"><div class="n">36<span class="u">+</span></div><div class="l">后端单元测试</div></div>
+      <div class="st"><div class="n">1900<span class="u">+</span></div><div class="l">内置表情符号</div></div>
+      <div class="st"><div class="n">&lt;1<span class="u">s</span></div><div class="l">全盘搜索响应</div></div>
+    </div>
+    <div class="cta-row">
+      <a class="btn btn-solid" href="https://github.com/Aliboder/EasyTool/releases" target="_blank" rel="noopener">下载 v0.4.4</a>
+      <a class="btn btn-outline" href="https://github.com/Aliboder/EasyTool" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 01 FEATURES ============ -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">01</span>
+      <div class="titles">
+        <h2>特性</h2>
+        <span class="en">Features</span>
+      </div>
+    </div>
+    <p class="sec-sub">不是一堆互不相干的小工具，而是一个可扩展的轻量框架。</p>
+
+    <div class="feat-list">
+      <div class="feat-row reveal">
+        <div class="f-no">01</div>
+        <h3>模块注册表架构</h3>
+        <div>
+          <p class="f-desc">每个功能是独立模块，在设置页可独立启停、排序、配置。扩展新模块只需新增目录 + manifest 清单，不影响其他模块。</p>
+          <span class="f-spec">manifest.json · default_config</span>
+        </div>
+      </div>
+      <div class="feat-row reveal d1">
+        <div class="f-no">02</div>
+        <h3>全局热键</h3>
+        <div>
+          <p class="f-desc">统一模式下一个热键唤起主面板；也可为各模块配置独立热键。录制器支持 Ctrl / Shift / Alt / Super 组合，热键以<b>对象比对</b>注册，无重复冲突。</p>
+          <span class="f-spec">Ctrl+Shift+E</span>
+        </div>
+      </div>
+      <div class="feat-row reveal">
+        <div class="f-no">03</div>
+        <h3>跟随鼠标弹窗</h3>
+        <div>
+          <p class="f-desc">剪贴板与搜索弹窗出现在光标旁，失焦自动隐藏。弹窗<b>延迟创建</b>——首次呼出才建窗，不影响应用启动速度。</p>
+        </div>
+      </div>
+      <div class="feat-row reveal d1">
+        <div class="f-no">04</div>
+        <h3>托盘驻留</h3>
+        <div>
+          <p class="f-desc">关闭主窗口即收进系统托盘，后台持续监听剪贴板、轮询额度，随时再呼出。</p>
+        </div>
+      </div>
+      <div class="feat-row reveal">
+        <div class="f-no">05</div>
+        <h3>旧数据迁移</h3>
+        <div>
+          <p class="f-desc">旧版 PasteBoard 剪贴板历史（按 hash 导入）、QuotaMonitor 余额记录（按时间合并去重），启动时自动导入，<b>幂等执行</b>。</p>
+        </div>
+      </div>
+      <div class="feat-row reveal d1">
+        <div class="f-no">06</div>
+        <h3>本地优先</h3>
+        <div>
+          <p class="f-desc">历史数据存本地 SQLite（WAL），密钥写入系统钥匙串、每账户独立槽位，不经过任何第三方服务器。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 02 MODULES ============ -->
+<section id="modules">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">02</span>
+      <div class="titles">
+        <h2>模块</h2>
+        <span class="en">Modules</span>
+      </div>
+    </div>
+    <p class="sec-sub">每个模块独立启停、互不拖累，可单独配置热键与行为。</p>
+
+    <div class="mod-grid">
+      <div class="mod reveal">
+        <div class="m-ghost">01</div>
+        <div class="m-top">
+          <span class="m-no">
+            <svg viewBox="0 0 24 24" stroke-linecap="square"><rect x="5" y="4" width="14" height="17"/><path d="M9 4V2h6v2"/><path d="M9 10h6M9 14h6"/></svg>
+            Mod 01 / Clipboard
+          </span>
+          <span class="m-key">Ctrl+Shift+V</span>
+        </div>
+        <h3>剪贴板</h3>
+        <p class="m-desc">记录复制过的文本、图片与文件，支持搜索、固定与快速粘贴。</p>
+        <div class="m-formats">
+          <span>文本</span><span>富文本 HTML</span><span>图片 DIB→PNG</span><span>文件 HDROP</span>
+        </div>
+        <ul>
+          <li>事件驱动监听（WM_CLIPBOARDUPDATE）+ 500ms 轮询兜底，双保险不丢记录</li>
+          <li>按内容指纹比对防误记：表情写入登记指纹，监听比对一致则跳过；自带 2s 时间窗口自写守卫，事件与轮询双路径都生效</li>
+          <li>固定条目 + 拖拽排序持久化；图片自动生成 256px 缩略图</li>
+          <li>网格可配置：单元格 80px、2 行文本预览、时间戳显隐、最短文本长度过滤</li>
+          <li>记录类型可分别开关（文本 / 图片 / 文件）；历史上限默认 500 条</li>
+        </ul>
+      </div>
+      <div class="mod reveal d1">
+        <div class="m-ghost">02</div>
+        <div class="m-top">
+          <span class="m-no">
+            <svg viewBox="0 0 24 24" stroke-linecap="square"><rect x="3" y="6" width="18" height="13"/><path d="M3 10h18M7 15h5"/></svg>
+            Mod 02 / Quota
+          </span>
+          <span class="m-key">后台轮询</span>
+        </div>
+        <h3>额度监控</h3>
+        <p class="m-desc">DeepSeek 与 OpenCode Go 多账户余额集中监控，低于阈值自动告警。</p>
+        <div class="m-formats">
+          <span>DeepSeek /user/balance</span><span>OpenCode Go /zen/go/v1/usage</span>
+        </div>
+        <ul>
+          <li>多账户独立密钥，keyring 每账户独立槽位，绝不回退旧槽位</li>
+          <li>预警 / 告警双阈值（默认 10），轮询间隔可配置（默认 30s，下限 5s）</li>
+          <li>消费历史曲线（保留最近 5000 条）与用量周期追踪：滚动 / 每周 / 每月</li>
+          <li>消费突增提醒（每天最多一次）；账户首次状态记录静默，不打扰</li>
+          <li>后台线程逐账户查询，单账户失败隔离，不影响其他账户</li>
+        </ul>
+      </div>
+      <div class="mod reveal">
+        <div class="m-ghost">03</div>
+        <div class="m-top">
+          <span class="m-no">
+            <svg viewBox="0 0 24 24" stroke-linecap="square"><circle cx="12" cy="12" r="9"/><path d="M8 14c1.2 1.3 2.5 2 4 2s2.8-.7 4-2M8.5 9h.01M15.5 9h.01"/></svg>
+            Mod 03 / Emoji
+          </span>
+          <span class="m-key">Ctrl+Shift+J</span>
+        </div>
+        <h3>表情</h3>
+        <p class="m-desc">1900+ 常用表情符号，按分类或中英文关键词检索，一键插入光标处。</p>
+        <div class="m-formats">
+          <span>20 个分类</span><span>中/英关键词</span><span>导入 png · jpg · gif · webp</span>
+        </div>
+        <ul>
+          <li>分类：收藏 / 最近 / 表情 / 爱心 / 手势 / 人物 / 动物 / 植物 / 食物 / 运动 / 交通 / 科技 / 符号 / 旗帜等</li>
+          <li>支持导入本地图片表情，自定义分组管理</li>
+          <li>系统字体渲染优先：canvas 像素检测字体是否支持，不支持的字符自动回退 Twemoji 图片，结果缓存到本地复用</li>
+          <li>文本表情 SendInput 直接输入（不写剪贴板），图片表情经剪贴板直发；收藏 Tab 置顶且默认打开</li>
+          <li>增量渲染（每批 240 个）+ 分片检测，1900+ 表情滚动不卡顿</li>
+        </ul>
+      </div>
+      <div class="mod reveal d1">
+        <div class="m-ghost">04</div>
+        <div class="m-top">
+          <span class="m-no">
+            <svg viewBox="0 0 24 24" stroke-linecap="square"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/><path d="M8 11h6M11 8v6"/></svg>
+            Mod 04 / Search
+          </span>
+          <span class="m-key">Ctrl+Shift+F</span>
+        </div>
+        <h3>文件搜索</h3>
+        <p class="m-desc">基于 Everything 引擎的全盘文件名搜索，毫秒级出结果。</p>
+        <div class="m-formats">
+          <span>ext:pdf</span><span>folder:D:\</span><span>*.mp4</span>
+        </div>
+        <ul>
+          <li>依赖 Everything（免费，voidtools.com），Everything64.dll 随应用打包（MIT）</li>
+          <li>支持 Everything 查询语法：扩展名 / 路径 / 通配符 / 正则匹配</li>
+          <li>列表 / 网格双视图；结果列与排序可自定义（名称 / 路径 / 大小 / 修改时间）</li>
+          <li>文件图标与图片缩略图；右键复制路径 / 复制文件，联动剪贴板历史</li>
+          <li>键盘导航：方向键选择，Enter 打开，Ctrl+Enter 打开所在位置</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 03 HOTKEYS ============ -->
+<section id="hotkeys">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">03</span>
+      <div class="titles">
+        <h2>快捷键</h2>
+        <span class="en">Hotkeys</span>
+      </div>
+    </div>
+    <p class="sec-sub">统一模式：一个热键呼出主面板；独立模式：各模块各自的热键。所有热键可在设置中重新录制。</p>
+
+    <div class="key-table">
+      <div class="key-row reveal">
+        <div class="k-no">01</div>
+        <div class="k-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>E</kbd></div>
+        <div class="k-desc"><b>呼出主面板</b>（默认统一热键）· 面板模式点击外部自动关闭</div>
+      </div>
+      <div class="key-row reveal d1">
+        <div class="k-no">02</div>
+        <div class="k-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>V</kbd></div>
+        <div class="k-desc"><b>剪贴板弹窗</b>（独立模式）· 跟随鼠标弹出</div>
+      </div>
+      <div class="key-row reveal">
+        <div class="k-no">03</div>
+        <div class="k-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd></div>
+        <div class="k-desc"><b>表情弹窗</b>（独立模式）· 跟随鼠标弹出</div>
+      </div>
+      <div class="key-row reveal d1">
+        <div class="k-no">04</div>
+        <div class="k-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>F</kbd></div>
+        <div class="k-desc"><b>搜索弹窗</b>（独立模式）· 跟随鼠标弹出</div>
+      </div>
+      <div class="key-row reveal">
+        <div class="k-no">05</div>
+        <div class="k-keys"><kbd>Enter</kbd></div>
+        <div class="k-desc"><b>确认</b>· 粘贴剪贴板条目 / 打开搜索结果</div>
+      </div>
+      <div class="key-row reveal d1">
+        <div class="k-no">06</div>
+        <div class="k-keys"><kbd>Ctrl</kbd><kbd>Enter</kbd></div>
+        <div class="k-desc"><b>打开所在位置</b>· 搜索结果中直接打开文件所在文件夹</div>
+      </div>
+      <div class="key-row reveal">
+        <div class="k-no">07</div>
+        <div class="k-keys"><kbd>↑</kbd><kbd>↓</kbd></div>
+        <div class="k-desc"><b>上下选择</b>· 键盘导航结果列表</div>
+      </div>
+      <div class="key-row reveal d1">
+        <div class="k-no">08</div>
+        <div class="k-keys"><kbd>Esc</kbd></div>
+        <div class="k-desc"><b>隐藏弹窗</b>· 弹窗失焦也会自动隐藏</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 04 ARCHITECTURE ============ -->
+<section id="architecture">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">04</span>
+      <div class="titles">
+        <h2>架构</h2>
+        <span class="en">Architecture</span>
+      </div>
+    </div>
+    <p class="sec-sub">三层结构：壳负责窗口与热键，注册表负责模块生命周期，模块自己管自己的数据。</p>
+
+    <div class="arch-visual reveal">
+      <div class="arch-layers">
+        <div class="arch-layer l-shell">
+          <div class="l-label">Shell 壳<div class="l-en">lib.rs</div></div>
+          <div class="l-body">
+            <div class="arch-box"><span class="ab-t">托盘</span><span class="ab-d">关闭 = 驻留 · 右键退出</span></div>
+            <div class="arch-box"><span class="ab-t">全局热键</span><span class="ab-d">Shortcut 对象比对注册</span></div>
+            <div class="arch-box"><span class="ab-t">窗口管理</span><span class="ab-d">main / 弹窗 · 延迟创建</span></div>
+          </div>
+        </div>
+        <div class="arch-layer l-reg">
+          <div class="l-label">Module Registry<div class="l-en">模块注册表</div></div>
+          <div class="l-body">
+            <div class="arch-box red"><span class="ab-t">manifest.json</span><span class="ab-d">描述 / 默认配置 / 热键</span></div>
+            <div class="arch-box red"><span class="ab-t">启停 · 排序</span><span class="ab-d">module_order 持久化</span></div>
+            <div class="arch-box red"><span class="ab-t">双入口</span><span class="ab-d">模块页 + 独立弹窗</span></div>
+          </div>
+        </div>
+        <div class="arch-layer l-mod">
+          <div class="l-label">Modules<div class="l-en">四个模块</div></div>
+          <div class="l-body">
+            <div class="arch-box"><span class="ab-t">剪贴板</span><span class="ab-d">WM_CLIPBOARDUPDATE + 轮询</span></div>
+            <div class="arch-box"><span class="ab-t">额度</span><span class="ab-d">后台线程轮询 API</span></div>
+            <div class="arch-box"><span class="ab-t">表情</span><span class="ab-d">系统字符 + Twemoji 兜底</span></div>
+            <div class="arch-box"><span class="ab-t">搜索</span><span class="ab-d">Everything64.dll 动态加载</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="arch-data">
+        <div class="arch-box"><span class="ab-t">SQLite</span><span class="ab-d">clipboard.db · WAL</span></div>
+        <div class="arch-box"><span class="ab-t">keyring</span><span class="ab-d">每账户独立槽位</span></div>
+        <div class="arch-box"><span class="ab-t">images / thumbs</span><span class="ab-d">图片 + 256px 缩略图</span></div>
+        <div class="arch-box"><span class="ab-t">config.json</span><span class="ab-d">模块配置与热键</span></div>
+      </div>
+      <div class="arch-flow">
+        <span class="step red">WM_CLIPBOARDUPDATE</span><span class="arr">→</span>
+        <span class="step">指纹比对</span><span class="arr">→</span>
+        <span class="step">自写守卫 2s</span><span class="arr">→</span>
+        <span class="step">写 SQLite</span><span class="arr">→</span>
+        <span class="step">emit → 前端更新</span>
+      </div>
+    </div>
+
+    <div class="principle-grid">
+      <div class="principle reveal">
+        <div class="p-no">P1 / Windows</div>
+        <h3>窗口体系</h3>
+        <p class="p-desc"><b>main</b> 主窗口：面板模式（点外部关闭、置顶、跳过任务栏、可选跟随鼠标）；<b>clipboard_popup / search_popup</b> 跟随鼠标、失焦自动隐藏。<b>全部延迟创建</b>——首次呼出才建窗，避免启动闪现。</p>
+        <pre class="p-code">popup 首次呼出 → 创建窗口
+→ 跟随鼠标定位 → 失焦 hide</pre>
+      </div>
+      <div class="principle reveal d1">
+        <div class="p-no">P2 / Hotkey</div>
+        <h3>热键注册</h3>
+        <p class="p-desc"><b>unified_hotkey=true</b>（默认）：只注册主窗口热键，模块独立热键全部禁用；关闭则反之（主窗口改由托盘呼出）。匹配必须用对象比较，字符串格式不匹配。</p>
+        <pre class="p-code">Shortcut::from_str(&amp;cfg)
+  .map(|s| s == *shortcut)</pre>
+      </div>
+      <div class="principle reveal">
+        <div class="p-no">P3 / Clipboard</div>
+        <h3>监听链路</h3>
+        <p class="p-desc">事件驱动（WM_CLIPBOARDUPDATE）+ 500ms 轮询兜底双路径；按内容 hash 去重，表情写入登记指纹防误记；2s 时间窗口自写守卫，不记录自己的粘贴。</p>
+        <pre class="p-code">event / poll → 指纹比对
+→ 跳过自写 → 写库 → emit</pre>
+      </div>
+      <div class="principle reveal d1">
+        <div class="p-no">P4 / Quota</div>
+        <h3>额度轮询</h3>
+        <p class="p-desc">后台线程 <b>poll_loop</b> 按 refresh_interval_sec（≥5s）逐账户查询：DeepSeek <span class="hl">GET /user/balance</span>；OpenCode Go <span class="hl">GET /zen/go/v1/usage</span>。更新状态 → 告警 → 写历史 → emit。</p>
+        <pre class="p-code">poll_loop → fetch_once
+→ 逐账户更新 → 告警 → emit</pre>
+      </div>
+      <div class="principle reveal">
+        <div class="p-no">P5 / Emoji</div>
+        <h3>智能渲染</h3>
+        <p class="p-desc">系统字体优先：canvas 像素检测（不透明/彩色像素统计）判断字符是否被支持，不支持的自动回退 Twemoji SVG，结果持久化 localStorage 跨启动复用；共享 canvas + 每帧分片队列不阻塞主线程。</p>
+        <pre class="p-code">字符 → 检测 → 缓存
+→ 支持? 字符 : twemoji/xx.svg</pre>
+      </div>
+      <div class="principle reveal d1">
+        <div class="p-no">P6 / Frontend</div>
+        <h3>模块保活</h3>
+        <p class="p-desc">主窗口模块切换用 <b>keep-alive 显隐</b>（不卸载重建），修复切页卡顿；模块页面与独立弹窗共享同一套组件，双向入口。</p>
+        <pre class="p-code">切页 → display 切换
+→ 状态保持 · 不重载</pre>
+      </div>
+    </div>
+
+    <div class="arch-note reveal">
+      <b>Everything 依赖</b>：搜索模块通过 Everything64.dll 调用系统索引（MIT 许可），SDK 有进程级全局状态，查询持全局互斥锁并放后台线程执行；未安装 Everything 时提示并尝试 <code>-startup</code> 自动启动（后台托盘，不弹主窗口）。
+    </div>
+  </div>
+</section>
+
+<!-- ============ 05 DATA & SECURITY ============ -->
+<section id="data">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">05</span>
+      <div class="titles">
+        <h2>数据与安全</h2>
+        <span class="en">Data &amp; Security</span>
+      </div>
+    </div>
+    <p class="sec-sub">全部数据与密钥都留在本机，应用不依赖任何第三方服务器。</p>
+
+    <div class="data-table">
+      <div class="data-row reveal">
+        <div class="d-cat">Config</div>
+        <div class="d-desc"><code>%APPDATA%\com.aliboder.easytool\config.json</code> — 应用配置、模块启停与排序、热键、主题</div>
+      </div>
+      <div class="data-row reveal d1">
+        <div class="d-cat">Clipboard</div>
+        <div class="d-desc"><code>clipboard.db</code> — SQLite（WAL 模式），含固定排序 <code>pin_order</code>；图片存 <code>images/</code>，缩略图存 <code>thumbs/</code></div>
+      </div>
+      <div class="data-row reveal">
+        <div class="d-cat">Quota</div>
+        <div class="d-desc"><code>balance_history_&lt;account&gt;.json</code> — 各账户余额历史（旧版）；新版并入 SQLite，保留最近 5000 条</div>
+      </div>
+      <div class="data-row reveal d1">
+        <div class="d-cat">Secrets</div>
+        <div class="d-desc"><b>keyring</b>（系统钥匙串）— service <code>com.aliboder.easytool</code>，每账户独立槽位：<code>deepseek</code> / <code>opencode-go</code> / <code>quota-&lt;id&gt;</code></div>
+      </div>
+      <div class="data-row reveal">
+        <div class="d-cat">Migration</div>
+        <div class="d-desc">旧版 <b>PasteBoard</b> 剪贴板历史按 hash 导入；旧版 <b>QuotaMonitor</b> 余额记录按时间合并去重；启动时自动执行一次，幂等</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 06 STACK ============ -->
+<section id="stack">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">06</span>
+      <div class="titles">
+        <h2>技术</h2>
+        <span class="en">Stack</span>
+      </div>
+    </div>
+    <p class="sec-sub">桌面壳 Tauri + 前端 React + 后端 Rust，兼顾体积、性能与开发效率。</p>
+
+    <div class="stack-table">
+      <div class="stack-row reveal">
+        <div class="s-cat">Desktop Shell</div>
+        <div class="s-items">
+          <span>Tauri 2</span><span>Rust</span><span>NSIS</span>
+          <span>SQLite (WAL)</span><span>keyring</span>
+          <span>reqwest</span><span>chrono</span>
+        </div>
+      </div>
+      <div class="stack-row reveal d1">
+        <div class="s-cat">Frontend</div>
+        <div class="s-items">
+          <span>React 19</span><span>TypeScript</span>
+          <span>Tailwind CSS v4</span><span>shadcn/ui</span>
+          <span>lucide-react</span><span>@dnd-kit</span>
+          <span>Vite (MPA)</span>
+        </div>
+      </div>
+      <div class="stack-row reveal">
+        <div class="s-cat">Windows</div>
+        <div class="s-items">
+          <span>托盘 + 全局热键</span><span>WM_CLIPBOARDUPDATE</span>
+          <span>跟随鼠标弹窗</span><span>Everything64.dll</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-block reveal">
+      <b>文件搜索模块</b>依赖 Everything（voidtools.com，免费），Everything64.dll 随应用打包（MIT 许可）；未安装 Everything 时该模块会提示并尝试自动启动。
+    </div>
+  </div>
+</section>
+
+<!-- ============ 07 INSTALL ============ -->
+<section id="install">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">07</span>
+      <div class="titles">
+        <h2>安装</h2>
+        <span class="en">Installation</span>
+      </div>
+    </div>
+    <p class="sec-sub">Windows 10 / 11。安装包为 NSIS 格式，安装为当前用户，无需管理员权限。</p>
+
+    <div class="install-grid">
+      <div class="inst reveal">
+        <h3>winget <span class="tag">推荐</span></h3>
+        <p>Windows 包管理器一键安装，自动处理升级。</p>
+        <pre class="code"><button class="copy" data-copy="winget install Aliboder.EasyTool">Copy</button><span class="hl">$</span> winget install Aliboder.EasyTool
+<span class="cm"># 发布到 winget 仓库后可用</span></pre>
+        <div class="reqs">
+          <span><span class="sq"></span>需要 Windows 10 1709+ 或 Windows 11</span>
+          <span><span class="sq"></span>WebView2 运行时（系统自带）</span>
+        </div>
+      </div>
+      <div class="inst reveal d1">
+        <h3>GitHub Releases</h3>
+        <p>从 Releases 页下载安装包，双击安装。</p>
+        <pre class="code"><button class="copy" data-copy="start https://github.com/Aliboder/EasyTool/releases">Copy</button><span class="hl">$</span> start https://github.com/Aliboder/EasyTool/releases
+<span class="cm"># EasyTool_0.4.4_x64-setup.exe</span></pre>
+        <div class="reqs">
+          <span><span class="sq"></span>文件：EasyTool_0.4.4_x64-setup.exe</span>
+          <span><span class="sq"></span>安装为当前用户，无需管理员权限</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 08 CHANGELOG ============ -->
+<section id="changelog">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">08</span>
+      <div class="titles">
+        <h2>更新记录</h2>
+        <span class="en">Changelog</span>
+      </div>
+    </div>
+    <p class="sec-sub">v0.4.x 系列全部于 2026-08-20 发布。完整记录见 GitHub Releases。</p>
+
+    <div class="key-table">
+      <div class="key-row reveal">
+        <div class="k-no">0.4.4</div>
+        <div class="k-desc"><b>表情交互重构</b>· 文本表情 SendInput 直接输入（不写剪贴板）、图片表情直发；收藏 Tab 置顶默认打开；剪贴板自写守卫 300ms → 2s</div>
+      </div>
+      <div class="key-row reveal d1">
+        <div class="k-no">0.4.3</div>
+        <div class="k-desc"><b>窗口修复</b>· 拖动标题栏窗口首次消失；启动闪现默认尺寸、尺寸恢复不准；呼出时 focus 风暴导致冻结</div>
+      </div>
+      <div class="key-row reveal">
+        <div class="k-no">0.4.2</div>
+        <div class="k-desc"><b>表情性能</b>· 切回模块改窗口 focus 刷新（不重载）；共享 canvas 分片检测 + localStorage 防抖，修复切回卡顿 200ms+</div>
+      </div>
+      <div class="key-row reveal d1">
+        <div class="k-no">0.4.1</div>
+        <div class="k-desc"><b>全量代码审查修复</b>· quota 锁外网络请求、非统一模式主热键、剪贴板图片编码锁外化、搜索防抖、热键 unregister_all 与解析缓存</div>
+      </div>
+      <div class="key-row reveal">
+        <div class="k-no">0.4.0</div>
+        <div class="k-desc"><b>新增文件搜索模块</b>· Everything 全文搜索（弹窗 + 模块页双入口）；模块显示顺序持久化；设置页 UI 重构；Everything 自动启动（-startup 后台托盘）</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 09 FAQ ============ -->
+<section id="faq" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">09</span>
+      <div class="titles">
+        <h2>常见问题</h2>
+        <span class="en">FAQ</span>
+      </div>
+    </div>
+
+    <div class="faq-list">
+      <div class="faq-item reveal">
+        <details>
+          <summary><span class="q-no">Q1</span>文件搜索为什么需要安装 Everything？<span class="mark">+</span></summary>
+          <div class="a">文件搜索模块基于 Everything 的索引引擎实现全盘秒搜，Everything 是免费的（voidtools.com，MIT 许可）。应用检测到未运行时会在搜索弹窗提示，并尝试自动启动。</div>
+        </details>
+      </div>
+      <div class="faq-item reveal d1">
+        <details>
+          <summary><span class="q-no">Q2</span>我的剪贴板历史和 API 密钥存在哪里？<span class="mark">+</span></summary>
+          <div class="a">历史数据全部在本机 <code>%APPDATA%\com.aliboder.easytool</code>（SQLite + 图片文件）。密钥只写入系统钥匙串（keyring），每个账户独立槽位，任何情况下都不以明文落盘、不上传任何服务器。</div>
+        </details>
+      </div>
+      <div class="faq-item reveal">
+        <details>
+          <summary><span class="q-no">Q3</span>我原来在用 PasteBoard / QuotaMonitor，能迁移吗？<span class="mark">+</span></summary>
+          <div class="a">能。启动时自动检测并导入：剪贴板历史按内容 hash 去重导入，额度记录按时间合并去重，全程幂等，重复启动不会产生重复数据。</div>
+        </details>
+      </div>
+      <div class="faq-item reveal d1">
+        <details>
+          <summary><span class="q-no">Q4</span>关闭主窗口后程序还在吗？<span class="mark">+</span></summary>
+          <div class="a">在。关闭主窗口只是收进系统托盘，后台继续监听剪贴板、轮询额度。托盘图标右键可完全退出。</div>
+        </details>
+      </div>
+      <div class="faq-item reveal">
+        <details>
+          <summary><span class="q-no">Q5</span>热键被其他软件占用了怎么办？<span class="mark">+</span></summary>
+          <div class="a">设置页可以重新录制任意热键，录制器支持 Ctrl / Shift / Alt / Super（Windows 键）组合。也可以关闭统一热键模式，改为各模块独立热键，甚至全部关闭，只用托盘呼出。</div>
+        </details>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10 DOCS ============ -->
+<section id="docs" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="no">10</span>
+      <div class="titles">
+        <h2>文档</h2>
+        <span class="en">Docs</span>
+      </div>
+    </div>
+    <p class="sec-sub">文档随仓库维护，全部中文。</p>
+
+    <div class="docs-grid">
+      <a class="doc reveal" href="https://github.com/Aliboder/EasyTool/blob/main/docs/module-guide.md" target="_blank" rel="noopener">
+        <span class="d-no">01</span>
+        <div>
+          <h3>新增模块指南</h3>
+          <p>如何写一个新模块：目录结构、manifest 约定、前后端接入与坑清单。</p>
+          <span class="path">docs/module-guide.md</span>
+        </div>
+      </a>
+      <a class="doc reveal d1" href="https://github.com/Aliboder/EasyTool/blob/main/docs/lessons.md" target="_blank" rel="noopener">
+        <span class="d-no">02</span>
+        <div>
+          <h3>踩坑经验速查</h3>
+          <p>开发过程中解决过的真实问题记录，改代码前建议先读。</p>
+          <span class="path">docs/lessons.md</span>
+        </div>
+      </a>
+      <a class="doc reveal" href="https://github.com/Aliboder/EasyTool/tree/main/docs/superpowers/specs" target="_blank" rel="noopener">
+        <span class="d-no">03</span>
+        <div>
+          <h3>设计文档</h3>
+          <p>各功能的设计规格文档，从需求到实现的完整记录。</p>
+          <span class="path">docs/superpowers/specs/</span>
+        </div>
+      </a>
+      <a class="doc reveal d1" href="https://github.com/Aliboder/EasyTool/releases" target="_blank" rel="noopener">
+        <span class="d-no">04</span>
+        <div>
+          <h3>更新日志</h3>
+          <p>版本发布记录与变更内容。</p>
+          <span class="path">GitHub Releases</span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="wrap foot">
+    <div class="f-brand"><span class="sq"></span>EASYTOOL <span class="tagline">Windows 效率工具箱</span></div>
+    <div class="f-col">
+      <span class="h">Links</span>
+      <a href="https://github.com/Aliboder/EasyTool" target="_blank" rel="noopener">GitHub 仓库</a>
+      <a href="https://github.com/Aliboder/EasyTool/releases" target="_blank" rel="noopener">Releases / 更新日志</a>
+      <a href="#faq">常见问题</a>
+    </div>
+    <div class="f-col">
+      <span class="h">Info</span>
+      <span>v0.4.4 · MIT License</span>
+      <span>Windows 10 / 11 · x64</span>
+      <span>Rust + React · Tauri 2</span>
+    </div>
+    <div class="f-col">
+      <span class="h">Top</span>
+      <a href="#top" id="backTop">回到顶部 ↑</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // ---- theme ----
+  (function () {
+    var root = document.documentElement;
+    var saved = null;
+    try { saved = localStorage.getItem("easytool-theme"); } catch (e) {}
+    var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    root.setAttribute("data-theme", saved || (prefersDark ? "dark" : "light"));
+
+    document.getElementById("themeBtn").addEventListener("click", function () {
+      var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("easytool-theme", next); } catch (e) {}
+    });
+  })();
+
+  // ---- restrained reveal ----
+  (function () {
+    var els = document.querySelectorAll(".reveal");
+    if (!("IntersectionObserver" in window)) {
+      els.forEach(function (el) { el.classList.add("in"); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
+      });
+    }, { threshold: 0.1 });
+    els.forEach(function (el) { io.observe(el); });
+  })();
+
+  // ---- reading progress ----
+  (function () {
+    var bar = document.getElementById("progress");
+    var onScroll = function () {
+      var h = document.documentElement;
+      var max = h.scrollHeight - h.clientHeight;
+      bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + "%";
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+  })();
+
+  // ---- scrollspy: highlight active nav ----
+  (function () {
+    var links = document.querySelectorAll(".nav-links a");
+    var map = {};
+    links.forEach(function (a) {
+      var id = a.getAttribute("href").slice(1);
+      var sec = document.getElementById(id);
+      if (sec) map[id] = { link: a, sec: sec };
+    });
+    var ids = Object.keys(map);
+    if (!ids.length || !("IntersectionObserver" in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        var link = map[en.target.id].link;
+        if (en.isIntersecting) {
+          links.forEach(function (l) { l.classList.remove("active"); });
+          link.classList.add("active");
+        }
+      });
+    }, { rootMargin: "-40% 0px -55% 0px" });
+    ids.forEach(function (id) { io.observe(map[id].sec); });
+  })();
+
+  // ---- copy buttons ----
+  (function () {
+    document.querySelectorAll("pre.code .copy").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var text = btn.getAttribute("data-copy") || "";
+        var done = function () {
+          btn.textContent = "Copied";
+          btn.classList.add("done");
+          setTimeout(function () {
+            btn.textContent = "Copy";
+            btn.classList.remove("done");
+          }, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () {
+            fallbackCopy(text); done();
+          });
+        } else { fallbackCopy(text); done(); }
+      });
+    });
+    function fallbackCopy(text) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  })();
+</script>
+
+</body>
+</html>
