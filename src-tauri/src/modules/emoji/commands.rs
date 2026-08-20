@@ -338,9 +338,23 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
     } else if let Ok(id) = key.parse::<i64>() {
         let _ = state.record_use_custom(id);
     }
+    // 写剪贴板成功后立即标记"自身写入"（无论后续粘贴是否成功，都避免被剪贴板监听记录）
+    fn mark_self_write(app: &AppHandle) {
+        if let Some(clip) = app.try_state::<crate::modules::clipboard::state::AppState>() {
+            clip.mark_self_write();
+        }
+    }
+    let app2 = app.clone();
     let write: Box<dyn FnOnce() -> bool + Send> = if kind == "emoji" {
         let text = key.clone();
-        Box::new(move || clipboard::write_text_rich(&text, None))
+        let app2 = app2.clone();
+        Box::new(move || {
+            let ok = clipboard::write_text_rich(&text, None);
+            if ok {
+                mark_self_write(&app2);
+            }
+            ok
+        })
     } else {
         let id: i64 = key.parse::<i64>().map_err(|e| e.to_string())?;
         let path = state
@@ -348,31 +362,25 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
             .map_err(|e| e.to_string())?
             .map(|(p, _)| p)
             .ok_or("表情不存在")?;
+        let app2 = app2.clone();
         Box::new(move || {
-            std::fs::read(&path)
+            let ok = std::fs::read(&path)
                 .ok()
                 .and_then(|b| image::load_from_memory(&b).ok())
                 .map(|img| {
                     let rgba = img.to_rgba8();
                     clipboard::write_image_rgba(rgba.as_raw(), rgba.width(), rgba.height())
                 })
-                .unwrap_or(false)
+                .unwrap_or(false);
+            if ok {
+                mark_self_write(&app2);
+            }
+            ok
         })
     };
-    // 写剪贴板成功后标记"自身写入"，避免被剪贴板监听器记录进历史
-    fn mark_self_write(app: &AppHandle) {
-        if let Some(clip) = app.try_state::<crate::modules::clipboard::state::AppState>() {
-            clip.mark_self_write();
-        }
-    }
     if click_action == "paste" {
-        let r = super::paste::apply_to_foreground(write).map_err(|e| e.to_string());
-        if r.is_ok() {
-            mark_self_write(&app);
-        }
-        r
+        super::paste::apply_to_foreground(write).map_err(|e| e.to_string())
     } else if write() {
-        mark_self_write(&app);
         Ok(())
     } else {
         Err("写入剪贴板失败".into())

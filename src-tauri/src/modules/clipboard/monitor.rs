@@ -162,12 +162,17 @@ fn process_clipboard_change() {
     
     let state = app.state::<AppState>();
 
-    // 自身写入守卫：我们写入剪贴板后 300ms 内的变化跳过
-    if state.self_write.swap(false, Ordering::SeqCst)
-        && now_ms() - state.last_self_write_ms.load(Ordering::SeqCst) < SELF_WRITE_GUARD_MS
-    {
-        log::debug!("skip self write");
-        return;
+    // 自身写入守卫：写入剪贴板后 300ms 内的变化跳过。
+    // 注意：事件路径与轮询路径都会走到这里，标记不能 swap(false) 一次性消费，
+    // 否则事件路径跳过、轮询路径会再次进入而误记录。改为按时间窗口判断，超时后清除。
+    if state.self_write.load(Ordering::SeqCst) {
+        let recent = now_ms() - state.last_self_write_ms.load(Ordering::SeqCst) < SELF_WRITE_GUARD_MS;
+        if recent {
+            log::debug!("skip self write");
+            return;
+        }
+        // 窗口已过，清除残留标记（下次正常记录）
+        state.self_write.store(false, Ordering::SeqCst);
     }
 
     match save_from_clipboard(&state, app) {
