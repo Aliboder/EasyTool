@@ -43,6 +43,12 @@
 37. **无限滚动 = 滚动容器必须绑 `onScroll`**：写了 `loadMore`/`onScroll` 但没把 `onScroll` 挂到 `overflow-y-auto` 容器上 = 永不触底加载，只显示第一页 + 计数严重不符。新增分页列表时检查滚动容器有没有 `onScroll`（TS6133「声明未使用」常是这个信号）
 38. **onScroll 触发式加载在全屏/大窗口下有死锁**：第一页（如 100 条）撑不满超高视口时无滚动 → `onScroll` 永不触发 → 永远只显示第一页。兜底：结果变化后检查容器 `scrollHeight - clientHeight < 阈值` 就自动继续 `loadMore` 直到填满/加载完；隐藏容器 `clientHeight === 0` 要跳过，否则 keep-alive 切走的标签页会静默狂拉数据
 39. **Everything 后台启动用 `-startup` 参数**：直接 `spawn Everything.exe` 会弹主窗口（突兀）。加 `.arg("-startup")` 让它最小化到系统托盘启动（Everything 官方文档：Start minimized in the system tray），实现无感后台启动（`search::ensure_everything_running`）
+40. **不要在持锁状态下做耗时 I/O**：`fetch_once` 曾在持有 `QuotaState` 锁时做网络请求（每个账户最长 15s 超时，多账户串行）→ 前端 `get_status`/`save_settings` 阻塞几十秒像卡死。网络请求必须移到锁外（先取数，再锁内应用结果），锁内只做内存/DB 快操作
+41. **剪贴板监听线程持 DB 锁做图片编码会阻塞前端查询**：`save_from_clipboard` 曾在持有 `db` 锁时做 PNG 编码 + 缩略图生成 + 磁盘写入（CPU/IO 密集），期间 `get_history`/`pin_item` 全部排队。锁内只做入库拿 id，图片落盘放锁外，回填路径再短锁
+42. **热键注册用 `unregister_all` 会注销全部热键**：`set_hotkey`/`search_set_hotkey` 里「注册新键→unregister_all→只重注册自己的」会让剪贴板/搜索等其它模块热键全部失效（unregister_all 是全局的，不是只清同名键）。正确顺序：先注册验证 → 写入 config → 调 `reapply_hotkeys`（按新 config 整体重注册）。主窗口 `set_main_hotkey` 同理；非统一模式下主热键根本不注册，应直接拒绝
+43. **热键匹配不要每次按键都解析 + 持配置锁**：全局热键 handler 每次按键都 `Shortcut::from_str` 解析 4 个热键字符串并全程持锁。把解析结果缓存到 `ResolvedHotkeys`（`reapply_hotkeys` 时重建），handler 只读缓存比较，避免高频事件下反复分配 + 锁竞争
+44. **useState 里 `setState(prev => prev)` 等于没做防抖**：`onSearchChange` 里 setTimeout 包一层 `setSearch(prev => prev)` 值不变不触发重渲染，防抖失效、每次按键立即全量加载。防抖要把「值更新」放进 setTimeout
+45. **Canvas 像素检测别在渲染期同步跑**：`SmartEmoji` 用 `useMemo` 同步做 64×64 canvas 逐像素扫描，首屏几百个不同 emoji 会卡。改为 useState 初始读缓存（未命中先按支持显示字符）+ `requestIdleCallback` 异步检测后 setState，不阻塞首帧
 
 ---
 

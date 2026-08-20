@@ -1,6 +1,6 @@
 // 智能 Emoji 渲染：优先系统字体（字符），系统字体不支持（豆腐块）时回退 Twemoji 图片。
 // canvas 像素检测，结果持久化到 localStorage（跨启动复用，无需每次重测）。
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 const STORAGE_KEY = "easytool_emoji_supported_v1";
@@ -102,7 +102,29 @@ export function SmartEmoji({
   code: string | null;
   size?: number;
 }) {
-  const supported = useMemo(() => isSystemSupported(char), [char]);
+  // 首屏不阻塞：先读缓存，未命中先用字符渲染，挂载后异步检测再更新
+  const [supported, setSupported] = useState<boolean>(() => SUPPORT_CACHE.get(char) ?? true);
+
+  useEffect(() => {
+    if (SUPPORT_CACHE.has(char)) return;
+    let alive = true;
+    // 批量渲染时错峰检测：把检测交给浏览器空闲时段，避免首屏逐字符同步 Canvas 卡顿
+    const run = () => {
+      if (!alive) return;
+      const r = isSystemSupported(char);
+      setSupported(r);
+    };
+    const id =
+      typeof requestIdleCallback === "function"
+        ? requestIdleCallback(run)
+        : (window.setTimeout(run, 0) as unknown as number);
+    return () => {
+      alive = false;
+      if (typeof requestIdleCallback === "function") cancelIdleCallback(id);
+      else window.clearTimeout(id as unknown as number);
+    };
+  }, [char]);
+
   if (!supported && code) {
     return (
       <img

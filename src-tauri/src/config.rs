@@ -87,13 +87,18 @@ pub fn set_module_enabled(
     id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let mut cfg = state.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut(&id) {
-        v["enabled"] = serde_json::json!(enabled);
-    } else {
-        cfg.modules.insert(id, serde_json::json!({ "enabled": enabled }));
+    {
+        let mut cfg = state.0.lock().unwrap();
+        if let Some(v) = cfg.modules.get_mut(&id) {
+            v["enabled"] = serde_json::json!(enabled);
+        } else {
+            cfg.modules.insert(id, serde_json::json!({ "enabled": enabled }));
+        }
+        save_config(&app, &cfg)?;
     }
-    save_config(&app, &cfg)
+    // 模块启停影响全局热键注册：非统一模式下启用/禁用模块需重新注册/注销其热键
+    crate::reapply_hotkeys(&app);
+    Ok(())
 }
 
 /// 保存模块显示顺序（底部栏与设置页排序同步依据）
@@ -140,6 +145,14 @@ pub fn set_main_hotkey(
     hotkey: String,
 ) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    // 主窗口呼出热键仅在统一呼出模式下有效（非统一模式主窗口由托盘呼出，注册了也会被 reapply 注销）
+    let unified = {
+        let cfg = state.0.lock().unwrap();
+        cfg.unified_hotkey
+    };
+    if !unified {
+        return Err("主窗口呼出热键仅统一呼出模式可用。请先在设置开启「统一呼出主窗口」。".into());
+    }
     // 先验证新键可用，失败时旧热键仍有效
     app.global_shortcut()
         .register(hotkey.as_str())

@@ -226,83 +226,87 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
             return Ok(None);
         };
 
-    let db = state.db.lock().unwrap();
     let now = now_ms();
 
     // 2. 去重：命中则顶到最前；若旧条目无富文本而新捕获有，则升级回填
-    if let Some(existing_id) = db.find_by_hash(&hash)? {
-        db.touch_item(existing_id, now)?;
-        if let Some(h) = html {
-            let existing = db
+    {
+        let db = state.db.lock().unwrap();
+        if let Some(existing_id) = db.find_by_hash(&hash)? {
+            db.touch_item(existing_id, now)?;
+            if let Some(h) = html {
+                let existing = db
+                    .get_item(existing_id)?
+                    .ok_or_else(|| DbError::Sql(rusqlite::Error::QueryReturnedNoRows))?;
+                if existing.html.is_none() {
+                    db.set_html(existing_id, Some(h))?;
+                    log::info!("upgraded item {existing_id} with html");
+                }
+            }
+            let item = db
                 .get_item(existing_id)?
                 .ok_or_else(|| DbError::Sql(rusqlite::Error::QueryReturnedNoRows))?;
-            if existing.html.is_none() {
-                db.set_html(existing_id, Some(h))?;
-                log::info!("upgraded item {existing_id} with html");
-            }
+            log::debug!("dedup: touch item {}", existing_id);
+            return Ok(Some((item, false)));
         }
-        let item = db
-            .get_item(existing_id)?
-            .ok_or_else(|| DbError::Sql(rusqlite::Error::QueryReturnedNoRows))?;
-        log::debug!("dedup: touch item {}", existing_id);
-        return Ok(Some((item, false)));
-    }
 
-    // 3. 新增
-    let mut item = Item {
-        id: 0,
-        kind: kind.clone(),
-        content,
-        html,
-        file_paths,
-        image_path: None,
-        thumb_path: None,
-        hash,
-        pinned: false,
-        created_at: now,
-    };
-    let Some(id) = db.insert_item(&item)? else {
-        return Ok(None);
-    };
-    item.id = id;
-    log::info!("saved clipboard item id={id} kind={}", item.kind);
+        // 3. 新增（仅入库拿 id；图片文件编码/落盘在锁外执行，避免阻塞前端 DB 查询）
+        let item = Item {
+            id: 0,
+            kind: kind.clone(),
+            content,
+            html,
+            file_paths,
+            image_path: None,
+            thumb_path: None,
+            hash,
+            pinned: false,
+            created_at: now,
+        };
+        let Some(id) = db.insert_item(&item)? else {
+            return Ok(None);
+        };
+        log::info!("saved clipboard item id={id} kind={}", item.kind);
+        drop(db);
 
-    // 4. 图片落盘（原图 + 缩略图）
-    if let Some((rgba, w, h)) = image_data {
-        match clipboard::rgba_to_png(&rgba, w, h) {
-            Ok(png) => {
-                if let (Ok(img_path), Ok(thumb_png)) = (
-                    state.store.save_image(id, &png),
-                    super::store::FileStore::make_thumb_png(&rgba, w, h, THUMB_MAX_SIZE)
-                        .map(|tp| state.store.save_thumb(id, &tp))
-                        .unwrap_or(Ok(std::path::PathBuf::new())),
-                ) {
+        // 4. 图片落盘（原图 + 缩略图）——锁外执行
+        if let Some((rgba, w, h)) = image_data {
+            if let Ok(png) = clipboard::rgba_to_png(&rgba, w, h) {
+                let thumb_png = super::store::FileStore::make_thumb_png(&rgba, w, h, THUMB_MAX_SIZE);
+                if let Ok(img_path) = state.store.save_image(id, &png) {
+                    let thumb_path = match &thumb_png {
+                        Ok(tp) => state.store.save_thumb(id, tp).unwrap_or_default(),
+                        Err(_) => std::path::PathBuf::new(),
+                    };
+                    let db = state.db.lock().unwrap();
                     let _ = db.set_image_paths(
                         id,
                         Some(img_path.to_string_lossy().into_owned()),
-                        Some(thumb_png.to_string_lossy().into_owned()),
+                        Some(thumb_path.to_string_lossy().into_owned()),
                     );
-                    item.image_path = Some(img_path.to_string_lossy().into_owned());
-                    item.thumb_path = Some(thumb_png.to_string_lossy().into_owned());
                 } else {
                     log::warn!("failed to save image files for item {id}");
                 }
+            } else {
+                log::warn!("failed to encode png for item {id}");
             }
-            Err(e) => log::warn!("failed to encode png: {e}"),
         }
-    }
 
-    // 5. 上限清理
-    let removed = db.prune(state.max_items.load(Ordering::SeqCst) as i64)?;
-    if !removed.is_empty() {
-        let ids: Vec<i64> = removed.iter().map(|r| r.id).collect();
-        let _ = app.emit("clipboard://pruned", serde_json::json!(ids));
-        for r in removed {
-            state.store.remove_files(&r);
+        // 5. 上限清理
+        let db = state.db.lock().unwrap();
+        let removed = db.prune(state.max_items.load(Ordering::SeqCst) as i64)?;
+        if !removed.is_empty() {
+            let ids: Vec<i64> = removed.iter().map(|r| r.id).collect();
+            let _ = app.emit("clipboard://pruned", serde_json::json!(ids));
+            for r in removed {
+                state.store.remove_files(&r);
+            }
         }
-    }
 
-    Ok(Some((item, true)))
+        let item = db
+            .get_item(id)?
+            .ok_or_else(|| DbError::Sql(rusqlite::Error::QueryReturnedNoRows))?;
+        Ok(Some((item, true)))
+    }
 }
 
 /// 文件列表逐文件入库：每条记录一个文件（图片 Tab 依赖"首文件为图片"逻辑自动归类）；

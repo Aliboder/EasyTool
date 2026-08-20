@@ -9,6 +9,7 @@ use tauri::{
     Manager, WindowEvent,
 };
 use std::str::FromStr;
+use std::sync::{Mutex, OnceLock};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
@@ -233,6 +234,57 @@ struct Hotkeys {
     main_hotkey: String,
 }
 
+/// 已解析热键缓存：避免每次按键回调重复解析字符串 + 持配置锁
+#[derive(Clone, Default)]
+struct ResolvedHotkeys {
+    unified: bool,
+    clip_enabled: bool,
+    search_enabled: bool,
+    emoji_enabled: bool,
+    clip: Option<Shortcut>,
+    search: Option<Shortcut>,
+    emoji: Option<Shortcut>,
+    main: Option<Shortcut>,
+    /// 原始字符串（注册接口需要 &str 参数）
+    clip_str: Option<String>,
+    search_str: Option<String>,
+    emoji_str: Option<String>,
+    main_str: Option<String>,
+}
+
+static RESOLVED_HOTKEYS: OnceLock<Mutex<ResolvedHotkeys>> = OnceLock::new();
+
+/// 重建已解析热键缓存（配置变化时由 reapply_hotkeys 调用）
+fn refresh_resolved_hotkeys(app: &tauri::AppHandle) {
+    let hk = read_hotkeys(app);
+    let resolved = ResolvedHotkeys {
+        unified: hk.unified,
+        clip_enabled: clipboard_enabled(app),
+        search_enabled: search_enabled(app),
+        emoji_enabled: emoji_enabled(app),
+        clip: Shortcut::from_str(&hk.clip_hotkey).ok(),
+        search: Shortcut::from_str(&hk.search_hotkey).ok(),
+        emoji: Shortcut::from_str(&hk.emoji_hotkey).ok(),
+        main: Shortcut::from_str(&hk.main_hotkey).ok(),
+        clip_str: Some(hk.clip_hotkey.clone()),
+        search_str: Some(hk.search_hotkey.clone()),
+        emoji_str: Some(hk.emoji_hotkey.clone()),
+        main_str: Some(hk.main_hotkey),
+    };
+    *RESOLVED_HOTKEYS
+        .get_or_init(|| Mutex::new(ResolvedHotkeys::default()))
+        .lock()
+        .unwrap() = resolved;
+}
+
+fn read_resolved_hotkeys() -> ResolvedHotkeys {
+    RESOLVED_HOTKEYS
+        .get_or_init(|| Mutex::new(ResolvedHotkeys::default()))
+        .lock()
+        .unwrap()
+        .clone()
+}
+
 fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
     let state = app.state::<ConfigState>();
     let cfg = state.0.lock().unwrap();
@@ -276,29 +328,41 @@ fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
 pub fn reapply_hotkeys(app: &tauri::AppHandle) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     let _ = app.global_shortcut().unregister_all();
-    let hk = read_hotkeys(app);
-    if hk.unified {
-        match app.global_shortcut().register(hk.main_hotkey.as_str()) {
-            Ok(_) => log::info!("[unified] main hotkey registered: {}", hk.main_hotkey),
-            Err(e) => log::error!("failed to register main hotkey: {e}"),
+    // 先刷新缓存，再按缓存注册（保持 handler 匹配与注册一致）
+    refresh_resolved_hotkeys(app);
+    let resolved = read_resolved_hotkeys();
+    if resolved.unified {
+        if let Some(hk) = &resolved.main_str {
+            match app.global_shortcut().register(hk.as_str()) {
+                Ok(_) => log::info!("[unified] main hotkey registered: {hk}"),
+                Err(e) => log::error!("failed to register main hotkey: {e}"),
+            }
+        } else {
+            log::warn!("[unified] main hotkey invalid, nothing registered");
         }
     } else {
-        if clipboard_enabled(app) {
-            match app.global_shortcut().register(hk.clip_hotkey.as_str()) {
-                Ok(_) => log::info!("clipboard hotkey registered: {}", hk.clip_hotkey),
-                Err(e) => log::error!("failed to register clipboard hotkey: {e}"),
+        if resolved.clip_enabled {
+            if let Some(hk) = &resolved.clip_str {
+                match app.global_shortcut().register(hk.as_str()) {
+                    Ok(_) => log::info!("clipboard hotkey registered: {hk}"),
+                    Err(e) => log::error!("failed to register clipboard hotkey: {e}"),
+                }
             }
         }
-        if search_enabled(app) {
-            match app.global_shortcut().register(hk.search_hotkey.as_str()) {
-                Ok(_) => log::info!("search hotkey registered: {}", hk.search_hotkey),
-                Err(e) => log::error!("failed to register search hotkey: {e}"),
+        if resolved.search_enabled {
+            if let Some(hk) = &resolved.search_str {
+                match app.global_shortcut().register(hk.as_str()) {
+                    Ok(_) => log::info!("search hotkey registered: {hk}"),
+                    Err(e) => log::error!("failed to register search hotkey: {e}"),
+                }
             }
         }
-        if emoji_enabled(app) {
-            match app.global_shortcut().register(hk.emoji_hotkey.as_str()) {
-                Ok(_) => log::info!("emoji hotkey registered: {}", hk.emoji_hotkey),
-                Err(e) => log::error!("failed to register emoji hotkey: {e}"),
+        if resolved.emoji_enabled {
+            if let Some(hk) = &resolved.emoji_str {
+                match app.global_shortcut().register(hk.as_str()) {
+                    Ok(_) => log::info!("emoji hotkey registered: {hk}"),
+                    Err(e) => log::error!("failed to register emoji hotkey: {e}"),
+                }
             }
         }
     }
@@ -334,97 +398,33 @@ pub fn run() {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
-                    let key = shortcut.to_string().to_lowercase();
-                    log::info!("global shortcut pressed: {key}");
-                    let Some(cfg) = app.try_state::<ConfigState>() else {
-                        return;
-                    };
-                    let (unified, clip_enabled, clip_hotkey, search_enabled, search_hotkey, emoji_enabled, emoji_hotkey, main_hotkey) =
-                        {
-                            let cfg = cfg.0.lock().unwrap();
-                            let clip_hotkey = cfg
-                                .modules
-                                .get("clipboard")
-                                .and_then(|m| m.get("hotkey"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Ctrl+Shift+V")
-                                .to_string();
-                            let search_hotkey = cfg
-                                .modules
-                                .get("search")
-                                .and_then(|m| m.get("hotkey"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Ctrl+Shift+F")
-                                .to_string();
-                            let emoji_hotkey = cfg
-                                .modules
-                                .get("emoji")
-                                .and_then(|m| m.get("hotkey"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Ctrl+Shift+J")
-                                .to_string();
-                            let main_hotkey = cfg
-                                .hotkeys
-                                .get("main")
-                                .cloned()
-                                .unwrap_or_else(|| "Ctrl+Shift+E".into());
-                            let clip_enabled = cfg
-                                .modules
-                                .get("clipboard")
-                                .and_then(|m| m.get("enabled"))
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false);
-                            let search_enabled = cfg
-                                .modules
-                                .get("search")
-                                .and_then(|m| m.get("enabled"))
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false);
-                            let emoji_enabled = cfg
-                                .modules
-                                .get("emoji")
-                                .and_then(|m| m.get("enabled"))
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false);
-                            (
-                                cfg.unified_hotkey,
-                                clip_enabled,
-                                clip_hotkey,
-                                search_enabled,
-                                search_hotkey,
-                                emoji_enabled,
-                                emoji_hotkey,
-                                main_hotkey,
-                            )
-                        };
-                    let clip_match = Shortcut::from_str(&clip_hotkey)
-                        .map(|s| s == *shortcut)
-                        .unwrap_or(false);
-                    let search_match = Shortcut::from_str(&search_hotkey)
-                        .map(|s| s == *shortcut)
-                        .unwrap_or(false);
-                    let emoji_match = Shortcut::from_str(&emoji_hotkey)
-                        .map(|s| s == *shortcut)
-                        .unwrap_or(false);
-                    let main_match = Shortcut::from_str(&main_hotkey)
-                        .map(|s| s == *shortcut)
-                        .unwrap_or(false);
-                    if !unified && clip_enabled && clip_match {
+                    log::info!("global shortcut pressed: {shortcut}");
+                    let resolved = read_resolved_hotkeys();
+                    if !resolved.unified
+                        && resolved.clip_enabled
+                        && resolved.clip.as_ref().is_some_and(|s| s == shortcut)
+                    {
                         log::info!("clipboard hotkey matched, showing popup");
                         modules::clipboard::on_hotkey(app);
-                    } else if !unified && search_enabled && search_match {
+                    } else if !resolved.unified
+                        && resolved.search_enabled
+                        && resolved.search.as_ref().is_some_and(|s| s == shortcut)
+                    {
                         log::info!("search hotkey matched, showing popup");
                         modules::search::on_hotkey(app);
-                    } else if !unified && emoji_enabled && emoji_match {
+                    } else if !resolved.unified
+                        && resolved.emoji_enabled
+                        && resolved.emoji.as_ref().is_some_and(|s| s == shortcut)
+                    {
                         log::info!("emoji hotkey matched, showing popup");
                         modules::emoji::on_hotkey(app);
-                    } else if main_match {
-                        if unified {
+                    } else if resolved.main.as_ref().is_some_and(|s| s == shortcut) {
+                        if resolved.unified {
                             log::info!("main hotkey toggling main window");
                             toggle_main(app);
                         } else {
                             // 主窗口呼出：先记录唤起前窗口，供剪贴板跟手粘贴
-                            if clipboard_enabled(app) {
+                            if resolved.clip_enabled {
                                 modules::clipboard::record_foreground_state(app);
                             }
                             show_main(app);

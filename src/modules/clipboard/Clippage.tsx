@@ -258,10 +258,9 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   }, [popup]);
 
   const onSearchChange = (v: string) => {
-    setSearch(v);
     if (debounce.current) window.clearTimeout(debounce.current);
     debounce.current = window.setTimeout(() => {
-      setSearch((prev) => prev);
+      setSearch(v);
     }, 200);
   };
 

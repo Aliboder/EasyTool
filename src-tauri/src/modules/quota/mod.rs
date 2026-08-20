@@ -223,7 +223,9 @@ fn sync_accounts(st_accounts: &mut Vec<AccountStatus>, configs: &[AccountConfig]
     }
 }
 
-/// 单次刷新：遍历所有账户查询并更新状态
+/// 单次刷新：遍历所有账户查询并更新状态。
+/// 网络请求（可能耗时数秒）在 QuotaState 锁外执行，锁内只做状态更新与快速 DB 写入，
+/// 避免长时间持有状态锁导致前端 get_status / save_settings 被阻塞。
 pub fn fetch_once(app: &AppHandle) {
     let cfg = module_config(app);
     let threshold = cfg_f64(&cfg, "warn_threshold", 10.0);
@@ -232,130 +234,141 @@ pub fn fetch_once(app: &AppHandle) {
     let notify_surge = cfg_bool(&cfg, "notify_surge", true);
 
     let accounts = account_configs(app);
+
+    // 阶段 1：锁外执行网络请求（每个账户独立，失败不影响其它账户）
+    let outcomes: Vec<(AccountConfig, FetchOutcome)> = accounts
+        .iter()
+        .map(|acc| {
+            let key = get_account_key(acc);
+            let outcome = if key.trim().is_empty() {
+                FetchOutcome::Failed("未配置密钥".into())
+            } else {
+                match acc.kind {
+                    AccountKind::Deepseek => match api::fetch_balance(&key) {
+                        Ok(b) => FetchOutcome::Deepseek(b),
+                        Err(e) => FetchOutcome::Failed(e.to_string()),
+                    },
+                    AccountKind::Go => match api::fetch_go_quota(&key) {
+                        Ok(w) => FetchOutcome::Go(w),
+                        Err(e) => FetchOutcome::Failed(e.to_string()),
+                    },
+                }
+            };
+            (acc.clone(), outcome)
+        })
+        .collect();
+
+    // 阶段 2：锁内应用结果
     let st_guard = app.state::<Mutex<QuotaState>>();
     let mut st = st_guard.lock().unwrap();
     sync_accounts(&mut st.accounts, &accounts);
-
-    for acc in &accounts {
-        match acc.kind {
-            AccountKind::Deepseek => {
-                fetch_deepseek(app, &mut st, acc, threshold, critical, notify_low, notify_surge)
+    for (acc, outcome) in outcomes {
+        match outcome {
+            FetchOutcome::Deepseek(b) => apply_deepseek(
+                app, &mut st, &acc, b, threshold, critical, notify_low, notify_surge,
+            ),
+            FetchOutcome::Go(windows) => apply_go(app, &mut st, &acc, &windows),
+            FetchOutcome::Failed(msg) => {
+                log::warn!("{} query failed: {msg}", acc.name);
+                if let Some(status) = st.accounts.iter_mut().find(|s| s.id == acc.id) {
+                    // Go 账户已有历史数据时保留旧数据不覆盖错误（与旧 fetch_go 语义一致）
+                    if !(acc.kind == AccountKind::Go && !status.go_windows.is_empty()) {
+                        status.error = Some(msg);
+                    }
+                }
             }
-            AccountKind::Go => fetch_go(app, &mut st, acc),
         }
     }
 
     let _ = app.emit("quota://updated", serde_json::json!({}));
 }
 
-/// 查询单个 DeepSeek 账户余额 + 告警 + 历史
-fn fetch_deepseek(
+/// 单账户网络查询结果
+enum FetchOutcome {
+    Deepseek(api::Balance),
+    Go(Vec<GoQuota>),
+    Failed(String),
+}
+
+/// 应用 DeepSeek 余额结果：更新状态 + 告警 + 历史（锁内，仅 DB/内存操作）
+fn apply_deepseek(
     app: &AppHandle,
     st: &mut QuotaState,
     acc: &AccountConfig,
+    b: api::Balance,
     threshold: f64,
     critical_threshold: f64,
     notify_low: bool,
     notify_surge: bool,
 ) {
     let status = st.accounts.iter_mut().find(|s| s.id == acc.id).unwrap();
-    let key = get_account_key(acc);
-    if key.trim().is_empty() {
-        status.error = Some("未配置密钥".into());
-        return;
+    let today = Local::now().date_naive();
+    let prev = status.last_balance;
+    let warn = alerts::should_warn_balance(prev, b.amount, threshold);
+    let critical = alerts::should_warn_balance(prev, b.amount, critical_threshold);
+    let recover = alerts::should_recover(prev, b.amount, threshold);
+    status.last_balance = Some(b.amount);
+    status.balance = Some(b.amount);
+    status.granted = b.granted;
+    status.topped_up = b.topped_up;
+    status.available = b.available;
+    status.error = None;
+
+    if status.initialized && critical && notify_low {
+        let msg = format!(
+            "{} 余额已跌破紧急线 ¥{:.2}（当前 ¥{:.2}）",
+            acc.name, critical_threshold, b.amount
+        );
+        notify(app, "🚨 余额告急", &msg);
+        log::warn!("alert: balance critical, {msg}");
     }
-
-    match api::fetch_balance(&key) {
-        Ok(b) => {
-            let today = Local::now().date_naive();
-            let prev = status.last_balance;
-            let warn = alerts::should_warn_balance(prev, b.amount, threshold);
-            let critical = alerts::should_warn_balance(prev, b.amount, critical_threshold);
-            let recover = alerts::should_recover(prev, b.amount, threshold);
-            status.last_balance = Some(b.amount);
-            status.balance = Some(b.amount);
-            status.granted = b.granted;
-            status.topped_up = b.topped_up;
-            status.available = b.available;
-            status.error = None;
-
-            if status.initialized && critical && notify_low {
-                let msg = format!(
-                    "{} 余额已跌破紧急线 ¥{:.2}（当前 ¥{:.2}）",
-                    acc.name, critical_threshold, b.amount
-                );
-                notify(app, "🚨 余额告急", &msg);
-                log::warn!("alert: balance critical, {msg}");
-            }
-            if status.initialized && warn && notify_low {
-                let msg = format!(
-                    "{} 余额仅剩 ¥{:.2}（预警阈值: ¥{:.2}）",
-                    acc.name, b.amount, threshold
-                );
-                notify(app, "⚠ 余额不足", &msg);
-                log::warn!("alert: balance low, {msg}");
-            }
-            if status.initialized && recover && notify_low {
-                let msg = format!(
-                    "{} 余额已恢复至 ¥{:.2}（阈值: ¥{:.2}）",
-                    acc.name, b.amount, threshold
-                );
-                notify(app, "✅ 余额恢复", &msg);
-                log::info!("alert: balance recovered, {msg}");
-            }
-            status.was_low = b.amount < threshold;
-
-            let db_guard = app.state::<Mutex<QuotaDb>>();
-            let db = db_guard.lock().unwrap();
-            let records = history::load(&db, &acc.id);
-            let today_spend = history::today_spend(&records, today);
-            let avg7 = history::avg_daily_spent(&records, 7, today);
-            if status.last_surge_day != Some(today)
-                && notify_surge
-                && alerts::is_spike(today_spend, avg7)
-            {
-                let msg = format!(
-                    "{} 今日消费 ¥{:.2}，超过近 7 天日均消费（¥{:.2}）的 3 倍",
-                    acc.name, today_spend, avg7
-                );
-                notify(app, "🔥 消费突增", &msg);
-                log::warn!("alert: spend surge, {msg}");
-                status.last_surge_day = Some(today);
-            }
-            status.initialized = true;
-
-            history::append(&db, &acc.id, b.amount, b.granted, b.topped_up, chrono::Utc::now());
-            let _ = db.prune_balance(&acc.id, 5000);
-        }
-        Err(e) => {
-            status.error = Some(format!("{e}"));
-            log::warn!("{} balance query failed: {e}", acc.name);
-        }
+    if status.initialized && warn && notify_low {
+        let msg = format!(
+            "{} 余额仅剩 ¥{:.2}（预警阈值: ¥{:.2}）",
+            acc.name, b.amount, threshold
+        );
+        notify(app, "⚠ 余额不足", &msg);
+        log::warn!("alert: balance low, {msg}");
     }
+    if status.initialized && recover && notify_low {
+        let msg = format!(
+            "{} 余额已恢复至 ¥{:.2}（阈值: ¥{:.2}）",
+            acc.name, b.amount, threshold
+        );
+        notify(app, "✅ 余额恢复", &msg);
+        log::info!("alert: balance recovered, {msg}");
+    }
+    status.was_low = b.amount < threshold;
+
+    let db_guard = app.state::<Mutex<QuotaDb>>();
+    let db = db_guard.lock().unwrap();
+    let records = history::load(&db, &acc.id);
+    let today_spend = history::today_spend(&records, today);
+    let avg7 = history::avg_daily_spent(&records, 7, today);
+    if status.last_surge_day != Some(today)
+        && notify_surge
+        && alerts::is_spike(today_spend, avg7)
+    {
+        let msg = format!(
+            "{} 今日消费 ¥{:.2}，超过近 7 天日均消费（¥{:.2}）的 3 倍",
+            acc.name, today_spend, avg7
+        );
+        notify(app, "🔥 消费突增", &msg);
+        log::warn!("alert: spend surge, {msg}");
+        status.last_surge_day = Some(today);
+    }
+    status.initialized = true;
+
+    history::append(&db, &acc.id, b.amount, b.granted, b.topped_up, chrono::Utc::now());
+    let _ = db.prune_balance(&acc.id, 5000);
 }
 
-/// 查询单个 OpenCode Go 账户套餐用量
-fn fetch_go(app: &AppHandle, st: &mut QuotaState, acc: &AccountConfig) {
+/// 应用 OpenCode Go 套餐用量结果（锁内，仅 DB 写入）
+fn apply_go(app: &AppHandle, st: &mut QuotaState, acc: &AccountConfig, windows: &[GoQuota]) {
     let status = st.accounts.iter_mut().find(|s| s.id == acc.id).unwrap();
-    let key = get_account_key(acc);
-    if key.trim().is_empty() {
-        status.error = Some("未配置密钥".into());
-        return;
-    }
-
-    match api::fetch_go_quota(&key) {
-        Ok(windows) => {
-            status.go_windows = windows.clone();
-            status.error = None;
-            persist_go(app, &acc.id, &windows);
-        }
-        Err(e) => {
-            log::warn!("{} go quota query failed: {e}", acc.name);
-            if status.go_windows.is_empty() {
-                status.error = Some(format!("{e}"));
-            }
-        }
-    }
+    status.go_windows = windows.to_vec();
+    status.error = None;
+    persist_go(app, &acc.id, windows);
 }
 
 /// 写入 Go 快照 + 重置周期检测

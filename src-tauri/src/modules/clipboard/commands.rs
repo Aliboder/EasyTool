@@ -263,13 +263,6 @@ pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
         .map_err(|e| CommandError {
             message: format!("快捷键无效或已被其他程序占用：{e}"),
         })?;
-    // 成功：注销全部后只重新注册剪贴板热键（非统一模式下主窗口热键失效）
-    let _ = app.global_shortcut().unregister_all();
-    app.global_shortcut()
-        .register(hotkey.as_str())
-        .map_err(|e| CommandError {
-            message: format!("快捷键无效或已被其他程序占用：{e}"),
-        })?;
     // 写入 config
     let cfg_state = app.state::<crate::config::ConfigState>();
     let mut cfg = cfg_state.0.lock().unwrap();
@@ -277,6 +270,8 @@ pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
         v["hotkey"] = serde_json::json!(hotkey);
     }
     crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })?;
+    // 整体重注册：按新 config 恢复所有启用模块热键，避免只重注册剪贴板导致其它模块热键丢失
+    crate::reapply_hotkeys(&app);
     log::info!("clipboard hotkey changed to {hotkey}");
     Ok(())
 }
