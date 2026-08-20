@@ -137,3 +137,24 @@
     @apply font-sans;
     }
 }
+
+/* 需要可见滚动条的容器（如搜索结果）加 .themed-scroll：细、随主题变色 */
+.themed-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.themed-scroll::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+.themed-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.themed-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+.themed-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--ring);
+}

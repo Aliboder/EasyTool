@@ -1,0 +1,253 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { cn } from "@/lib/utils";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical, Clipboard, Gauge, Smile, Search, ExternalLink } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { HotkeyRecorder } from "@/components/hotkey-recorder";
+import { SettingRow } from "@/components/setting-row";
+import type { AppConfig, Manifest } from "@/lib/api";
+
+const GITHUB_ISSUES = "https://github.com/Aliboder/EasyTool/issues";
+
+const MODULE_ICONS: Record<string, typeof Clipboard> = {
+  gauge: Gauge,
+  smile: Smile,
+  search: Search,
+};
+
+function SortableModuleCard({ id, children }: { id: string; children: ReactNode }) {
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      // 拖拽大卡片不加 opacity（lessons #8：opacity+transform 在 WebView2 上会压扁窗口），用 shadow+ring 反馈
+      className={cn(isDragging && "z-10 shadow-lg ring-2 ring-primary/40")}
+    >
+      <div className="flex items-center justify-between gap-2 rounded-lg border p-3.5">
+        <button
+          {...attributes}
+          {...listeners}
+          aria-label="拖动排序"
+          title="拖动排序"
+          className="cursor-grab rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function SettingsView({
+  config,
+  manifests,
+  onToggle,
+  onReorder,
+  onThemeChange,
+  onUnifiedChange,
+  onMainHotkey,
+  onMainFollowMouse,
+}: {
+  config: AppConfig;
+  manifests: Manifest[];
+  onToggle: (id: string, enabled: boolean) => void;
+  onReorder: (ids: string[]) => Promise<void>;
+  onThemeChange: (theme: string) => void;
+  onUnifiedChange: (enabled: boolean) => void;
+  onMainHotkey: (hotkey: string) => Promise<void>;
+  onMainFollowMouse: (enabled: boolean) => Promise<void>;
+}) {
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+  const [version, setVersion] = useState("");
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIdx = manifests.findIndex((m) => m.id === active.id);
+    const newIdx = manifests.findIndex((m) => m.id === over.id);
+    if (oldIdx === -1 || newIdx === -1) return;
+    onReorder(arrayMove(manifests, oldIdx, newIdx).map((m) => m.id));
+  };
+
+  useEffect(() => {
+    invoke<boolean>("plugin:autostart|is_enabled")
+      .then(setAutostart)
+      .catch(() => setAutostart(false));
+    getVersion().then(setVersion).catch(console.error);
+  }, []);
+
+  const toggleAutostart = async (v: boolean) => {
+    try {
+      if (v) await invoke("plugin:autostart|enable");
+      else await invoke("plugin:autostart|disable");
+      setAutostart(v);
+    } catch (e) {
+      console.error("autostart toggle failed", e);
+    }
+  };
+
+  const enabledCount = manifests.filter((m) => Boolean(config.modules[m.id]?.enabled)).length;
+
+  return (
+    <div className="mx-auto w-full max-w-xl space-y-6 p-6">
+      <div>
+        <h2 className="text-lg font-semibold">设置</h2>
+        <p className="text-sm text-muted-foreground">
+          管理功能模块与全局选项 · {manifests.length} 个模块，{enabledCount} 个已启用
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>功能模块</CardTitle>
+          <CardDescription>拖动手柄调整顺序，底部栏显示已启用的模块</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={manifests.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+              {manifests.map((m) => {
+                const enabled = Boolean(config.modules[m.id]?.enabled);
+                const Icon = MODULE_ICONS[m.icon] ?? Clipboard;
+                return (
+                  <SortableModuleCard key={m.id} id={m.id}>
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <Icon className="size-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{m.name}</div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {m.description || `ID: ${m.id}`}
+                        </div>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={enabled}
+                      onCheckedChange={(v) => onToggle(m.id, v)}
+                      aria-label={`启用${m.name}`}
+                    />
+                  </SortableModuleCard>
+                );
+              })}
+            </SortableContext>
+          </DndContext>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>窗口与呼出</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="统一呼出主窗口" hint="开启后只保留主窗口呼出热键，各模块独立热键全部禁用">
+            <Switch
+              checked={Boolean(config.unified_hotkey)}
+              onCheckedChange={onUnifiedChange}
+              aria-label="统一呼出主窗口"
+            />
+          </SettingRow>
+          {Boolean(config.unified_hotkey) && (
+            <>
+              <SettingRow title="全局呼出热键" hint="统一呼出模式下，此热键呼出主窗口">
+                <HotkeyRecorder
+                  value={(config.hotkeys.main as string) ?? "Ctrl+Shift+E"}
+                  onSave={async (combo) => {
+                    try {
+                      await onMainHotkey(combo);
+                    } catch (e) {
+                      return String(e);
+                    }
+                  }}
+                />
+              </SettingRow>
+              <SettingRow title="呼出窗口跟随鼠标" hint="呼出时窗口出现在鼠标附近，否则停留在上次位置">
+                <Switch
+                  checked={Boolean(config.main_follow_mouse)}
+                  onCheckedChange={(v) => onMainFollowMouse(v)}
+                />
+              </SettingRow>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>通用</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="开机自启动" hint="登录 Windows 后自动启动 EasyTool">
+            <Switch
+              checked={autostart ?? false}
+              disabled={autostart === null}
+              onCheckedChange={toggleAutostart}
+            />
+          </SettingRow>
+          <SettingRow title="主题" hint="界面配色方案">
+            <Select value={config.theme} onValueChange={onThemeChange}>
+              <SelectTrigger id="theme" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dark">深色</SelectItem>
+                <SelectItem value="light">浅色</SelectItem>
+                <SelectItem value="system">跟随系统</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>关于</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <div className="flex items-center justify-between py-2">
+            <span className="text-sm font-medium">EasyTool 工具箱</span>
+            <span className="text-xs text-muted-foreground">v{version}</span>
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <span className="text-sm font-medium">反馈建议</span>
+            <button
+              onClick={() => openUrl(GITHUB_ISSUES)}
+              className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              GitHub Issues
+              <ExternalLink className="size-3" />
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
