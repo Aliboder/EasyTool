@@ -307,7 +307,11 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
 
 /// 文件列表逐文件入库：每条记录一个文件（图片 Tab 依赖"首文件为图片"逻辑自动归类）；
 /// 批次内按用户复制顺序显示（created_at 依次递减 1ms 保序）；去重命中仅刷新时间
-fn save_files_batch(state: &AppState, app: &AppHandle, files: &[String]) -> Result<(), DbError> {
+pub(crate) fn save_files_batch(
+    state: &AppState,
+    app: &AppHandle,
+    files: &[String],
+) -> Result<(), DbError> {
     let db = state.db.lock().unwrap();
     let now = now_ms();
     for (i, path) in files.iter().enumerate() {

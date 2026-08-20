@@ -1,0 +1,30 @@
+{
+  "id": "search",
+  "name": "文件搜索",
+  "icon": "search",
+  "description": "基于 Everything 的全局文件名秒搜",
+  "enabled": true,
+  "default_config": {
+    "hotkey": "Ctrl+Shift+F",
+    "follow_mouse": true,
+    "max_results": 200,
+    "sort_by": "name",
+    "sort_desc": false,
+    "columns": {
+      "path": true,
+      "size": true,
+      "modified": true,
+      "thumbnail": true
+    },
+    "view_mode": "list",
+    "grid_size": 80,
+    "filter": "all",
+    "match_case": false,
+    "match_whole_word": false,
+    "match_path": false,
+    "regex": false,
+    "auto_select_first": true,
+    "show_results_count": true,
+    "click_to_open": false
+  }
+}
