@@ -282,10 +282,11 @@ unsafe fn reg_value(
     None
 }
 
-/// 自动启动 Everything（找到 exe 则启动，找不到（如便携版）由用户手动启动）
+/// 自动启动 Everything：`-startup` 让其在系统托盘最小化启动、不弹主窗口（后台无感）；
+/// 找不到 exe（如便携版/绿色版）由用户手动启动
 pub fn ensure_everything_running() {
     if let Some(exe) = find_everything_exe() {
-        let _ = std::process::Command::new(exe).spawn();
+        let _ = std::process::Command::new(exe).arg("-startup").spawn();
     }
 }
 

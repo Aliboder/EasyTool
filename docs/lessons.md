@@ -42,6 +42,7 @@
 36. **新增 Tauri 命令必须注册进 `generate_handler!`**：只写 `#[tauri::command]` 函数不注册，前端 invoke 会静默失败（Promise reject，无日志），表现为「操作无效 + UI 回弹」。排查前端调用失败先查 `src-tauri/src/lib.rs` 的 `invoke_handler` 列表
 37. **无限滚动 = 滚动容器必须绑 `onScroll`**：写了 `loadMore`/`onScroll` 但没把 `onScroll` 挂到 `overflow-y-auto` 容器上 = 永不触底加载，只显示第一页 + 计数严重不符。新增分页列表时检查滚动容器有没有 `onScroll`（TS6133「声明未使用」常是这个信号）
 38. **onScroll 触发式加载在全屏/大窗口下有死锁**：第一页（如 100 条）撑不满超高视口时无滚动 → `onScroll` 永不触发 → 永远只显示第一页。兜底：结果变化后检查容器 `scrollHeight - clientHeight < 阈值` 就自动继续 `loadMore` 直到填满/加载完；隐藏容器 `clientHeight === 0` 要跳过，否则 keep-alive 切走的标签页会静默狂拉数据
+39. **Everything 后台启动用 `-startup` 参数**：直接 `spawn Everything.exe` 会弹主窗口（突兀）。加 `.arg("-startup")` 让它最小化到系统托盘启动（Everything 官方文档：Start minimized in the system tray），实现无感后台启动（`search::ensure_everything_running`）
 
 ---
 
