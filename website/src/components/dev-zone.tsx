@@ -1,4 +1,5 @@
 import { Blocks, Cpu, FlaskConical } from "lucide-react";
+import { useState } from "react";
 import {
   siRust,
   siTauri,
@@ -9,6 +10,27 @@ import {
   siSqlite,
 } from "simple-icons";
 import { Reveal } from "./reveal";
+
+function CopyBtn({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      className={`border border-zinc-700 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-zinc-500 transition-colors hover:border-emerald-500/50 hover:text-emerald-400 ${copied ? "!border-emerald-500 !bg-emerald-500/20 !text-emerald-400" : ""} ${className}`}
+    >
+      {copied ? "copied" : "copy"}
+    </button>
+  );
+}
 
 const REPO = "https://github.com/Aliboder/EasyTool";
 
@@ -80,20 +102,28 @@ export function DevZone() {
           </Reveal>
 
           <Reveal delay={0.08}>
-            <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-black shadow-xl shadow-black/40">
+            <div className="group relative overflow-hidden rounded-2xl border border-zinc-800 bg-black shadow-xl shadow-black/40">
               <div className="flex items-center gap-1.5 border-b border-zinc-800 px-4 py-3">
                 <span className="size-2.5 rounded-full bg-zinc-700" />
                 <span className="size-2.5 rounded-full bg-zinc-700" />
                 <span className="size-2.5 rounded-full bg-emerald-500/70" />
                 <span className="ml-2 font-display text-xs text-zinc-500">terminal</span>
+                <CopyBtn
+                  text={TERMINAL.filter((l) => !l.comment).map((l) => l.text).join("\n")}
+                  className="ml-auto opacity-0 transition-opacity group-hover:opacity-100"
+                />
               </div>
               <div className="space-y-2 p-5 font-mono text-xs leading-relaxed sm:text-sm">
-                {TERMINAL.map((line, i) => (
-                  <p key={i} className={`whitespace-nowrap ${line.comment ? "text-zinc-500" : "text-zinc-200"}`}>
-                    {line.prompt && <span className="mr-2 text-emerald-400">$</span>}
-                    {line.text}
-                  </p>
-                ))}
+                {TERMINAL.map((line, i) => {
+                  const isLast = i === TERMINAL.length - 1;
+                  return (
+                    <p key={i} className={`whitespace-nowrap ${line.comment ? "text-zinc-500" : "text-zinc-200"}`}>
+                      {line.prompt && <span className="mr-2 text-emerald-400">$</span>}
+                      {line.text}
+                      {isLast && <span className="caret" />}
+                    </p>
+                  );
+                })}
               </div>
             </div>
           </Reveal>

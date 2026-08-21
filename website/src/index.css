@@ -9,6 +9,15 @@
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC",
     "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-mono:
+    ui-monospace, "Cascadia Code", "JetBrains Mono", "Consolas", monospace;
+}
+
+:root {
+  --dot: rgba(0, 0, 0, 0.055);
+}
+.dark {
+  --dot: rgba(255, 255, 255, 0.05);
 }
 
 html {
@@ -27,4 +36,78 @@ body {
 
 ::selection {
   @apply bg-emerald-500/25;
+}
+
+/* ---- scroll progress bar ---- */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  height: 2px;
+  background: var(--tw-gradient-stops, theme(colors.emerald.500));
+  transform-origin: left;
+  will-change: transform;
+}
+
+/* ---- button ripple ---- */
+@keyframes ripple-out {
+  0% { opacity: 0.6; transform: translate(-50%, -50%) scale(0); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(20); }
+}
+.ripple {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  animation: ripple-out 0.55s ease-out forwards;
+}
+
+/* ---- typing caret ---- */
+@keyframes caret-blink {
+  50% { opacity: 0; }
+}
+.caret {
+  display: inline-block;
+  width: 8px;
+  height: 1.1em;
+  background: theme(colors.emerald.500);
+  vertical-align: middle;
+  margin-left: 2px;
+  animation: caret-blink 0.7s step-end infinite;
+}
+
+/* ---- section outline number ---- */
+.outline-num {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.8;
+  color: transparent;
+  -webkit-text-stroke: 1.5px theme(colors.zinc.300);
+  user-select: none;
+}
+.dark .outline-num {
+  -webkit-text-stroke-color: theme(colors.zinc.700);
+}
+
+/* ---- page boom (theme switch flash) ---- */
+@keyframes page-boom {
+  0% { filter: invert(1) hue-rotate(180deg); }
+  100% { filter: none; }
+}
+body.boom {
+  animation: page-boom 0.5s ease;
+}
+
+/* ---- toast ---- */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(8px); }
 }

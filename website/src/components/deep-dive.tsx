@@ -3,6 +3,7 @@ import { Check, ClipboardList, Gauge, Search, Smile } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Reveal } from "./reveal";
+import { SectionHead } from "./section-head";
 
 type ModuleInfo = {
   id: string;
@@ -80,12 +81,11 @@ export function DeepDive() {
   return (
     <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
-        <h2 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-          每个模块，都有真功夫
-        </h2>
-        <p className="mt-3 text-zinc-600 dark:text-zinc-400">
-          特性清单直接来自源码——没有营销话术。
-        </p>
+        <SectionHead
+          no="04"
+          title="每个模块，都有真功夫"
+          sub="特性清单直接来自源码——没有营销话术。"
+        />
       </Reveal>
 
       <Reveal delay={0.08}>

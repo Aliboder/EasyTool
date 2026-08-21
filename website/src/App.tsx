@@ -1,6 +1,6 @@
 import { Nav } from "./components/nav";
 import { Hero } from "./components/hero";
-import { StatsBand } from "./components/stats-band";
+import { StatsTicker } from "./components/stats-ticker";
 import { Bento } from "./components/bento";
 import { DeepDive } from "./components/deep-dive";
 import { Hotkeys } from "./components/hotkeys";
@@ -13,14 +13,17 @@ import { Faq } from "./components/faq";
 import { Download } from "./components/download";
 import { VersionBar } from "./components/version-bar";
 import { Footer } from "./components/footer";
+import { ScrollProgress } from "./components/scroll-progress";
+import { ToastProvider } from "./components/toast";
 
 export default function App() {
   return (
-    <>
+    <ToastProvider>
+      <ScrollProgress />
       <Nav />
       <main>
         <Hero />
-        <StatsBand />
+        <StatsTicker />
         <Bento />
         <DeepDive />
         <Hotkeys />
@@ -34,6 +37,6 @@ export default function App() {
         <VersionBar />
       </main>
       <Footer />
-    </>
+    </ToastProvider>
   );
 }

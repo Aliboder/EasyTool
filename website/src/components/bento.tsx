@@ -2,6 +2,7 @@ import { ClipboardList, Gauge, Search, Smile } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Reveal } from "./reveal";
+import { SectionHead } from "./section-head";
 import { MiniClipboard } from "./minis/clipboard";
 import { MiniQuota } from "./minis/quota";
 import { MiniEmoji } from "./minis/emoji";
@@ -42,12 +43,11 @@ export function Bento() {
   return (
     <section id="modules" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
-        <h2 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-          四个模块，各司其职
-        </h2>
-        <p className="mt-3 text-zinc-600 dark:text-zinc-400">
-          下面的演示都是真实交互，不是截图——动手试试。
-        </p>
+        <SectionHead
+          no="02"
+          title="四个模块，各司其职"
+          sub="下面的演示都是真实交互，不是截图——动手试试。"
+        />
       </Reveal>
 
       <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-5">
