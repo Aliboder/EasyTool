@@ -791,6 +791,7 @@ pub fn run() {
             modules::quicklaunch::commands::save_quicklaunch_settings,
             modules::quicklaunch::commands::quicklaunch_add_from_path,
             modules::quicklaunch::commands::quicklaunch_get_file_icon,
+            modules::quicklaunch::commands::quicklaunch_create_folder_with_items,
             set_active_module,
         ])
         .on_window_event(|window, event| {

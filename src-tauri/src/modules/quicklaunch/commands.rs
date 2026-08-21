@@ -194,3 +194,22 @@ pub async fn quicklaunch_get_file_icon(path: String) -> CmdResult<Option<String>
     .await
     .map_err(|e| format!("获取图标失败: {e}"))?
 }
+
+#[tauri::command]
+pub fn quicklaunch_create_folder_with_items(
+    state: State<'_, Mutex<QuicklaunchState>>,
+    name: String,
+    item_ids: Vec<i64>,
+) -> CmdResult<Folder> {
+    let st = state.lock().map_err(|e| format!("锁状态失败: {e}"))?;
+    
+    // 创建文件夹
+    let folder = st.db.create_folder(&name, None)?;
+    
+    // 将项目移动到文件夹中
+    for item_id in item_ids.iter() {
+        let _ = st.db.update_item(*item_id, None, Some(Some(folder.id)));
+    }
+    
+    Ok(folder)
+}

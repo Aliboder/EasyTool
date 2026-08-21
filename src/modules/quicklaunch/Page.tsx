@@ -110,10 +110,36 @@ export function QuicklaunchPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
+    const activeItem = items.find((item) => String(item.id) === active.id);
+    const overItem = items.find((item) => String(item.id) === over.id);
+
+    // 如果拖拽到另一个项目上，创建新分组
+    if (activeItem && overItem && activeItem.id !== overItem.id) {
+      const folderName = await prompt("创建分组", {
+        placeholder: "请输入分组名称",
+        defaultValue: "新分组",
+      });
+      
+      if (folderName && folderName.trim()) {
+        try {
+          await invoke("quicklaunch_create_folder_with_items", {
+            name: folderName.trim(),
+            itemIds: [activeItem.id, overItem.id],
+          });
+          fetchItems();
+          fetchFolders();
+          return;
+        } catch (e) {
+          console.error("Failed to create folder with items:", e);
+        }
+      }
+    }
+
+    // 否则只是调整顺序
     const oldIndex = items.findIndex((item) => String(item.id) === active.id);
     const newIndex = items.findIndex((item) => String(item.id) === over.id);
 
@@ -283,10 +309,10 @@ export function QuicklaunchPage() {
   };
 
   const handleAddFolder = async () => {
-    const name = await prompt("新建文件夹", { placeholder: "请输入文件夹名称" });
-    if (name) {
+    const name = await prompt("新建分组", { placeholder: "请输入分组名称" });
+    if (name && name.trim()) {
       try {
-        await invoke("quicklaunch_create_folder", { name });
+        await invoke("quicklaunch_create_folder", { name: name.trim() });
         fetchFolders();
       } catch (e) {
         console.error("Failed to create folder:", e);
@@ -451,7 +477,7 @@ export function QuicklaunchPage() {
               </Button>
               <Button variant="outline" size="sm" onClick={handleAddFolder}>
                 <FolderPlus className="mr-1 h-4 w-4" />
-                新建文件夹
+                新建分组
               </Button>
             </div>
           </div>
@@ -547,7 +573,7 @@ export function QuicklaunchPage() {
               />
               <ContextMenuItem
                 icon={<FolderPlus className="h-4 w-4" />}
-                label="新建文件夹"
+                label="新建分组"
                 onClick={() => handleContextAction("add-folder")}
               />
               <ContextMenuItem
