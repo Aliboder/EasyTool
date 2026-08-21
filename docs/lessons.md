@@ -640,3 +640,43 @@
 
 **相关代码**：
 - `website/src/components/minis/clipboard.tsx` - group-hover 显隐的操作按钮
+
+## 45. 右键菜单智能定位
+
+**问题**：
+- 右键菜单在窗口边缘时会被截断
+- 当父元素有 `transform` 属性时，`position: fixed` 会相对于父元素定位，导致菜单位置偏移
+
+**解决方案**：
+- 使用通用 `ContextMenu` 组件（`src/components/ui/context-menu.tsx`）
+- 组件自动计算菜单位置，确保不超出窗口边界
+- 使用 Portal 渲染到 `document.body`，避免父元素 `transform` 影响
+
+**经验教训**：
+1. 右键菜单必须调用 `e.preventDefault()` 阻止浏览器默认菜单
+2. 容器元素也需要添加 `onContextMenu={(e) => e.preventDefault()}` 阻止空白处的浏览器默认菜单
+3. 菜单位置计算需要考虑视口边界，避免菜单被截断
+4. 使用 Portal 渲染到 `document.body` 可以避免父元素 `transform` 影响定位
+
+**相关代码**：
+- `src/components/ui/context-menu.tsx` - 通用 ContextMenu 组件
+- `src/components/ui/context-menu-item.tsx` - 通用 ContextMenuItem 组件
+- `src/components/ui/context-menu-divider.tsx` - 通用 ContextMenuDivider 组件
+
+## 46. 表情模块右键菜单
+
+**问题**：
+- 表情模块没有右键菜单功能
+- 需要为内置表情和自定义表情添加右键菜单
+
+**解决方案**：
+- 内置表情：右键菜单支持"复制表情"
+- 自定义表情：右键菜单支持"复制表情"、"添加到收藏"、"删除"
+- 使用通用 ContextMenu 组件
+
+**经验教训**：
+1. 右键菜单功能应该为所有可交互元素提供
+2. 使用通用组件可以保持一致的交互体验
+
+**相关代码**：
+- `src/modules/emoji/Page.tsx` - 表情模块右键菜单实现
