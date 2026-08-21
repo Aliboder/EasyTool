@@ -18,7 +18,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Clipboard, Gauge, Smile, Search, ExternalLink } from "lucide-react";
+import { Clipboard, Gauge, Smile, Search, ExternalLink } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -45,22 +45,19 @@ function SortableModuleCard({ id, children }: { id: string; children: ReactNode 
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      // 拖拽大卡片不加 opacity（lessons #8：opacity+transform 在 WebView2 上会压扁窗口），用 shadow+ring 反馈
-      className={cn(isDragging && "z-10 shadow-lg ring-2 ring-primary/40")}
+      {...attributes}
+      {...listeners}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        willChange: "transform",
+      }}
+      className={cn(
+        "flex cursor-grab items-center justify-between gap-2 rounded-lg border p-3.5 transition-colors active:cursor-grabbing",
+        isDragging ? "z-10 opacity-70" : "hover:bg-accent/50"
+      )}
     >
-      <div className="flex items-center justify-between gap-2 rounded-lg border p-3.5">
-        <button
-          {...attributes}
-          {...listeners}
-          aria-label="拖动排序"
-          title="拖动排序"
-          className="cursor-grab rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:cursor-grabbing"
-        >
-          <GripVertical className="size-4" />
-        </button>
-        {children}
-      </div>
+      {children}
     </div>
   );
 }
