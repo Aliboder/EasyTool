@@ -105,16 +105,19 @@ export function QuicklaunchPage() {
 
   // 按需加载文件图标（与剪贴板模块一致）
   const loadFileIcon = useCallback(async (path: string) => {
-    if (fileIcons[path]) return;
-    try {
-      const icon = await invoke<string | null>("quicklaunch_get_file_icon", { path });
-      if (icon) {
-        setFileIcons((prev) => ({ ...prev, [path]: icon }));
-      }
-    } catch (e) {
-      console.error("Failed to load file icon:", e);
-    }
-  }, [fileIcons]);
+    setFileIcons((prev) => {
+      if (prev[path]) return prev;
+      // 异步加载图标，更新状态
+      invoke<string | null>("quicklaunch_get_file_icon", { path })
+        .then((icon) => {
+          if (icon) {
+            setFileIcons((prev2) => ({ ...prev2, [path]: icon }));
+          }
+        })
+        .catch((e) => console.error("Failed to load file icon:", e));
+      return prev;
+    });
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
