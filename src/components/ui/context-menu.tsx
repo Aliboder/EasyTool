@@ -22,6 +22,7 @@ export function ContextMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isReady, setIsReady] = useState(false);
+  const [shouldRender, setShouldRender] = useState(false);
 
   // 点击外部关闭
   useEffect(() => {
@@ -55,16 +56,26 @@ export function ContextMenu({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [visible, onClose]);
 
-  // 当 visible 变化时，重置 ready 状态
+  // 当 visible 变化时，延迟一帧再渲染菜单
   useEffect(() => {
     if (visible) {
+      // 先重置状态
       setIsReady(false);
+      setPosition({ x: -9999, y: -9999 });
+      
+      // 延迟一帧再渲染，确保旧菜单已关闭
+      const raf = requestAnimationFrame(() => {
+        setShouldRender(true);
+      });
+      return () => cancelAnimationFrame(raf);
+    } else {
+      setShouldRender(false);
     }
   }, [visible]);
 
   // 菜单渲染到 DOM 后，计算实际位置并显示
   useEffect(() => {
-    if (visible && menuRef.current && !isReady) {
+    if (shouldRender && menuRef.current && !isReady) {
       const menuRect = menuRef.current.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
@@ -96,9 +107,9 @@ export function ContextMenu({
       setPosition({ x: newX, y: newY });
       setIsReady(true);
     }
-  }, [visible, x, y, isReady]);
+  }, [shouldRender, x, y, isReady]);
 
-  if (!visible) return null;
+  if (!shouldRender) return null;
 
   return createPortal(
     <div
