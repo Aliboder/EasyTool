@@ -14,14 +14,12 @@ function Card({
   icon: Icon,
   title,
   desc,
-  accent,
   className,
   children,
 }: {
   icon: LucideIcon;
   title: string;
   desc: string;
-  accent?: boolean;
   className?: string;
   children: ReactNode;
 }) {
@@ -40,16 +38,10 @@ function Card({
       <div
         ref={ref}
         onMouseMove={onMouseMove}
-        className={`bento-card group flex h-full flex-col rounded-2xl border-2 p-6 transition-all ${
-          accent
-            ? "border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-transparent dark:from-emerald-500/10"
-            : "border-white/10 bg-gradient-to-br from-white/[0.03] to-transparent dark:from-white/[0.02]"
-        }`}
+        className="bento-card group flex h-full flex-col rounded-2xl border-2 border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-transparent p-6 transition-all dark:from-emerald-500/8"
       >
         <div className="relative z-10 flex items-center gap-3">
-          <span className={`flex size-9 items-center justify-center rounded-xl ${
-            accent ? "bg-emerald-500/20 text-emerald-400" : "bg-emerald-500/12 text-emerald-500 dark:text-emerald-400"
-          }`}>
+          <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
             <Icon className="size-4.5" />
           </span>
           <h3 className="font-display text-lg font-semibold">{title}</h3>
@@ -104,7 +96,6 @@ export function Bento() {
           icon={AppWindow}
           title="快速启动"
           desc="应用、文件、文件夹、网址，拖拽排序一键直达。"
-          accent
         >
           <MiniQuicklaunch />
         </Card>
