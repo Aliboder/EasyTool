@@ -70,7 +70,7 @@ App.tsx 中的组件顺序 = 页面从上到下的顺序。编号在各组件的
 | — | Hero | 海报 | 版本号变化 |
 | — | StatsTicker | 统计条 | 数字变化（表情数/测试数等） |
 | — | TechMarquee | 技术栈 | 新增技术依赖 |
-| 01 | Bento | 四个模块 | 新增/删除模块 |
+| 01 | Bento | 五个模块 | 新增/删除模块 |
 | 02 | DeepDive | 模块深潜 | 模块特性变化 |
 | 03 | Hotkeys | 快捷键 | 热键变化 |
 | 04 | Pillars | 设计哲学 | 架构变化 |
@@ -184,6 +184,92 @@ git add website && git commit -m "feat(website): ..." && git push origin master
 - **动画**：`motion/react` 库，所有动画需兼容 `prefers-reduced-motion`
 - **滚动条**：全局已美化（CSS `!important` + 内联 style），新组件如需滚动容器无需额外处理
 - **不要用截图**：真实界面用 React 组件绘制，不用 PNG/JPG
+
+## 易踩坑清单
+
+以下是从实际维护中总结的常见遗漏，**每次更新务必逐项核对**：
+
+### 新增模块时的完整检查清单
+
+新增一个模块（如 quicklaunch）时，**不仅**要改 Bento 和 DeepDive，还必须同步以下所有位置：
+
+```
+✅ 已改（容易想到的）：
+  1. bento.tsx           → 新增 Card + 迷你组件
+  2. deep-dive.tsx       → MODULES 数组新增 Tab
+  3. minis/              → 新增迷你组件文件
+  4. real-*.tsx          → 新增真实界面组件（如需要）
+  5. screenshots.tsx     → 引入新真实界面组件
+
+❌ 容易遗漏的：
+  6. hero.tsx            → 副标题 p 标签中的模块列表
+  7. download.tsx        → WHAT_YOU_GET 数组（"安装后你会得到"）
+  8. pillars.tsx         → 热键代码片段（如模块有独立热键）
+  9. hotkeys.tsx         → HOTKEYS 数组（如有独立热键）
+  10. changelog.tsx      → LOG 数组头部新增版本条目
+  11. version-bar.tsx    → FACTS 数组中的版本号
+  12. stats-ticker.tsx   → 如有新统计数字
+  13. nav.tsx            → LINKS 数组（如需导航锚点）
+  14. App.tsx            → 板块顺序（如需要）
+```
+
+### 版本号更新的完整检查清单
+
+版本号出现在**多个位置**，改漏一个就会不一致：
+
+```
+1. hero.tsx             → masthead "vol. X.X.X"
+2. version-bar.tsx      → FACTS "vX.X.X"
+3. download.tsx         → "vX.X.X · YYYY-MM-DD 发布"
+4. changelog.tsx        → LOG 数组头部
+5. package.json         → version（软件版本，非官网）
+6. Cargo.toml           → version（软件版本，非官网）
+7. tauri.conf.json      → version（软件版本，非官网）
+```
+
+### 删除/重命名模块时的检查清单
+
+```
+1. bento.tsx            → 删除 Card + 移除迷你组件导入
+2. deep-dive.tsx        → MODULES 数组删除对应项
+3. minis/               → 删除迷你组件文件
+4. real-*.tsx           → 删除真实界面组件
+5. screenshots.tsx      → 移除导入和渲染
+6. hero.tsx             → 副标题移除模块名
+7. download.tsx         → WHAT_YOU_GET 移除条目
+8. pillars.tsx          → 热键代码片段移除
+9. hotkeys.tsx          → HOTKEYS 数组移除（如有）
+```
+
+### 残留文件清理
+
+更新后检查是否有不再使用的文件：
+
+```bash
+# 查找未被引用的组件
+grep -r "from.*\./old-component" website/src/
+# 或检查 tsconfig 的 noUnusedLocals
+```
+
+常见残留：
+- 旧的样式文件（如 stats-band.tsx 被 stats-ticker.tsx 替代后）
+- 旧的工具组件（如 theme-toggle.tsx 在暗色锁定后不再使用）
+- 临时测试文件
+
+### 网站与软件版本同步
+
+网站描述的功能必须与**当前代码**一致，不能超前也不能落后：
+
+```bash
+# 检查当前模块列表
+ls src-tauri/modules/
+
+# 检查当前版本
+grep '"version"' package.json
+
+# 检查最近变更
+git log --oneline -20
+```
 
 ## 文件依赖
 
