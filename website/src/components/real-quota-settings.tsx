@@ -7,7 +7,7 @@ export function RealQuotaSettings() {
         <span className="text-[10px] text-zinc-500">额度监控</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ scrollbarColor: "rgba(255,255,255,0.1) transparent", scrollbarWidth: "thin" }}>
         {/* card 1: account management */}
         <div className="rounded-xl border border-white/10 p-4">
           <div className="flex items-center justify-between">

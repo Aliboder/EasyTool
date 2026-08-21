@@ -21,37 +21,18 @@ html {
   scroll-behavior: smooth;
 }
 
-/* ---- custom scrollbar (all scrollable elements) ---- */
-*, *::before, *::after {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+/* ---- custom scrollbar (forced global) ---- */
+:root {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent !important;
 }
-::-webkit-scrollbar,
-*::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track,
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb,
-*::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover,
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-::-webkit-scrollbar-thumb:active,
-*::-webkit-scrollbar-thumb:active {
-  background: rgba(16, 185, 129, 0.5);
-}
-::-webkit-scrollbar-corner,
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
+::-webkit-scrollbar { width: 6px !important; height: 6px !important; }
+::-webkit-scrollbar-track { background: transparent !important; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1) !important; border-radius: 3px !important; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2) !important; }
+::-webkit-scrollbar-thumb:active { background: rgba(16, 185, 129, 0.5) !important; }
+::-webkit-scrollbar-corner { background: transparent !important; }
+* { scrollbar-width: thin !important; scrollbar-color: rgba(255, 255, 255, 0.1) transparent !important; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
