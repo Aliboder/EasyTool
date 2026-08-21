@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingRow } from "@/components/setting-row";
 
 interface QuicklaunchSettings {
   view_mode: "grid" | "list";
@@ -30,26 +31,6 @@ const defaultSettings: QuicklaunchSettings = {
 interface QuicklaunchSettingsProps {
   onRefresh?: () => void;
   onSettingsChange?: (settings: QuicklaunchSettings) => void;
-}
-
-function SettingRow({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between py-2">
-      <div className="space-y-0.5">
-        <div className="text-sm">{title}</div>
-        {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
-      </div>
-      {children}
-    </div>
-  );
 }
 
 export function QuicklaunchSettings({ onRefresh, onSettingsChange }: QuicklaunchSettingsProps) {

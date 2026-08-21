@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getConfig } from "@/lib/api";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
-import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingRow } from "@/components/setting-row";
 
 export function EmojiSettings({ onRefresh }: { onRefresh: () => void }) {
   const [hotkey, setHotkey] = useState("");
@@ -30,56 +32,51 @@ export function EmojiSettings({ onRefresh }: { onRefresh: () => void }) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <Label>呼出表情面板热键</Label>
-        <HotkeyRecorder
-          value={hotkey}
-          onSave={async (combo) => {
-            await save({ hotkey: combo });
-          }}
-          hint="按此热键弹出表情悬浮面板（统一呼出模式下禁用）"
-        />
-      </div>
-      <div className="space-y-1">
-        <Label>点击表情后</Label>
-        <div className="flex gap-2">
-          {(["paste", "copy"] as const).map((a) => (
-            <button
-              key={a}
-              onClick={() => save({ click_action: a })}
-              className={
-                "rounded-md border px-3 py-1 text-xs " +
-                (action === a ? "border-primary text-primary" : "text-muted-foreground")
-              }
-            >
-              {a === "paste" ? "粘贴到原窗口" : "复制到剪贴板"}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-medium">面板跟随鼠标</div>
-          <div className="text-xs text-muted-foreground">
-            呼出时出现在鼠标附近，否则停留在上次位置
-          </div>
-        </div>
-        <button
-          onClick={() => save({ follow_mouse: !followMouse })}
-          className={
-            "relative h-6 w-11 rounded-full transition-colors " +
-            (followMouse ? "bg-primary" : "bg-muted")
-          }
-        >
-          <span
-            className={
-              "absolute top-0.5 size-5 rounded-full bg-white transition-all " +
-              (followMouse ? "left-[22px]" : "left-0.5")
-            }
-          />
-        </button>
-      </div>
+    <div className="space-y-4 p-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">通用</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="呼出表情面板热键" hint="按此热键弹出表情悬浮面板（统一呼出模式下禁用）">
+            <HotkeyRecorder
+              value={hotkey}
+              onSave={async (combo) => {
+                await save({ hotkey: combo });
+              }}
+            />
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">行为</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="点击表情后" hint="选择点击表情后的操作">
+            <div className="flex gap-1">
+              {(["paste", "copy"] as const).map((a) => (
+                <button
+                  key={a}
+                  onClick={() => save({ click_action: a })}
+                  className={`rounded-md border px-3 py-1 text-xs ${
+                    action === a ? "border-primary text-primary" : "text-muted-foreground"
+                  }`}
+                >
+                  {a === "paste" ? "粘贴" : "复制"}
+                </button>
+              ))}
+            </div>
+          </SettingRow>
+          <SettingRow title="面板跟随鼠标" hint="呼出时出现在鼠标附近，否则停留在上次位置">
+            <Switch
+              checked={followMouse}
+              onCheckedChange={(checked) => save({ follow_mouse: checked })}
+            />
+          </SettingRow>
+        </CardContent>
+      </Card>
     </div>
   );
 }
