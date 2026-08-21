@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState, useCallback } from "react";
 import { ItemCard, QuicklaunchItem } from "./ItemCard";
 import { FilterBar, FilterType } from "./FilterBar";
 import { Button } from "@/components/ui/button";
 import { Plus, FolderPlus } from "lucide-react";
+import { usePrompt } from "@/components/ui/prompt-dialog";
 
 export function QuicklaunchPage() {
   const [items, setItems] = useState<QuicklaunchItem[]>([]);
@@ -12,6 +14,7 @@ export function QuicklaunchPage() {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const { prompt, PromptDialog } = usePrompt();
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -64,12 +67,38 @@ export function QuicklaunchPage() {
   };
 
   const handleAddItem = async () => {
-    // TODO: 打开文件选择对话框
-    console.log("Add item clicked");
+    const picked = await open({
+      multiple: true,
+      filters: [
+        { name: "所有文件", extensions: ["*"] },
+      ],
+    });
+    if (picked) {
+      const paths = Array.isArray(picked) ? picked : [picked];
+      for (const path of paths) {
+        // 判断文件类型
+        const isUrl = path.startsWith("http://") || path.startsWith("https://");
+        const isFolder = !path.includes(".") && !isUrl;
+        const itemType = isUrl ? "url" : isFolder ? "folder" : path.endsWith(".exe") ? "app" : "file";
+        const name = path.split(/[\\/]/).pop() || path;
+        
+        try {
+          await invoke("quicklaunch_create_item", {
+            itemType,
+            name,
+            path,
+            folderId: null,
+          });
+        } catch (e) {
+          console.error("Failed to create item:", e);
+        }
+      }
+      fetchItems();
+    }
   };
 
   const handleAddFolder = async () => {
-    const name = prompt("请输入文件夹名称:");
+    const name = await prompt("新建文件夹", { placeholder: "请输入文件夹名称" });
     if (name) {
       try {
         await invoke("quicklaunch_create_folder", { name });
@@ -82,6 +111,7 @@ export function QuicklaunchPage() {
 
   return (
     <div className="flex h-full flex-col">
+      {PromptDialog}
       <FilterBar
         filter={filter}
         onFilterChange={setFilter}

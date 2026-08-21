@@ -14,6 +14,27 @@ use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
 
+/// 当前活动的模块（前端切换时更新）
+static ACTIVE_MODULE: OnceLock<Mutex<String>> = OnceLock::new();
+
+/// 设置当前活动的模块
+#[tauri::command]
+fn set_active_module(module: String) {
+    *ACTIVE_MODULE
+        .get_or_init(|| Mutex::new("clipboard".into()))
+        .lock()
+        .unwrap() = module;
+}
+
+/// 获取当前活动的模块
+fn get_active_module() -> String {
+    ACTIVE_MODULE
+        .get_or_init(|| Mutex::new("clipboard".into()))
+        .lock()
+        .unwrap()
+        .clone()
+}
+
 /// 极简日志器：输出到 stderr + 日志文件（%APPDATA%/com.aliboder.easytool/easytool.log）
 struct SimpleLogger {
     file: std::sync::Mutex<std::fs::File>,
@@ -767,6 +788,7 @@ pub fn run() {
             modules::quicklaunch::commands::quicklaunch_delete_folder,
             modules::quicklaunch::commands::quicklaunch_sort_folders,
             modules::quicklaunch::commands::quicklaunch_open_item,
+            set_active_module,
         ])
         .on_window_event(|window, event| {
             match event {
@@ -794,7 +816,11 @@ pub fn run() {
                             .unwrap()
                             .unified_hotkey;
                         if unified {
-                            hide_after_blur_grace(window);
+                            // 快速启动模块不自动关闭（支持拖拽）
+                            let active_module = get_active_module();
+                            if active_module != "quicklaunch" {
+                                hide_after_blur_grace(window);
+                            }
                         }
                     }
                 }

@@ -14,6 +14,7 @@ import { EmojiSettings } from "./Settings";
 import { loadCatalog, type Catalog, type GroupDto } from "./api";
 import { SmartEmoji } from "./SmartEmoji";
 import { toast } from "@/lib/toast";
+import { usePrompt } from "@/components/ui/prompt-dialog";
 
 const GROUP_TABS = [
   { id: "favorite", zh: "收藏" },
@@ -49,6 +50,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const listLenRef = useRef(0);
   const lastLoadRef = useRef(0);
+  const { prompt, PromptDialog } = usePrompt();
 
   // 切换分类/搜索时：重置渲染批次（列表容器用 key 强制重建，滚动位置自然归零）
   useEffect(() => {
@@ -182,6 +184,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
 
   return (
     <div className="relative flex h-full flex-col p-4">
+      {PromptDialog}
       <>
       <div className="flex items-center gap-2 border-b pb-3">
         <div className="relative flex-1">
@@ -213,7 +216,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
         </button>
         <button
           onClick={async () => {
-            const name = prompt("新分组名称");
+            const name = await prompt("新建分组", { placeholder: "请输入分组名称" });
             if (name) {
               await invoke("create_group", { name });
               await refreshCustom();

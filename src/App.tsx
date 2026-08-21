@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { Sidebar } from "@/components/layout/Sidebar";
 import {
   getConfig,
@@ -36,6 +37,8 @@ function App() {
     setActive(id);
     if (id !== "settings") {
       setVisited((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+      // 通知 Rust 侧当前活动的模块
+      invoke("set_active_module", { module: id }).catch(console.error);
     }
   }, []);
   const [notice, setNotice] = useState<string | null>(null);
