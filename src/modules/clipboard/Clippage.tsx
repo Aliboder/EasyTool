@@ -545,19 +545,19 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       >
         {item.preview}
       </div>
-      <div className="flex items-center text-[10px] text-muted-foreground">
-        {showTimestamps ? (
-          <span className="ml-auto">{fmtTime(item.created_at)}</span>
-        ) : (
-          <span className="ml-auto" />
-        )}
+      {showTimestamps && (
+        <div className="text-[10px] text-muted-foreground">
+          {fmtTime(item.created_at)}
+        </div>
+      )}
+      <div className="flex items-center justify-end gap-0.5 text-muted-foreground">
         <button
           onClick={(e) => {
             e.stopPropagation();
             del(item.id);
           }}
           aria-label="删除"
-          className="ml-0.5 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+          className="rounded p-1 transition-colors hover:bg-destructive/15 hover:text-destructive"
         >
           <Trash2 className="size-3.5" />
         </button>
@@ -568,8 +568,8 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           }}
           aria-label={item.pinned ? "取消置顶" : "置顶"}
           className={cn(
-            "ml-0.5 rounded p-1 transition-colors hover:bg-accent",
-            item.pinned ? "text-primary" : "text-muted-foreground hover:text-foreground",
+            "rounded p-1 transition-colors hover:bg-accent",
+            item.pinned ? "text-primary" : "hover:text-foreground",
           )}
         >
           <Pin className="size-3.5" />
