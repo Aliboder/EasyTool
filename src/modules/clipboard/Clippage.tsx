@@ -546,36 +546,38 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
         >
           {item.preview}
         </div>
-        {showTimestamps && (
-          <div className="shrink-0 text-[10px] text-muted-foreground">
-            {fmtTime(item.created_at)}
-          </div>
-        )}
-      </div>
-      <div className="flex items-center justify-end gap-0.5 text-muted-foreground">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            del(item.id);
-          }}
-          aria-label="删除"
-          className="rounded p-1 transition-colors hover:bg-destructive/15 hover:text-destructive"
-        >
-          <Trash2 className="size-3.5" />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            togglePin(item.id, !item.pinned);
-          }}
-          aria-label={item.pinned ? "取消置顶" : "置顶"}
-          className={cn(
-            "rounded p-1 transition-colors hover:bg-accent",
-            item.pinned ? "text-primary" : "hover:text-foreground",
+        <div className="flex shrink-0 flex-col items-center gap-0.5 border-l pl-2">
+          {showTimestamps && (
+            <div className="text-[10px] text-muted-foreground">
+              {fmtTime(item.created_at)}
+            </div>
           )}
-        >
-          <Pin className="size-3.5" />
-        </button>
+          <div className="flex items-center gap-0.5 text-muted-foreground">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                del(item.id);
+              }}
+              aria-label="删除"
+              className="rounded p-1 transition-colors hover:bg-destructive/15 hover:text-destructive"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePin(item.id, !item.pinned);
+              }}
+              aria-label={item.pinned ? "取消置顶" : "置顶"}
+              className={cn(
+                "rounded p-1 transition-colors hover:bg-accent",
+                item.pinned ? "text-primary" : "hover:text-foreground",
+              )}
+            >
+              <Pin className="size-3.5" />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
