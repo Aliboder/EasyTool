@@ -3,14 +3,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   DndContext,
+  closestCenter,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragOverEvent,
-  type Collision,
-  type CollisionDetection,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -29,42 +27,6 @@ import { Button } from "@/components/ui/button";
 import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { cn } from "@/lib/utils";
-
-// 碰撞检测：计算两个矩形的重叠比例
-function calculateCollisionRatio(
-  dragRect: { left: number; right: number; top: number; bottom: number; width: number; height: number },
-  targetRect: { left: number; right: number; top: number; bottom: number; width: number; height: number }
-): number {
-  const overlapX = Math.max(
-    0,
-    Math.min(dragRect.right, targetRect.right) - Math.max(dragRect.left, targetRect.left)
-  );
-  const overlapY = Math.max(
-    0,
-    Math.min(dragRect.bottom, targetRect.bottom) - Math.max(dragRect.top, targetRect.top)
-  );
-  const overlapArea = overlapX * overlapY;
-  const targetArea = targetRect.width * targetRect.height;
-  return targetArea > 0 ? overlapArea / targetArea : 0;
-}
-
-// 自定义碰撞检测：返回碰撞比例最高的目标
-const customCollisionDetection: CollisionDetection = (args) => {
-  const { active, collisionRect, droppableRects } = args;
-  if (!collisionRect) return [];
-
-  const collisions: Collision[] = [];
-
-  for (const [id, rect] of droppableRects.entries()) {
-    if (id === active.id) continue;
-    const ratio = calculateCollisionRatio(collisionRect, rect);
-    if (ratio > 0) {
-      collisions.push({ id, data: { ratio } });
-    }
-  }
-
-  return collisions.sort((a, b) => (b.data?.ratio ?? 0) - (a.data?.ratio ?? 0));
-};
 
 interface ContextMenuState {
   visible: boolean;
@@ -127,8 +89,6 @@ export function QuicklaunchPage() {
   const [gridSize, setGridSize] = useState(64);
   const [sortBy, setSortBy] = useState<"manual" | "name" | "created_at">("manual");
   const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
-  const [dragMode, setDragMode] = useState<"sort" | "merge" | null>(null);
-  const [dragTarget, setDragTarget] = useState<number | null>(null);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -150,67 +110,10 @@ export function QuicklaunchPage() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // 拖拽过程中更新视觉反馈
-  const handleDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over, collisions } = event;
-    
-    if (!over || active.id === over.id) {
-      setDragMode(null);
-      setDragTarget(null);
-      return;
-    }
-
-    // 检查碰撞比例，判断是排序还是合并
-    const topCollision = collisions?.[0];
-    if (topCollision && topCollision.data?.ratio !== undefined) {
-      const ratio = topCollision.data.ratio as number;
-      // 碰撞比例 > 0.5 时合并，否则排序
-      if (ratio > 0.5) {
-        setDragMode("merge");
-        setDragTarget(Number(over.id));
-      } else {
-        setDragMode("sort");
-        setDragTarget(null);
-      }
-    }
-  }, []);
-
-  const handleDragEnd = async (event: DragEndEvent) => {
+  const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    
-    // 清除拖拽状态
-    setDragMode(null);
-    setDragTarget(null);
-    
     if (!over || active.id === over.id) return;
 
-    const activeItem = items.find((item) => String(item.id) === active.id);
-    const overItem = items.find((item) => String(item.id) === over.id);
-
-    // 根据当前拖拽模式决定操作
-    if (dragMode === "merge" && activeItem && overItem && activeItem.id !== overItem.id) {
-      // 合并操作：创建新分组
-      const folderName = await prompt("创建分组", {
-        placeholder: "请输入分组名称",
-        defaultValue: "新分组",
-      });
-      
-      if (folderName && folderName.trim()) {
-        try {
-          await invoke("quicklaunch_create_folder_with_items", {
-            name: folderName.trim(),
-            itemIds: [activeItem.id, overItem.id],
-          });
-          fetchItems();
-          fetchFolders();
-          return;
-        } catch (e) {
-          console.error("Failed to create folder with items:", e);
-        }
-      }
-    }
-
-    // 排序操作：调整顺序
     const oldIndex = items.findIndex((item) => String(item.id) === active.id);
     const newIndex = items.findIndex((item) => String(item.id) === over.id);
 
@@ -557,12 +460,7 @@ export function QuicklaunchPage() {
             没有找到匹配的项目
           </div>
         ) : viewMode === "grid" ? (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={customCollisionDetection}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-          >
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={items.map((item) => String(item.id))} strategy={rectSortingStrategy}>
               <div
                 className="grid gap-2"
@@ -573,25 +471,18 @@ export function QuicklaunchPage() {
               >
                 {items.map((item) => (
                   <SortableItem key={item.id} id={String(item.id)}>
-                    <div
-                      className={cn(
-                        "transition-all duration-150",
-                        dragMode === "merge" && dragTarget === item.id && "ring-2 ring-primary ring-offset-2"
-                      )}
-                    >
-                      <ItemCard
-                        item={item}
-                        viewMode="grid"
-                        gridSize={gridSize}
-                        icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                        selected={selectedId === item.id}
-                        onSelect={setSelectedId}
-                        onOpen={handleOpen}
-                        onDelete={handleDelete}
-                        onRename={handleRename}
-                        onContextMenu={handleItemContextMenu}
-                      />
-                    </div>
+                    <ItemCard
+                      item={item}
+                      viewMode="grid"
+                      gridSize={gridSize}
+                      icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                      selected={selectedId === item.id}
+                      onSelect={setSelectedId}
+                      onOpen={handleOpen}
+                      onDelete={handleDelete}
+                      onRename={handleRename}
+                      onContextMenu={handleItemContextMenu}
+                    />
                   </SortableItem>
                 ))}
                 <button
@@ -609,34 +500,22 @@ export function QuicklaunchPage() {
             </SortableContext>
           </DndContext>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={customCollisionDetection}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-          >
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={items.map((item) => String(item.id))} strategy={verticalListSortingStrategy}>
               <div className="flex flex-col">
                 {items.map((item) => (
                   <SortableItem key={item.id} id={String(item.id)}>
-                    <div
-                      className={cn(
-                        "transition-all duration-150",
-                        dragMode === "merge" && dragTarget === item.id && "ring-2 ring-primary ring-offset-2"
-                      )}
-                    >
-                      <ItemCard
-                        item={item}
-                        viewMode="list"
-                        icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                        selected={selectedId === item.id}
-                        onSelect={setSelectedId}
-                        onOpen={handleOpen}
-                        onDelete={handleDelete}
-                        onRename={handleRename}
-                        onContextMenu={handleItemContextMenu}
-                      />
-                    </div>
+                    <ItemCard
+                      item={item}
+                      viewMode="list"
+                      icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                      selected={selectedId === item.id}
+                      onSelect={setSelectedId}
+                      onOpen={handleOpen}
+                      onDelete={handleDelete}
+                      onRename={handleRename}
+                      onContextMenu={handleItemContextMenu}
+                    />
                   </SortableItem>
                 ))}
                 <button
