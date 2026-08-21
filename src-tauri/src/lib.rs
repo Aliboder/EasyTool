@@ -250,6 +250,20 @@ fn emoji_enabled(app: &tauri::AppHandle) -> bool {
         .unwrap_or(false)
 }
 
+fn quicklaunch_enabled(app: &tauri::AppHandle) -> bool {
+    app.try_state::<ConfigState>()
+        .map(|s| {
+            s.0.lock()
+                .unwrap()
+                .modules
+                .get("quicklaunch")
+                .and_then(|m| m.get("enabled"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
 struct Hotkeys {
     unified: bool,
     clip_hotkey: String,
@@ -526,6 +540,15 @@ pub fn run() {
                 None
             };
 
+            let quicklaunch_handle = if quicklaunch_enabled(app.handle()) {
+                let app_clone = app.handle().clone();
+                Some(std::thread::spawn(move || {
+                    modules::quicklaunch::setup_from_handle(&app_clone)
+                }))
+            } else {
+                None
+            };
+
             // 等待剪贴板模块初始化完成（弹窗窗口延迟到首次呼出时创建，避免启动闪现）
             if let Some(handle) = clipboard_handle {
                 match handle.join() {
@@ -578,6 +601,19 @@ pub fn run() {
                     }
                     Err(e) => {
                         log::error!("emoji module thread panicked: {:?}", e);
+                    }
+                }
+            }
+
+            // 等待快速启动模块初始化完成
+            if let Some(handle) = quicklaunch_handle {
+                match handle.join() {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        log::error!("quicklaunch module init failed: {e}");
+                    }
+                    Err(e) => {
+                        log::error!("quicklaunch module thread panicked: {:?}", e);
                     }
                 }
             }
@@ -689,6 +725,19 @@ pub fn run() {
             modules::emoji::commands::get_emoji_thumb,
             modules::emoji::commands::apply_emoji,
             modules::emoji::commands::save_emoji_settings,
+            modules::quicklaunch::commands::quicklaunch_create_item,
+            modules::quicklaunch::commands::quicklaunch_get_item,
+            modules::quicklaunch::commands::quicklaunch_list_items,
+            modules::quicklaunch::commands::quicklaunch_update_item,
+            modules::quicklaunch::commands::quicklaunch_delete_item,
+            modules::quicklaunch::commands::quicklaunch_sort_items,
+            modules::quicklaunch::commands::quicklaunch_create_folder,
+            modules::quicklaunch::commands::quicklaunch_get_folder,
+            modules::quicklaunch::commands::quicklaunch_list_folders,
+            modules::quicklaunch::commands::quicklaunch_update_folder,
+            modules::quicklaunch::commands::quicklaunch_delete_folder,
+            modules::quicklaunch::commands::quicklaunch_sort_folders,
+            modules::quicklaunch::commands::quicklaunch_open_item,
         ])
         .on_window_event(|window, event| {
             match event {
