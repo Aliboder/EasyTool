@@ -33,8 +33,9 @@ interface ContextMenuState {
   visible: boolean;
   x: number;
   y: number;
-  type: "panel" | "item";
+  type: "panel" | "item" | "folder";
   item?: QuicklaunchItem;
+  folderId?: number;
 }
 
 // 可排序的项目包装组件
@@ -97,6 +98,7 @@ export function QuicklaunchPage() {
   const [gridSize, setGridSize] = useState(64);
   const [sortBy, setSortBy] = useState<"manual" | "name" | "created_at">("manual");
   const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
+  const [expandedFolder, setExpandedFolder] = useState<number | null>(null);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -320,6 +322,16 @@ export function QuicklaunchPage() {
     }
   };
 
+  const handleMoveToFolder = async (itemId: number, folderId: number) => {
+    try {
+      await invoke("quicklaunch_update_item", { id: itemId, folderId });
+      fetchItems();
+      fetchFolders();
+    } catch (e) {
+      console.error("Failed to move item to folder:", e);
+    }
+  };
+
   const handlePastePath = async () => {
     try {
       const text = await invoke<string>("get_clipboard_text");
@@ -415,7 +427,7 @@ export function QuicklaunchPage() {
         }
         break;
       case "move-to-folder":
-        // TODO: 显示文件夹子菜单
+        // 移动功能通过子菜单处理，这里不需要额外操作
         break;
       case "delete":
         if (item) handleDelete(item.id);
@@ -505,10 +517,54 @@ export function QuicklaunchPage() {
                       gridSize={gridSize}
                       fileIcons={fileIcons}
                       selected={selectedId === folder.id}
-                      onSelect={setSelectedId}
-                      onOpen={() => {/* TODO: 打开分组 */}}
-                      onContextMenu={() => {/* TODO: 分组右键菜单 */}}
+                      expanded={expandedFolder === folder.id}
+                      onSelect={(id) => {
+                        if (expandedFolder === id) {
+                          setExpandedFolder(null);
+                        } else {
+                          setExpandedFolder(id);
+                        }
+                      }}
+                      onOpen={(id) => {
+                        setExpandedFolder(expandedFolder === id ? null : id);
+                      }}
+                      onContextMenu={(e, id) => {
+                        e.preventDefault();
+                        setContextMenu({
+                          visible: true,
+                          x: e.clientX,
+                          y: e.clientY,
+                          type: "folder",
+                          folderId: id,
+                        });
+                      }}
                     />
+                    {/* 展开时显示子项目 */}
+                    {expandedFolder === folder.id && folder.items.length > 0 && (
+                      <div
+                        className="grid gap-2 mt-2"
+                        style={{
+                          gridAutoRows: `${gridSize}px`,
+                          gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
+                        }}
+                      >
+                        {folder.items.map((item) => (
+                          <ItemCard
+                            key={item.id}
+                            item={item}
+                            viewMode="grid"
+                            gridSize={gridSize}
+                            icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                            selected={selectedId === item.id}
+                            onSelect={setSelectedId}
+                            onOpen={handleOpen}
+                            onDelete={handleDelete}
+                            onRename={handleRename}
+                            onContextMenu={handleItemContextMenu}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 
@@ -600,6 +656,23 @@ export function QuicklaunchPage() {
                 onClick={() => handleContextAction("paste-path")}
               />
             </>
+          ) : contextMenu.type === "folder" ? (
+            <>
+              <ContextMenuItem
+                label="打开"
+                onClick={() => {/* TODO: 打开分组 */}}
+              />
+              <ContextMenuItem
+                label="重命名"
+                onClick={() => {/* TODO: 重命名分组 */}}
+              />
+              <div className="my-1 h-px bg-border" />
+              <ContextMenuItem
+                label="删除"
+                onClick={() => {/* TODO: 删除分组 */}}
+                className="text-destructive"
+              />
+            </>
           ) : (
             <>
               <ContextMenuItem
@@ -626,7 +699,7 @@ export function QuicklaunchPage() {
                 onClick={() => handleContextAction("rename")}
               />
               <div className="my-1 h-px bg-border" />
-              {folders.length > 0 && (
+              {folders.length > 0 && contextMenu.item && (
                 <div className="relative group">
                   <ContextMenuItem
                     label="移动到文件夹"
@@ -637,7 +710,7 @@ export function QuicklaunchPage() {
                       <ContextMenuItem
                         key={folder.id}
                         label={folder.name}
-                        onClick={() => {/* TODO: 移动到文件夹 */}}
+                        onClick={() => handleMoveToFolder(contextMenu.item!.id, folder.id)}
                       />
                     ))}
                   </div>
