@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   DndContext,
   closestCenter,
@@ -643,108 +644,111 @@ export function QuicklaunchPage() {
       </div>
 
       {/* 右键菜单 */}
-      {contextMenu.visible && (() => {
-        // 根据菜单类型预估菜单项数量
-        const itemCount = contextMenu.type === "panel" ? 3 : 
-                         contextMenu.type === "folder" ? 3 : 8;
-        const menuSize = estimateMenuSize(itemCount);
-        const position = calculateMenuPosition(contextMenu.x, contextMenu.y, menuSize.width, menuSize.height);
-        
-        return (
-          <div
-            className="fixed z-50 min-w-[180px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-            style={{ left: position.x, top: position.y }}
-            onClick={(e) => e.stopPropagation()}
-          >
-          {contextMenu.type === "panel" ? (
-            <>
-              <ContextMenuItem
-                icon={<Plus className="h-4 w-4" />}
-                label="添加项目"
-                onClick={() => handleContextAction("add-item")}
-              />
-              <ContextMenuItem
-                icon={<FolderPlus className="h-4 w-4" />}
-                label="新建分组"
-                onClick={() => handleContextAction("add-folder")}
-              />
-              <ContextMenuItem
-                icon={<ClipboardPaste className="h-4 w-4" />}
-                label="粘贴路径"
-                onClick={() => handleContextAction("paste-path")}
-              />
-            </>
-          ) : contextMenu.type === "folder" ? (
-            <>
-              <ContextMenuItem
-                label="打开"
-                onClick={() => {/* TODO: 打开分组 */}}
-              />
-              <ContextMenuItem
-                label="重命名"
-                onClick={() => {/* TODO: 重命名分组 */}}
-              />
-              <div className="my-1 h-px bg-border" />
-              <ContextMenuItem
-                label="删除"
-                onClick={() => {/* TODO: 删除分组 */}}
-                className="text-destructive"
-              />
-            </>
-          ) : (
-            <>
-              <ContextMenuItem
-                label="打开"
-                onClick={() => handleContextAction("open")}
-              />
-              {contextMenu.item?.item_type === "app" && (
-                <ContextMenuItem
-                  label="以管理员身份运行"
-                  onClick={() => {/* TODO */}}
-                />
-              )}
-              <ContextMenuItem
-                label="打开文件所在位置"
-                onClick={() => handleContextAction("open-location")}
-              />
-              <div className="my-1 h-px bg-border" />
-              <ContextMenuItem
-                label="复制路径"
-                onClick={() => handleContextAction("copy-path")}
-              />
-              <ContextMenuItem
-                label="重命名"
-                onClick={() => handleContextAction("rename")}
-              />
-              <div className="my-1 h-px bg-border" />
-              {folders.length > 0 && contextMenu.item && (
-                <div className="relative group">
+      {contextMenu.visible && createPortal(
+        (() => {
+          // 根据菜单类型预估菜单项数量
+          const itemCount = contextMenu.type === "panel" ? 3 : 
+                           contextMenu.type === "folder" ? 3 : 8;
+          const menuSize = estimateMenuSize(itemCount);
+          const position = calculateMenuPosition(contextMenu.x, contextMenu.y, menuSize.width, menuSize.height);
+          
+          return (
+            <div
+              className="fixed z-50 min-w-[180px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+              style={{ left: position.x, top: position.y }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {contextMenu.type === "panel" ? (
+                <>
                   <ContextMenuItem
-                    label="移动到文件夹"
-                    submenu
+                    icon={<Plus className="h-4 w-4" />}
+                    label="添加项目"
+                    onClick={() => handleContextAction("add-item")}
                   />
-                  <div className="absolute left-full top-0 hidden min-w-[120px] rounded-md border bg-popover p-1 shadow-md group-hover:block">
-                    {folders.map((folder) => (
+                  <ContextMenuItem
+                    icon={<FolderPlus className="h-4 w-4" />}
+                    label="新建分组"
+                    onClick={() => handleContextAction("add-folder")}
+                  />
+                  <ContextMenuItem
+                    icon={<ClipboardPaste className="h-4 w-4" />}
+                    label="粘贴路径"
+                    onClick={() => handleContextAction("paste-path")}
+                  />
+                </>
+              ) : contextMenu.type === "folder" ? (
+                <>
+                  <ContextMenuItem
+                    label="打开"
+                    onClick={() => {/* TODO: 打开分组 */}}
+                  />
+                  <ContextMenuItem
+                    label="重命名"
+                    onClick={() => {/* TODO: 重命名分组 */}}
+                  />
+                  <div className="my-1 h-px bg-border" />
+                  <ContextMenuItem
+                    label="删除"
+                    onClick={() => {/* TODO: 删除分组 */}}
+                    className="text-destructive"
+                  />
+                </>
+              ) : (
+                <>
+                  <ContextMenuItem
+                    label="打开"
+                    onClick={() => handleContextAction("open")}
+                  />
+                  {contextMenu.item?.item_type === "app" && (
+                    <ContextMenuItem
+                      label="以管理员身份运行"
+                      onClick={() => {/* TODO */}}
+                    />
+                  )}
+                  <ContextMenuItem
+                    label="打开文件所在位置"
+                    onClick={() => handleContextAction("open-location")}
+                  />
+                  <div className="my-1 h-px bg-border" />
+                  <ContextMenuItem
+                    label="复制路径"
+                    onClick={() => handleContextAction("copy-path")}
+                  />
+                  <ContextMenuItem
+                    label="重命名"
+                    onClick={() => handleContextAction("rename")}
+                  />
+                  <div className="my-1 h-px bg-border" />
+                  {folders.length > 0 && contextMenu.item && (
+                    <div className="relative group">
                       <ContextMenuItem
-                        key={folder.id}
-                        label={folder.name}
-                        onClick={() => handleMoveToFolder(contextMenu.item!.id, folder.id)}
+                        label="移动到文件夹"
+                        submenu
                       />
-                    ))}
-                  </div>
-                </div>
+                      <div className="absolute left-full top-0 hidden min-w-[120px] rounded-md border bg-popover p-1 shadow-md group-hover:block">
+                        {folders.map((folder) => (
+                          <ContextMenuItem
+                            key={folder.id}
+                            label={folder.name}
+                            onClick={() => handleMoveToFolder(contextMenu.item!.id, folder.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="my-1 h-px bg-border" />
+                  <ContextMenuItem
+                    label="删除"
+                    onClick={() => handleContextAction("delete")}
+                    className="text-destructive"
+                  />
+                </>
               )}
-              <div className="my-1 h-px bg-border" />
-              <ContextMenuItem
-                label="删除"
-                onClick={() => handleContextAction("delete")}
-                className="text-destructive"
-              />
-            </>
-          )}
-        </div>
-        );
-      })()}
+            </div>
+          );
+        })(),
+        document.body
+      )}
     </div>
   );
 }

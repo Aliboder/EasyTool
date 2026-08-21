@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -859,88 +860,91 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       )}
         </>
 
-      {menu && (() => {
-        const menuSize = estimateMenuSize(8); // 预估菜单项数量
-        const position = calculateMenuPosition(menu.x, menu.y, menuSize.width, menuSize.height);
-        
-        return (
-          <div
-            ref={menuRef}
-            className="fixed z-50 min-w-36 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-            style={{ left: position.x, top: position.y }}
-            onClick={(e) => e.stopPropagation()}
-          >
-          <button
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-            onClick={() => togglePin(menu.item.id, !menu.item.pinned)}
-          >
-            <Pin className="size-3.5" />
-            {menu.item.pinned ? "取消固定" : "固定"}
-          </button>
-          <button
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-            onClick={() => copy(menu.item.id)}
-          >
-            <Copy className="size-3.5" />
-            复制到剪贴板
-          </button>
-          {isImageItem(menu.item) && (
-            <button
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-              onClick={() => addAsEmoji(menu.item)}
+      {menu && createPortal(
+        (() => {
+          const menuSize = estimateMenuSize(8);
+          const position = calculateMenuPosition(menu.x, menu.y, menuSize.width, menuSize.height);
+          
+          return (
+            <div
+              ref={menuRef}
+              className="fixed z-50 min-w-36 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+              style={{ left: position.x, top: position.y }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <Smile className="size-3.5" />
-              添加为表情
-            </button>
-          )}
-          {isImageItem(menu.item) && (
-            <button
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-              onClick={() => viewImage(menu.item)}
-            >
-              <Eye className="size-3.5" />
-              查看大图
-            </button>
-          )}
-          {menu.item.kind === "files" && (
-            <button
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-              onClick={() => {
-                invoke("open_file_location", { path: menu.item.preview });
-                setMenu(null);
-              }}
-            >
-              <FolderOpen className="size-3.5" />
-              打开所在位置
-            </button>
-          )}
-          {menu.item.kind === "files" && menu.item.preview && (
-            <button
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-              onClick={async () => {
-                try {
-                  await invoke("quicklaunch_add_from_path", { path: menu.item.preview });
-                  toast("已固定到快速启动");
-                } catch (e) {
-                  toast(String(e));
-                }
-                setMenu(null);
-              }}
-            >
-              <Pin className="size-3.5" />
-              固定到快速启动
-            </button>
-          )}
-          <button
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive hover:bg-accent"
-            onClick={() => del(menu.item.id)}
-          >
-            <Trash2 className="size-3.5" />
-            删除
-          </button>
-        </div>
-        );
-      })()}
+              <button
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
+                onClick={() => togglePin(menu.item.id, !menu.item.pinned)}
+              >
+                <Pin className="size-3.5" />
+                {menu.item.pinned ? "取消固定" : "固定"}
+              </button>
+              <button
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
+                onClick={() => copy(menu.item.id)}
+              >
+                <Copy className="size-3.5" />
+                复制到剪贴板
+              </button>
+              {isImageItem(menu.item) && (
+                <button
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
+                  onClick={() => addAsEmoji(menu.item)}
+                >
+                  <Smile className="size-3.5" />
+                  添加为表情
+                </button>
+              )}
+              {isImageItem(menu.item) && (
+                <button
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
+                  onClick={() => viewImage(menu.item)}
+                >
+                  <Eye className="size-3.5" />
+                  查看大图
+                </button>
+              )}
+              {menu.item.kind === "files" && (
+                <button
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
+                  onClick={() => {
+                    invoke("open_file_location", { path: menu.item.preview });
+                    setMenu(null);
+                  }}
+                >
+                  <FolderOpen className="size-3.5" />
+                  打开所在位置
+                </button>
+              )}
+              {menu.item.kind === "files" && menu.item.preview && (
+                <button
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
+                  onClick={async () => {
+                    try {
+                      await invoke("quicklaunch_add_from_path", { path: menu.item.preview });
+                      toast("已固定到快速启动");
+                    } catch (e) {
+                      toast(String(e));
+                    }
+                    setMenu(null);
+                  }}
+                >
+                  <Pin className="size-3.5" />
+                  固定到快速启动
+                </button>
+              )}
+              <button
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive hover:bg-accent"
+                onClick={() => del(menu.item.id)}
+              >
+                <Trash2 className="size-3.5" />
+                删除
+              </button>
+            </div>
+          );
+        })(),
+        document.body
+      )}
 
       {preview && (
         <div
