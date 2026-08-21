@@ -4,6 +4,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getConfig } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Drawer } from "@/components/ui/drawer";
+import { ContextMenu } from "@/components/ui/context-menu";
+import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import {
   Search,
   FolderOpen,
@@ -114,7 +116,6 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; item: SearchResultDto } | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
   const [icons, setIcons] = useState<Record<string, string>>({});
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState("all");
@@ -328,24 +329,6 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       if (t) window.clearTimeout(t);
     };
   }, [popup]);
-
-  // 右键菜单关闭逻辑
-  useEffect(() => {
-    if (menu) {
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key === "Escape") setMenu(null);
-      };
-      const onDown = (e: MouseEvent) => {
-        if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(null);
-      };
-      window.addEventListener("keydown", onKey);
-      window.addEventListener("mousedown", onDown);
-      return () => {
-        window.removeEventListener("keydown", onKey);
-        window.removeEventListener("mousedown", onDown);
-      };
-    }
-  }, [menu]);
 
   // 搜索选项菜单关闭逻辑（点击外部关闭）
   useEffect(() => {
@@ -799,49 +782,43 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         <SearchSettings onRefresh={refreshSettings} initial={cfg} onSave={setCfg} />
       </Drawer>
 
-      {menu && (
-        <div
-          ref={menuRef}
-          className="fixed z-50 min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-          style={{ left: menu.x, top: menu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-            onClick={() => {
+      <ContextMenu
+        visible={!!menu}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        onClose={() => setMenu(null)}
+      >
+        <ContextMenuItem
+          icon={<ExternalLink className="size-3.5" />}
+          label="打开"
+          onClick={() => {
+            if (menu) {
               doOpen(menu.item);
               setMenu(null);
-            }}
-          >
-            <ExternalLink className="size-3.5" />
-            打开
-          </button>
-          <button
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-            onClick={() => {
+            }
+          }}
+        />
+        <ContextMenuItem
+          icon={<FolderOpen className="size-3.5" />}
+          label="打开所在位置"
+          onClick={() => {
+            if (menu) {
               doOpenLocation(menu.item);
               setMenu(null);
-            }}
-          >
-            <FolderOpen className="size-3.5" />
-            打开所在位置
-          </button>
-          <button
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-            onClick={() => doCopyPath(menu.item)}
-          >
-            <Copy className="size-3.5" />
-            复制路径
-          </button>
-          <button
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-            onClick={() => doCopyFile(menu.item)}
-          >
-            <Copy className="size-3.5" />
-            复制文件
-          </button>
-        </div>
-      )}
+            }
+          }}
+        />
+        <ContextMenuItem
+          icon={<Copy className="size-3.5" />}
+          label="复制路径"
+          onClick={() => menu && doCopyPath(menu.item)}
+        />
+        <ContextMenuItem
+          icon={<Copy className="size-3.5" />}
+          label="复制文件"
+          onClick={() => menu && doCopyFile(menu.item)}
+        />
+      </ContextMenu>
     </div>
   );
 }
