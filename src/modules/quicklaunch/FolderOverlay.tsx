@@ -10,6 +10,7 @@ interface FolderOverlayProps {
   gridSize: number;
   fileIcons: Record<string, string>;
   selectedId: number | null;
+  anchorPosition?: { x: number; y: number };
   onSelect: (id: number | null) => void;
   onOpen: (item: QuicklaunchItem) => void;
   onDelete: (id: number) => void;
@@ -25,6 +26,7 @@ export function FolderOverlay({
   gridSize,
   fileIcons,
   selectedId,
+  anchorPosition,
   onSelect,
   onOpen,
   onDelete,
@@ -85,15 +87,62 @@ export function FolderOverlay({
     }
   };
 
+  // 计算展开窗口的位置
+  const calculatePosition = () => {
+    if (!anchorPosition) {
+      // 没有锚点位置时，居中显示
+      return {};
+    }
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const overlayWidth = expandedGridSize * cols + 64;
+    const overlayHeight = expandedGridSize * Math.ceil(items.length / cols) + 200;
+    const padding = 16;
+
+    let x = anchorPosition.x;
+    let y = anchorPosition.y;
+
+    // 优先显示在分组的右下方
+    x = anchorPosition.x + padding;
+    y = anchorPosition.y + padding;
+
+    // 右侧超出：显示在分组左侧
+    if (x + overlayWidth > viewportWidth - padding) {
+      x = anchorPosition.x - overlayWidth - padding;
+    }
+
+    // 底部超出：显示在分组上方
+    if (y + overlayHeight > viewportHeight - padding) {
+      y = anchorPosition.y - overlayHeight - padding;
+    }
+
+    // 左侧超出：确保不超出左边界
+    if (x < padding) {
+      x = padding;
+    }
+
+    // 顶部超出：确保不超出上边界
+    if (y < padding) {
+      y = padding;
+    }
+
+    return { left: x, top: y };
+  };
+
+  const positionStyle = anchorPosition ? calculatePosition() : {};
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl animate-in fade-in-0 duration-200">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xl animate-in fade-in-0 duration-200">
       <div
         ref={overlayRef}
         className={cn(
-          "relative rounded-3xl bg-background/95 backdrop-blur-2xl p-8 shadow-2xl shadow-primary/10 border border-white/10",
-          "animate-in zoom-in-95 fade-in-0 duration-300"
+          "absolute rounded-3xl bg-background/95 backdrop-blur-2xl p-8 shadow-2xl shadow-primary/10 border border-white/10",
+          "animate-in zoom-in-95 fade-in-0 duration-300",
+          !anchorPosition && "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         )}
         style={{
+          ...positionStyle,
           minWidth: `${expandedGridSize * cols + 64}px`,
           maxWidth: "90vw",
         }}

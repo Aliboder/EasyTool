@@ -40,6 +40,7 @@ interface ContextMenuState {
   type: "panel" | "item" | "folder";
   item?: QuicklaunchItem;
   folderId?: number;
+  folderPosition?: { x: number; y: number };
 }
 
 // 可排序的项目包装组件
@@ -460,6 +461,7 @@ export function QuicklaunchPage() {
           gridSize={gridSize}
           fileIcons={fileIcons}
           selectedId={selectedId}
+          anchorPosition={contextMenu.folderPosition}
           onSelect={setSelectedId}
           onOpen={handleOpen}
           onDelete={handleDelete}
@@ -556,12 +558,14 @@ export function QuicklaunchPage() {
                       }}
                       onContextMenu={(e, id) => {
                         e.preventDefault();
+                        e.stopPropagation();
                         setContextMenu({
                           visible: true,
                           x: e.clientX,
                           y: e.clientY,
                           type: "folder",
                           folderId: id,
+                          folderPosition: { x: e.clientX, y: e.clientY },
                         });
                       }}
                     />
