@@ -4,6 +4,7 @@ import { RippleLink } from "./ripple-link";
 import { MagneticLink } from "./magnetic-link";
 import { MouseSpotlight } from "./mouse-spotlight";
 import { ScrambleText } from "./scramble-text";
+import { BlurReveal } from "./blur-reveal";
 
 const REPO = "https://github.com/Aliboder/EasyTool";
 const RELEASE = `${REPO}/releases/latest`;
@@ -30,38 +31,42 @@ export function Hero() {
             <div className="grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
               {/* left: copy */}
               <div className="flex flex-col justify-center border-b border-zinc-200 px-6 py-12 sm:px-10 lg:border-b-0 lg:border-r lg:py-20 dark:border-zinc-800">
-                <h1 className="overflow-hidden font-display text-5xl font-bold leading-[1.05] tracking-tight md:text-6xl lg:text-7xl">
-                  <span className="press-in block">一个</span>
-                  <span className="press-in block">
+                <h1 className="font-display text-5xl font-bold leading-[1.05] tracking-tight md:text-6xl lg:text-7xl">
+                  <BlurReveal as="span" className="block">一个</BlurReveal>
+                  <BlurReveal as="span" delay={0.1} className="block">
                     <span className="inline-block bg-emerald-500 px-2 text-white">热键</span>，
-                  </span>
-                  <span className="press-in block">唤出整套效率工具</span>
+                  </BlurReveal>
+                  <BlurReveal as="span" delay={0.2} className="block">唤出整套效率工具</BlurReveal>
                 </h1>
 
-                <p className="mt-6 max-w-[42ch] text-[15px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                  剪贴板历史、AI 额度监控、表情面板、文件秒搜、快速启动——模块化工具箱，数据全部留在本地。
-                </p>
+                <BlurReveal delay={0.3}>
+                  <p className="mt-6 max-w-[42ch] text-[15px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                    剪贴板历史、AI 额度监控、表情面板、文件秒搜、快速启动——模块化工具箱，数据全部留在本地。
+                  </p>
+                </BlurReveal>
 
-                <div className="mt-8 flex flex-wrap items-center gap-3">
-                  <MagneticLink
-                    href={RELEASE}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-lift inline-flex h-11 items-center gap-2 bg-emerald-500 px-6 font-medium text-zinc-950"
-                  >
-                    <Download className="size-4" />
-                    下载 Windows 版
-                  </MagneticLink>
-                  <RippleLink
-                    href={REPO}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-lift inline-flex h-11 items-center gap-2 border-2 border-zinc-900 px-6 font-medium dark:border-zinc-100"
-                  >
-                    <Github className="size-4" />
-                    查看源码
-                  </RippleLink>
-                </div>
+                <BlurReveal delay={0.4}>
+                  <div className="mt-8 flex flex-wrap items-center gap-3">
+                    <MagneticLink
+                      href={RELEASE}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-lift inline-flex h-11 items-center gap-2 bg-emerald-500 px-6 font-medium text-zinc-950"
+                    >
+                      <Download className="size-4" />
+                      下载 Windows 版
+                    </MagneticLink>
+                    <RippleLink
+                      href={REPO}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-lift inline-flex h-11 items-center gap-2 border-2 border-zinc-900 px-6 font-medium dark:border-zinc-100"
+                    >
+                      <Github className="size-4" />
+                      查看源码
+                    </RippleLink>
+                  </div>
+                </BlurReveal>
               </div>
 
               {/* right: live demo (floating) */}

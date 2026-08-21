@@ -1,6 +1,7 @@
 import { Download as DownloadIcon, Info, Monitor, Scale, ShieldCheck, Zap } from "lucide-react";
 import { Reveal } from "./reveal";
 import { SectionHead } from "./section-head";
+import { ShinyButton } from "./shiny-button";
 
 const RELEASE = "https://github.com/Aliboder/EasyTool/releases/latest";
 
@@ -40,11 +41,15 @@ export function Download() {
               ))}
             </div>
 
-            <a href={RELEASE} target="_blank" rel="noreferrer"
-              className="btn-lift inline-flex h-12 items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 px-8 text-base font-bold text-zinc-950 shadow-lg shadow-emerald-500/20 transition-all hover:shadow-emerald-500/30">
+            <ShinyButton
+              href={RELEASE}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-lift inline-flex h-12 items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 px-8 text-base font-bold text-zinc-950 shadow-lg shadow-emerald-500/20 transition-all hover:shadow-emerald-500/30"
+            >
               <DownloadIcon className="size-5" />
               下载 Windows 版
-            </a>
+            </ShinyButton>
             <p className="font-display text-xs text-zinc-500">v0.4.5 · 2026-08-21 发布 · NSIS 安装包 · 约 8 MB</p>
 
             <div className="flex items-start gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-4">
