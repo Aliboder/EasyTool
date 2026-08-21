@@ -40,7 +40,7 @@ export function Changelog() {
     <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <SectionHead no="08" title="持续更新" sub="小步快跑，每个版本都解决真实问题。" />
+          <SectionHead no="07" title="持续更新" sub="小步快跑，每个版本都解决真实问题。" />
           <a
             href={RELEASES}
             target="_blank"

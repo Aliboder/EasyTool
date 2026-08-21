@@ -44,7 +44,7 @@ export function Bento() {
     <section id="modules" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
         <SectionHead
-          no="02"
+          no="01"
           title="四个模块，各司其职"
           sub="下面的演示都是真实交互，不是截图——动手试试。"
         />

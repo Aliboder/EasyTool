@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 const LINKS = [
   { href: "#modules", label: "模块" },
   { href: "#hotkeys", label: "快捷键" },
-  { href: "#why", label: "特性" },
+  { href: "#design", label: "设计" },
+  { href: "#data", label: "数据" },
   { href: "#screenshots", label: "界面" },
   { href: "#download", label: "下载" },
 ];

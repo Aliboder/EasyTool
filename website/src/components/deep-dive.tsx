@@ -82,7 +82,7 @@ export function DeepDive() {
     <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
         <SectionHead
-          no="04"
+          no="02"
           title="每个模块，都有真功夫"
           sub="特性清单直接来自源码——没有营销话术。"
         />

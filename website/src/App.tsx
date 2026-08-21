@@ -8,8 +8,8 @@ import { Hotkeys } from "./components/hotkeys";
 import { Pillars } from "./components/pillars";
 import { LocalData } from "./components/local-data";
 import { DevZone } from "./components/dev-zone";
-import { Changelog } from "./components/changelog";
 import { Screenshots } from "./components/screenshots";
+import { Changelog } from "./components/changelog";
 import { Faq } from "./components/faq";
 import { Download } from "./components/download";
 import { VersionBar } from "./components/version-bar";
@@ -32,8 +32,8 @@ export default function App() {
         <Pillars />
         <LocalData />
         <DevZone />
-        <Changelog />
         <Screenshots />
+        <Changelog />
         <Faq />
         <Download />
         <VersionBar />

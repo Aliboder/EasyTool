@@ -39,10 +39,10 @@ const COMPARE = [
 
 export function LocalData() {
   return (
-    <section className="border-y border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/40">
+    <section id="data" className="border-y border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/40">
       <div className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
         <Reveal>
-          <SectionHead no="06" title="数据只属于你" sub="你的每一条复制记录、每一笔消费历史，都落在下面这个文件夹里——删了就是真没了。" />
+          <SectionHead no="05" title="数据只属于你" sub="你的每一条复制记录、每一笔消费历史，都落在下面这个文件夹里——删了就是真没了。" />
         </Reveal>
 
         <div className="mt-12 grid gap-10 lg:grid-cols-2">

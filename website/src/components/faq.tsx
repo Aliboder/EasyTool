@@ -28,7 +28,7 @@ export function Faq() {
     <section className="border-t border-zinc-200 dark:border-zinc-800">
       <div className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
         <Reveal>
-          <SectionHead no="10" title="常见问题" />
+          <SectionHead no="08" title="常见问题" />
         </Reveal>
 
         <div className="mt-12 hidden gap-6 lg:grid lg:grid-cols-[300px_1fr]">

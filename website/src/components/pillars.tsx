@@ -37,10 +37,10 @@ Ctrl+Shift+F  →  文件搜索`,
 
 export function Pillars() {
   return (
-    <section id="why" className="border-y border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/40">
+    <section id="design" className="border-y border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/40">
       <div className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
         <Reveal>
-          <SectionHead no="05" title="设计哲学" sub="EasyTool 不只是功能的堆砌——每个决策都有理由。" />
+          <SectionHead no="04" title="设计哲学" sub="EasyTool 不只是功能的堆砌——每个决策都有理由。" />
         </Reveal>
 
         <div className="mt-12 grid gap-6 md:grid-cols-3">
