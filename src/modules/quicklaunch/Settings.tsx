@@ -29,6 +29,7 @@ const defaultSettings: QuicklaunchSettings = {
 
 interface QuicklaunchSettingsProps {
   onRefresh?: () => void;
+  onSettingsChange?: (settings: QuicklaunchSettings) => void;
 }
 
 function SettingRow({
@@ -51,7 +52,7 @@ function SettingRow({
   );
 }
 
-export function QuicklaunchSettings({ onRefresh }: QuicklaunchSettingsProps) {
+export function QuicklaunchSettings({ onRefresh, onSettingsChange }: QuicklaunchSettingsProps) {
   const [settings, setSettings] = useState<QuicklaunchSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
 
@@ -82,6 +83,7 @@ export function QuicklaunchSettings({ onRefresh }: QuicklaunchSettingsProps) {
   const saveSettings = async (patch: Partial<QuicklaunchSettings>) => {
     const updated = { ...settings, ...patch };
     setSettings(updated);
+    onSettingsChange?.(updated);
     try {
       await invoke("save_quicklaunch_settings", { settings: updated });
       onRefresh?.();

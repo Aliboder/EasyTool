@@ -1,6 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  rectSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { ItemCard, QuicklaunchItem } from "./ItemCard";
 import { FilterBar, FilterType } from "./FilterBar";
 import { QuicklaunchSettings } from "./Settings";
@@ -16,6 +34,41 @@ interface ContextMenuState {
   y: number;
   type: "panel" | "item";
   item?: QuicklaunchItem;
+}
+
+// 可排序的项目包装组件
+function SortableItem({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(isDragging && "z-10 opacity-70")}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function QuicklaunchPage() {
@@ -34,8 +87,32 @@ export function QuicklaunchPage() {
   });
   const [folders, setFolders] = useState<{ id: number; name: string }[]>([]);
   const [gridSize, setGridSize] = useState(64);
+  const [_sortBy, setSortBy] = useState<"manual" | "name" | "created_at">("manual");
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = items.findIndex((item) => String(item.id) === active.id);
+    const newIndex = items.findIndex((item) => String(item.id) === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newItems = arrayMove(items, oldIndex, newIndex);
+    setItems(newItems);
+
+    // 保存排序到后端
+    invoke("quicklaunch_sort_items", {
+      itemIds: newItems.map((item) => item.id),
+    }).catch(console.error);
+  };
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -75,6 +152,7 @@ export function QuicklaunchPage() {
       if (moduleConfig) {
         if (moduleConfig.grid_size) setGridSize(moduleConfig.grid_size as number);
         if (moduleConfig.view_mode) setViewMode(moduleConfig.view_mode as "grid" | "list");
+        if (moduleConfig.sort_by) setSortBy(moduleConfig.sort_by as "manual" | "name" | "created_at");
       }
     } catch (e) {
       console.error("Failed to load config:", e);
@@ -285,7 +363,14 @@ export function QuicklaunchPage() {
       </div>
 
       <Drawer open={showSettings} onClose={() => { setShowSettings(false); loadConfig(); }} title="快速启动设置">
-        <QuicklaunchSettings onRefresh={fetchItems} />
+        <QuicklaunchSettings
+          onRefresh={fetchItems}
+          onSettingsChange={(s) => {
+            setGridSize(s.grid_size);
+            setViewMode(s.view_mode);
+            setSortBy(s.sort_by);
+          }}
+        />
       </Drawer>
 
       <div
@@ -318,57 +403,67 @@ export function QuicklaunchPage() {
             没有找到匹配的项目
           </div>
         ) : viewMode === "grid" ? (
-          <div
-            className="grid gap-2"
-            style={{
-              gridAutoRows: `${gridSize}px`,
-              gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
-            }}
-          >
-            {items.map((item) => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                viewMode="grid"
-                selected={selectedId === item.id}
-                onSelect={setSelectedId}
-                onOpen={handleOpen}
-                onDelete={handleDelete}
-                onRename={handleRename}
-                onContextMenu={handleItemContextMenu}
-              />
-            ))}
-            <button
-              className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
-              onClick={handleAddItem}
-            >
-              <Plus className="h-6 w-6 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground">添加</span>
-            </button>
-          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={items.map((item) => String(item.id))} strategy={rectSortingStrategy}>
+              <div
+                className="grid gap-2"
+                style={{
+                  gridAutoRows: `${gridSize}px`,
+                  gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
+                }}
+              >
+                {items.map((item) => (
+                  <SortableItem key={item.id} id={String(item.id)}>
+                    <ItemCard
+                      item={item}
+                      viewMode="grid"
+                      selected={selectedId === item.id}
+                      onSelect={setSelectedId}
+                      onOpen={handleOpen}
+                      onDelete={handleDelete}
+                      onRename={handleRename}
+                      onContextMenu={handleItemContextMenu}
+                    />
+                  </SortableItem>
+                ))}
+                <button
+                  className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
+                  onClick={handleAddItem}
+                >
+                  <Plus className="h-6 w-6 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground">添加</span>
+                </button>
+              </div>
+            </SortableContext>
+          </DndContext>
         ) : (
-          <div className="flex flex-col">
-            {items.map((item) => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                viewMode="list"
-                selected={selectedId === item.id}
-                onSelect={setSelectedId}
-                onOpen={handleOpen}
-                onDelete={handleDelete}
-                onRename={handleRename}
-                onContextMenu={handleItemContextMenu}
-              />
-            ))}
-            <button
-              className="flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors hover:bg-accent/50 text-muted-foreground"
-              onClick={handleAddItem}
-            >
-              <Plus className="h-4 w-4" />
-              <span className="text-sm">添加项目</span>
-            </button>
-          </div>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={items.map((item) => String(item.id))} strategy={verticalListSortingStrategy}>
+              <div className="flex flex-col">
+                {items.map((item) => (
+                  <SortableItem key={item.id} id={String(item.id)}>
+                    <ItemCard
+                      item={item}
+                      viewMode="list"
+                      selected={selectedId === item.id}
+                      onSelect={setSelectedId}
+                      onOpen={handleOpen}
+                      onDelete={handleDelete}
+                      onRename={handleRename}
+                      onContextMenu={handleItemContextMenu}
+                    />
+                  </SortableItem>
+                ))}
+                <button
+                  className="flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors hover:bg-accent/50 text-muted-foreground"
+                  onClick={handleAddItem}
+                >
+                  <Plus className="h-4 w-4" />
+                  <span className="text-sm">添加项目</span>
+                </button>
+              </div>
+            </SortableContext>
+          </DndContext>
         )}
       </div>
 
