@@ -6,6 +6,7 @@ use crate::config::AppConfig;
 
 pub mod clipboard;
 pub mod emoji;
+pub mod quicklaunch;
 pub mod quota;
 pub mod search;
 
