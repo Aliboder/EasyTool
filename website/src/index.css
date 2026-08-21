@@ -14,10 +14,7 @@
 }
 
 :root {
-  --dot: rgba(0, 0, 0, 0.055);
-}
-.dark {
-  --dot: rgba(255, 255, 255, 0.05);
+  --dot: rgba(255, 255, 255, 0.04);
 }
 
 html {
@@ -25,11 +22,8 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
-  .press-in,
-  .outline-num {
+  html { scroll-behavior: auto; }
+  .press-in, .outline-num {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
@@ -38,26 +32,26 @@ html {
 }
 
 body {
-  @apply bg-zinc-50 font-sans text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  @apply bg-zinc-950 font-sans text-zinc-100 antialiased;
 }
 
 ::selection {
-  @apply bg-emerald-500/25;
+  @apply bg-emerald-500/30 text-white;
 }
 
-/* ---- grain overlay (film texture) ---- */
+/* ---- grain overlay ---- */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  opacity: 0.025;
+  opacity: 0.03;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 128px 128px;
 }
 
-/* ---- scroll progress bar ---- */
+/* ---- scroll progress ---- */
 .scroll-progress {
   position: fixed;
   top: 0;
@@ -71,7 +65,7 @@ body::after {
 
 /* ---- button ripple ---- */
 @keyframes ripple-out {
-  0% { opacity: 0.6; transform: translate(-50%, -50%) scale(0); }
+  0% { opacity: 0.5; transform: translate(-50%, -50%) scale(0); }
   100% { opacity: 0; transform: translate(-50%, -50%) scale(20); }
 }
 .ripple {
@@ -99,9 +93,7 @@ body::after {
 }
 
 /* ---- typing caret ---- */
-@keyframes caret-blink {
-  50% { opacity: 0; }
-}
+@keyframes caret-blink { 50% { opacity: 0; } }
 .caret {
   display: inline-block;
   width: 8px;
@@ -112,15 +104,13 @@ body::after {
   animation: caret-blink 0.7s step-end infinite;
 }
 
-/* ---- hero press-in animation ---- */
-.press-in {
-  clip-path: inset(0 0 0 0);
-}
+/* ---- hero press-in ---- */
 @keyframes pressIn {
   0% { transform: translateY(110%); }
   100% { transform: translateY(0); }
 }
 .press-in {
+  clip-path: inset(0 0 0 0);
   transform: translateY(110%);
   animation: pressIn 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -134,11 +124,8 @@ body::after {
   letter-spacing: -0.04em;
   line-height: 0.8;
   color: transparent;
-  -webkit-text-stroke: 1.5px theme(colors.zinc.300);
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.1);
   user-select: none;
-}
-.dark .outline-num {
-  -webkit-text-stroke-color: theme(colors.zinc.700);
 }
 
 /* ---- bento card hover tilt ---- */
@@ -147,26 +134,20 @@ body::after {
 }
 .bento-card:hover {
   transform: perspective(800px) rotateX(1deg) rotateY(-1deg) translateY(-2px);
-  border-color: theme(colors.emerald.500 / 0.3);
-  box-shadow: 0 8px 30px -8px theme(colors.emerald.500 / 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 8px 30px -8px rgba(16, 185, 129, 0.15);
 }
 
-/* ---- feature row hover tint ---- */
-.feat-row {
-  transition: background 0.15s ease;
-}
-.feat-row:hover {
-  background: color-mix(in srgb, theme(colors.emerald.500) 5%, transparent);
-}
+/* ---- feature row hover ---- */
+.feat-row { transition: background 0.15s ease; }
+.feat-row:hover { background: rgba(16, 185, 129, 0.05); }
 
-/* ---- page boom (theme switch flash) ---- */
+/* ---- page boom ---- */
 @keyframes page-boom {
   0% { filter: invert(1) hue-rotate(180deg); }
   100% { filter: none; }
 }
-body.boom {
-  animation: page-boom 0.5s ease;
-}
+body.boom { animation: page-boom 0.5s ease; }
 
 /* ---- toast ---- */
 @keyframes toast-in {
@@ -177,10 +158,8 @@ body.boom {
   to { opacity: 0; transform: translateY(8px); }
 }
 
-/* ---- nav scrollspy underline ---- */
-.nav-link {
-  position: relative;
-}
+/* ---- nav scrollspy ---- */
+.nav-link { position: relative; }
 .nav-link::after {
   content: "";
   position: absolute;
@@ -198,30 +177,19 @@ body.boom {
   transform: scaleX(1);
   transform-origin: left;
 }
-.nav-link.active {
-  color: theme(colors.zinc.900);
-}
-.dark .nav-link.active {
-  color: theme(colors.zinc.100);
-}
+.nav-link.active { color: white; }
 
-/* ---- tech marquee ---- */
+/* ---- marquee ---- */
 @keyframes marquee-scroll {
   0% { transform: translateX(0); }
   100% { transform: translateX(-33.333%); }
 }
-.marquee {
-  animation: marquee-scroll 25s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .marquee { animation: none; }
-}
+.marquee { animation: marquee-scroll 25s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .marquee { animation: none; } }
 
-/* ---- floating animation ---- */
+/* ---- float ---- */
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
 }
-.float-anim {
-  animation: float 4s ease-in-out infinite;
-}
+.float-anim { animation: float 4s ease-in-out infinite; }
