@@ -13,7 +13,7 @@ export function Hero() {
     <section id="top" className="pt-16">
       <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6">
         <MouseSpotlight>
-          <div className="relative overflow-hidden border-2 border-zinc-900 bg-[radial-gradient(var(--dot)_1px,transparent_1px)] bg-[length:14px_14px] dark:border-zinc-100">
+          <div className="relative overflow-hidden border-2 border-white/10 bg-[radial-gradient(var(--dot)_1px,transparent_1px)] bg-[length:14px_14px] shadow-[0_0_80px_-20px_rgba(16,185,129,0.15)]">
             {/* masthead */}
             <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 font-display text-[11px] uppercase tracking-[0.2em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
               <span className="flex items-center gap-2.5">

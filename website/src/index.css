@@ -21,7 +21,7 @@ html {
   scroll-behavior: smooth;
 }
 
-/* ---- custom scrollbar (forced global) ---- */
+/* ---- custom scrollbar ---- */
 :root {
   scrollbar-width: thin !important;
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent !important;
@@ -36,12 +36,7 @@ html {
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .press-in, .outline-num {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: none !important;
-    clip-path: none !important;
-  }
+  .press-in, .outline-num, .reveal { animation: none !important; opacity: 1 !important; transform: none !important; clip-path: none !important; }
 }
 
 body {
@@ -59,7 +54,7 @@ body::after {
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  opacity: 0.03;
+  opacity: 0.025;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 128px 128px;
 }
@@ -71,7 +66,7 @@ body::after {
   left: 0;
   z-index: 60;
   height: 2px;
-  background: theme(colors.emerald.500);
+  background: linear-gradient(90deg, theme(colors.emerald.600), theme(colors.emerald.400));
   transform-origin: left;
   will-change: transform;
 }
@@ -98,7 +93,7 @@ body::after {
 }
 .btn-lift:hover {
   transform: translate(-2px, -2px);
-  box-shadow: 2px 2px 0 theme(colors.emerald.500);
+  box-shadow: 2px 2px 0 theme(colors.emerald.500), 4px 4px 12px rgba(16, 185, 129, 0.15);
 }
 .btn-lift:active {
   transform: translate(0, 0);
@@ -137,18 +132,31 @@ body::after {
   letter-spacing: -0.04em;
   line-height: 0.8;
   color: transparent;
-  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.1);
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.08);
   user-select: none;
 }
 
-/* ---- bento card hover tilt ---- */
+/* ---- bento card hover ---- */
 .bento-card {
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  position: relative;
 }
+.bento-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(16, 185, 129, 0.06), transparent 40%);
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+.bento-card:hover::before { opacity: 1; }
 .bento-card:hover {
-  transform: perspective(800px) rotateX(1deg) rotateY(-1deg) translateY(-2px);
-  border-color: rgba(16, 185, 129, 0.3);
-  box-shadow: 0 8px 30px -8px rgba(16, 185, 129, 0.15);
+  transform: translateY(-3px);
+  border-color: rgba(16, 185, 129, 0.25);
+  box-shadow: 0 8px 32px -8px rgba(16, 185, 129, 0.12);
 }
 
 /* ---- feature row hover ---- */
@@ -180,10 +188,10 @@ body.boom { animation: page-boom 0.5s ease; }
   bottom: -4px;
   height: 2px;
   width: 100%;
-  background: theme(colors.emerald.500);
+  background: linear-gradient(90deg, theme(colors.emerald.500), theme(colors.emerald.400));
   transform: scaleX(0);
   transform-origin: right;
-  transition: transform 0.25s ease;
+  transition: transform 0.3s ease;
 }
 .nav-link:hover::after,
 .nav-link.active::after {
@@ -206,3 +214,25 @@ body.boom { animation: page-boom 0.5s ease; }
   50% { transform: translateY(-8px); }
 }
 .float-anim { animation: float 4s ease-in-out infinite; }
+
+/* ---- glow pulse ---- */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.1); }
+  50% { box-shadow: 0 0 30px rgba(16, 185, 129, 0.2); }
+}
+.glow-pulse { animation: glow-pulse 3s ease-in-out infinite; }
+
+/* ---- section divider ---- */
+.section-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06) 50%, transparent);
+}
+
+/* ---- stat number hover ---- */
+.stat-num {
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+.stat-num:hover {
+  transform: scale(1.05);
+  color: theme(colors.emerald.400);
+}
