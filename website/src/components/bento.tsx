@@ -1,4 +1,4 @@
-import { ClipboardList, Gauge, Search, Smile } from "lucide-react";
+import { AppWindow, ClipboardList, Gauge, Search, Smile } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Reveal } from "./reveal";
@@ -7,6 +7,7 @@ import { MiniClipboard } from "./minis/clipboard";
 import { MiniQuota } from "./minis/quota";
 import { MiniEmoji } from "./minis/emoji";
 import { MiniSearch } from "./minis/search";
+import { MiniQuicklaunch } from "./minis/quicklaunch";
 
 function Card({
   icon: Icon,
@@ -45,12 +46,12 @@ export function Bento() {
       <Reveal>
         <SectionHead
           no="01"
-          title="四个模块，各司其职"
+          title="五个模块，各司其职"
           sub="下面的演示都是真实交互，不是截图——动手试试。"
         />
       </Reveal>
 
-      <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-5">
+      <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-6">
         <Card
           icon={ClipboardList}
           title="剪贴板历史"
@@ -64,7 +65,7 @@ export function Bento() {
           icon={Gauge}
           title="额度监控"
           desc="多账户余额与消费曲线，低于阈值自动告警。切换账户看看。"
-          className="md:col-span-2"
+          className="md:col-span-3"
         >
           <MiniQuota />
         </Card>
@@ -73,16 +74,25 @@ export function Bento() {
           icon={Smile}
           title="表情面板"
           desc="点一下，试试手感。"
-          className="md:col-span-2"
+          className="md:col-span-3"
         >
           <MiniEmoji />
+        </Card>
+
+        <Card
+          icon={AppWindow}
+          title="快速启动"
+          desc="应用、文件、文件夹、网址，拖拽排序一键直达。"
+          className="md:col-span-3"
+        >
+          <MiniQuicklaunch />
         </Card>
 
         <Card
           icon={Search}
           title="文件秒搜"
           desc="Everything 全文引擎，输入即出结果（需安装 Everything）。"
-          className="md:col-span-5"
+          className="md:col-span-6"
         >
           <MiniSearch />
         </Card>

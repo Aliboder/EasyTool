@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Check, ClipboardList, Gauge, Search, Smile } from "lucide-react";
+import { AppWindow, Check, ClipboardList, Gauge, Search, Smile } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Reveal } from "./reveal";
@@ -70,6 +70,20 @@ const MODULES: ModuleInfo[] = [
       "复制路径自动进入剪贴板历史，跨模块联动",
     ],
     meta: ["Ctrl+Shift+F", "需安装 Everything", "跟随鼠标"],
+  },
+  {
+    id: "quicklaunch",
+    name: "快速启动",
+    icon: AppWindow,
+    tagline: "常用工具，一键直达",
+    features: [
+      "支持应用、文件、文件夹、网址四种快捷方式",
+      "拖拽排序 + 分组管理，自定义布局",
+      "网格 / 列表双视图，格子大小可调（48-96px）",
+      "支持文件拖入添加、剪贴板粘贴路径",
+      "右键菜单：打开 / 打开位置 / 复制路径 / 重命名 / 删除",
+    ],
+    meta: ["主面板内", "拖拽排序", "SQLite 存储"],
   },
 ];
 

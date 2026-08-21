@@ -5,6 +5,7 @@ import { RealClipboardPopup } from "./real-clipboard-popup";
 import { RealEmojiPopup } from "./real-emoji-popup";
 import { RealQuotaSettings } from "./real-quota-settings";
 import { RealAppShell } from "./real-app-shell";
+import { RealQuicklaunch } from "./real-quicklaunch";
 
 export function Screenshots() {
   return (
@@ -25,10 +26,10 @@ export function Screenshots() {
         </Reveal>
       </div>
 
-      {/* row 2: app shell + emoji + quota settings */}
+      {/* row 2: quicklaunch + emoji + quota settings */}
       <div className="mt-6 grid grid-cols-1 items-start gap-6 md:grid-cols-3">
         <Reveal delay={0.1}>
-          <RealAppShell />
+          <RealQuicklaunch />
         </Reveal>
         <Reveal delay={0.15}>
           <div className="flex justify-center">
@@ -37,6 +38,13 @@ export function Screenshots() {
         </Reveal>
         <Reveal delay={0.2}>
           <RealQuotaSettings />
+        </Reveal>
+      </div>
+
+      {/* row 3: app shell */}
+      <div className="mt-6 flex justify-center">
+        <Reveal delay={0.25}>
+          <RealAppShell />
         </Reveal>
       </div>
     </section>
