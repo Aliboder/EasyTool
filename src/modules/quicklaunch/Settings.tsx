@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect } from "react";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface QuicklaunchSettings {
   view_mode: "grid" | "list";
@@ -28,6 +29,26 @@ const defaultSettings: QuicklaunchSettings = {
 
 interface QuicklaunchSettingsProps {
   onRefresh?: () => void;
+}
+
+function SettingRow({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between py-2">
+      <div className="space-y-0.5">
+        <div className="text-sm">{title}</div>
+        {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
+      </div>
+      {children}
+    </div>
+  );
 }
 
 export function QuicklaunchSettings({ onRefresh }: QuicklaunchSettingsProps) {
@@ -58,8 +79,8 @@ export function QuicklaunchSettings({ onRefresh }: QuicklaunchSettingsProps) {
     }
   };
 
-  const saveSettings = async (newSettings: Partial<QuicklaunchSettings>) => {
-    const updated = { ...settings, ...newSettings };
+  const saveSettings = async (patch: Partial<QuicklaunchSettings>) => {
+    const updated = { ...settings, ...patch };
     setSettings(updated);
     try {
       await invoke("save_quicklaunch_settings", { settings: updated });
@@ -71,7 +92,7 @@ export function QuicklaunchSettings({ onRefresh }: QuicklaunchSettingsProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-4 text-sm text-muted-foreground">
+      <div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
         加载设置中...
       </div>
     );
@@ -79,68 +100,81 @@ export function QuicklaunchSettings({ onRefresh }: QuicklaunchSettingsProps) {
 
   return (
     <div className="space-y-4 p-4">
-      <div className="space-y-2">
-        <Label>默认视图</Label>
-        <Select
-          value={settings.view_mode}
-          onValueChange={(value) => saveSettings({ view_mode: value as "grid" | "list" })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="grid">网格视图</SelectItem>
-            <SelectItem value="list">列表视图</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">显示</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="默认视图" hint="选择网格或列表视图">
+            <div className="flex gap-1">
+              {(
+                [
+                  ["grid", "网格"],
+                  ["list", "列表"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => saveSettings({ view_mode: id })}
+                  className={`rounded-md border px-3 py-1 text-xs ${
+                    settings.view_mode === id
+                      ? "border-primary text-primary"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </SettingRow>
+          {settings.view_mode === "grid" && (
+            <SettingRow title="网格大小" hint="调节图标卡片尺寸">
+              <div className="flex w-40 items-center gap-2">
+                <Slider
+                  min={48}
+                  max={96}
+                  step={8}
+                  value={[settings.grid_size]}
+                  onValueChange={([v]) => setSettings({ ...settings, grid_size: v })}
+                  onValueCommit={([v]) => saveSettings({ grid_size: v })}
+                />
+                <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                  {settings.grid_size}px
+                </span>
+              </div>
+            </SettingRow>
+          )}
+        </CardContent>
+      </Card>
 
-      <div className="space-y-2">
-        <Label>默认排序</Label>
-        <Select
-          value={settings.sort_by}
-          onValueChange={(value) => saveSettings({ sort_by: value as "name" | "created_at" | "manual" })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="manual">手动排序</SelectItem>
-            <SelectItem value="name">按名称</SelectItem>
-            <SelectItem value="created_at">按添加时间</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <Label>网格图标大小</Label>
-        <Select
-          value={String(settings.grid_size)}
-          onValueChange={(value) => saveSettings({ grid_size: Number(value) })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="48">小 (48px)</SelectItem>
-            <SelectItem value="64">中 (64px)</SelectItem>
-            <SelectItem value="80">大 (80px)</SelectItem>
-            <SelectItem value="96">特大 (96px)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <Label htmlFor="single-click">单击打开</Label>
-        <Switch
-          id="single-click"
-          checked={settings.single_click_open}
-          onCheckedChange={(checked) => saveSettings({ single_click_open: checked })}
-        />
-      </div>
-      <p className="text-xs text-muted-foreground">
-        开启后单击即可打开项目，关闭则需双击打开
-      </p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">行为</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="默认排序" hint="选择排序方式">
+            <Select
+              value={settings.sort_by}
+              onValueChange={(v) => saveSettings({ sort_by: v as "name" | "created_at" | "manual" })}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manual">手动排序</SelectItem>
+                <SelectItem value="name">按名称</SelectItem>
+                <SelectItem value="created_at">按添加时间</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+          <SettingRow title="单击打开" hint="开启后单击即可打开项目">
+            <Switch
+              checked={settings.single_click_open}
+              onCheckedChange={(checked) => saveSettings({ single_click_open: checked })}
+            />
+          </SettingRow>
+        </CardContent>
+      </Card>
     </div>
   );
 }

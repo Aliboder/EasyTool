@@ -19,7 +19,7 @@ interface ItemCardProps {
   selected: boolean;
   onSelect: (id: number) => void;
   onOpen: (item: QuicklaunchItem) => void;
-  onDelete: (id: number) => void;
+  onDelete?: (id: number) => void;
   onRename: (id: number, name: string) => void;
   onContextMenu?: (e: React.MouseEvent, item: QuicklaunchItem) => void;
 }
@@ -37,7 +37,7 @@ export function ItemCard({
   selected,
   onSelect,
   onOpen,
-  onDelete,
+  onDelete: _onDelete,
   onRename,
   onContextMenu,
 }: ItemCardProps) {
@@ -79,7 +79,7 @@ export function ItemCard({
     return (
       <div
         className={cn(
-          "group relative flex flex-col items-center gap-1 rounded-md border p-2 cursor-pointer transition-colors",
+          "group relative flex flex-col items-center justify-center gap-2 rounded-md border p-2 cursor-pointer transition-colors aspect-square",
           selected
             ? "border-primary bg-accent"
             : "border-transparent hover:bg-accent/50"
@@ -88,26 +88,17 @@ export function ItemCard({
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
       >
-        <div className="flex h-10 w-10 items-center justify-center">
+        <div className="flex items-center justify-center">
           {item.icon_path ? (
             <img
               src={`data:image/png;base64,${item.icon_path}`}
-              className="h-full w-full object-contain"
+              className="h-10 w-10 object-contain"
               alt=""
             />
           ) : (
-            <Icon className="h-6 w-6 text-muted-foreground" />
+            <Icon className="h-10 w-10 text-muted-foreground" />
           )}
         </div>
-        <button
-          className="absolute top-1 right-1 h-4 w-4 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(item.id);
-          }}
-        >
-          ×
-        </button>
         {isEditing ? (
           <input
             type="text"

@@ -53,6 +53,10 @@ impl QuicklaunchDb {
     // ========== Items ==========
     
     pub fn create_item(&self, item_type: ItemType, name: &str, path: &str, folder_id: Option<i64>) -> Result<Item, String> {
+        self.create_item_with_icon(item_type, name, path, folder_id, None)
+    }
+    
+    pub fn create_item_with_icon(&self, item_type: ItemType, name: &str, path: &str, folder_id: Option<i64>, icon_path: Option<&str>) -> Result<Item, String> {
         let type_str = match item_type {
             ItemType::App => "app",
             ItemType::File => "file",
@@ -67,8 +71,8 @@ impl QuicklaunchDb {
         ).unwrap_or(0);
         
         self.conn.execute(
-            "INSERT INTO items (type, name, path, folder_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![type_str, name, path, folder_id, max_order + 1],
+            "INSERT INTO items (type, name, path, icon_path, folder_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![type_str, name, path, icon_path, folder_id, max_order + 1],
         ).map_err(|e| format!("创建固定项失败: {e}"))?;
         
         let id = self.conn.last_insert_rowid();

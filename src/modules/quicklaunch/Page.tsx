@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { ItemCard, QuicklaunchItem } from "./ItemCard";
 import { FilterBar, FilterType } from "./FilterBar";
 import { QuicklaunchSettings } from "./Settings";
+import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
@@ -247,7 +248,7 @@ export function QuicklaunchPage() {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       {PromptDialog}
       <div className="flex items-center border-b px-2 py-1.5">
         <FilterBar
@@ -262,17 +263,15 @@ export function QuicklaunchPage() {
           variant="ghost"
           size="icon"
           className="ml-2 h-7 w-7"
-          onClick={() => setShowSettings(!showSettings)}
+          onClick={() => setShowSettings(true)}
         >
           <Settings2 className="h-4 w-4" />
         </Button>
       </div>
 
-      {showSettings && (
-        <div className="border-b">
-          <QuicklaunchSettings onRefresh={fetchItems} />
-        </div>
-      )}
+      <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="快速启动设置">
+        <QuicklaunchSettings onRefresh={fetchItems} />
+      </Drawer>
 
       <div
         ref={containerRef}

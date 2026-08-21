@@ -182,5 +182,21 @@ pub fn quicklaunch_add_from_path(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.clone());
     
-    st.db.create_item(item_type, &name, &path, None)
+    // 获取文件图标
+    let icon_path = if !is_url {
+        crate::modules::clipboard::file_icons::file_icon_png(&path)
+    } else {
+        None
+    };
+    
+    st.db.create_item_with_icon(item_type, &name, &path, None, icon_path.as_deref())
+}
+
+#[tauri::command]
+pub async fn quicklaunch_get_file_icon(path: String) -> CmdResult<Option<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(crate::modules::clipboard::file_icons::file_icon_png(&path))
+    })
+    .await
+    .map_err(|e| format!("获取图标失败: {e}"))?
 }
