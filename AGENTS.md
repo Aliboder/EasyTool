@@ -6,6 +6,7 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 > - `docs/module-guide.md`：**新增模块完整指南**（步骤/规范/坑清单）
 > - `docs/lessons.md`：**踩坑经验 + 易踩坑速查表**（改代码前必读）
 > - `docs/website-guide.md`：**官网维护指南**（更新功能/版本时必读）
+> - `docs/deploy-guide.md`：**Vite+React+GitHub Pages 部署指南**（新项目部署参考）
 > - `docs/superpowers/specs/`：功能设计文档
 
 ## 当前模块
