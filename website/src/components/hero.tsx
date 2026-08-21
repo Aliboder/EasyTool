@@ -39,7 +39,7 @@ export function Hero() {
                 </h1>
 
                 <p className="mt-6 max-w-[42ch] text-[15px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                  剪贴板历史、AI 额度监控、表情面板、文件秒搜——模块化工具箱，数据全部留在本地。
+                  剪贴板历史、AI 额度监控、表情面板、文件秒搜、快速启动——模块化工具箱，数据全部留在本地。
                 </p>
 
                 <div className="mt-8 flex flex-wrap items-center gap-3">

@@ -1,5 +1,5 @@
 const FACTS = [
-  "v0.4.4",
+  "v0.4.5",
   "MIT License",
   "Windows 10 / 11 x64",
   "数据本地存储",

@@ -6,9 +6,16 @@ const RELEASES = "https://github.com/Aliboder/EasyTool/releases";
 
 const LOG = [
   {
+    version: "v0.4.5",
+    date: "2026-08-21",
+    highlight: true,
+    summary: "新增快速启动模块：应用/文件/文件夹/网址快捷方式，拖拽排序 + 分组管理。",
+    detail: "支持网格/列表双视图、格子大小可调（48-96px）、右键菜单、剪贴板粘贴路径添加、文件拖入添加。SQLite 存储，排序方式可选（手动/名称/创建时间）。",
+  },
+  {
     version: "v0.4.4",
     date: "2026-08-20",
-    highlight: true,
+    highlight: false,
     summary: "表情支持 SendInput 直输，不污染剪贴板历史；收藏夹 Tab 置顶并默认打开。",
     detail: "剪贴板自写守卫从 300ms 加固到 2s，覆盖写入→Ctrl+V→目标应用改写完整链路；focus 刷新防抖 150ms + loadCatalog 并发合并，修复呼出时焦点风暴导致冻结。",
   },

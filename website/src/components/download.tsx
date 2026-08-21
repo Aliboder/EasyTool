@@ -17,6 +17,7 @@ const WHAT_YOU_GET = [
   "AI 额度多账户监控",
   "1900+ 表情直输",
   "Everything 文件秒搜",
+  "快速启动一键直达",
 ];
 
 export function Download() {

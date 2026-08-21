@@ -31,7 +31,8 @@ const PILLARS = [
     code: `Ctrl+Shift+E  →  主面板
 Ctrl+Shift+V  →  剪贴板
 Ctrl+Shift+J  →  表情
-Ctrl+Shift+F  →  文件搜索`,
+Ctrl+Shift+F  →  文件搜索
+Ctrl+Shift+E  →  快速启动（主面板内）`,
   },
 ];
 
