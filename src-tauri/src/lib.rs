@@ -269,6 +269,7 @@ struct Hotkeys {
     clip_hotkey: String,
     search_hotkey: String,
     emoji_hotkey: String,
+    quicklaunch_hotkey: String,
     main_hotkey: String,
 }
 
@@ -279,14 +280,17 @@ struct ResolvedHotkeys {
     clip_enabled: bool,
     search_enabled: bool,
     emoji_enabled: bool,
+    quicklaunch_enabled: bool,
     clip: Option<Shortcut>,
     search: Option<Shortcut>,
     emoji: Option<Shortcut>,
+    quicklaunch: Option<Shortcut>,
     main: Option<Shortcut>,
     /// 原始字符串（注册接口需要 &str 参数）
     clip_str: Option<String>,
     search_str: Option<String>,
     emoji_str: Option<String>,
+    quicklaunch_str: Option<String>,
     main_str: Option<String>,
 }
 
@@ -300,13 +304,16 @@ fn refresh_resolved_hotkeys(app: &tauri::AppHandle) {
         clip_enabled: clipboard_enabled(app),
         search_enabled: search_enabled(app),
         emoji_enabled: emoji_enabled(app),
+        quicklaunch_enabled: quicklaunch_enabled(app),
         clip: Shortcut::from_str(&hk.clip_hotkey).ok(),
         search: Shortcut::from_str(&hk.search_hotkey).ok(),
         emoji: Shortcut::from_str(&hk.emoji_hotkey).ok(),
+        quicklaunch: Shortcut::from_str(&hk.quicklaunch_hotkey).ok(),
         main: Shortcut::from_str(&hk.main_hotkey).ok(),
         clip_str: Some(hk.clip_hotkey.clone()),
         search_str: Some(hk.search_hotkey.clone()),
         emoji_str: Some(hk.emoji_hotkey.clone()),
+        quicklaunch_str: Some(hk.quicklaunch_hotkey),
         main_str: Some(hk.main_hotkey),
     };
     *RESOLVED_HOTKEYS
@@ -347,11 +354,19 @@ fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Shift+J")
         .to_string();
+    let quicklaunch_hotkey = cfg
+        .modules
+        .get("quicklaunch")
+        .and_then(|m| m.get("hotkey"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Shift+Q")
+        .to_string();
     Hotkeys {
         unified: cfg.unified_hotkey,
         clip_hotkey,
         search_hotkey,
         emoji_hotkey,
+        quicklaunch_hotkey,
         main_hotkey: cfg
             .hotkeys
             .get("main")
@@ -400,6 +415,14 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
                 match app.global_shortcut().register(hk.as_str()) {
                     Ok(_) => log::info!("emoji hotkey registered: {hk}"),
                     Err(e) => log::error!("failed to register emoji hotkey: {e}"),
+                }
+            }
+        }
+        if resolved.quicklaunch_enabled {
+            if let Some(hk) = &resolved.quicklaunch_str {
+                match app.global_shortcut().register(hk.as_str()) {
+                    Ok(_) => log::info!("quicklaunch hotkey registered: {hk}"),
+                    Err(e) => log::error!("failed to register quicklaunch hotkey: {e}"),
                 }
             }
         }
@@ -456,6 +479,12 @@ pub fn run() {
                     {
                         log::info!("emoji hotkey matched, showing popup");
                         modules::emoji::on_hotkey(app);
+                    } else if !resolved.unified
+                        && resolved.quicklaunch_enabled
+                        && resolved.quicklaunch.as_ref().is_some_and(|s| s == shortcut)
+                    {
+                        log::info!("quicklaunch hotkey matched, showing popup");
+                        modules::quicklaunch::on_hotkey(app);
                     } else if resolved.main.as_ref().is_some_and(|s| s == shortcut) {
                         if resolved.unified {
                             log::info!("main hotkey toggling main window");
