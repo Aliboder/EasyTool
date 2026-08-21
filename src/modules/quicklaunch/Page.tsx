@@ -88,8 +88,22 @@ export function QuicklaunchPage() {
   const [folders, setFolders] = useState<{ id: number; name: string }[]>([]);
   const [gridSize, setGridSize] = useState(64);
   const [sortBy, setSortBy] = useState<"manual" | "name" | "created_at">("manual");
+  const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // 按需加载文件图标（与剪贴板模块一致）
+  const loadFileIcon = useCallback(async (path: string) => {
+    if (fileIcons[path]) return;
+    try {
+      const icon = await invoke<string | null>("quicklaunch_get_file_icon", { path });
+      if (icon) {
+        setFileIcons((prev) => ({ ...prev, [path]: icon }));
+      }
+    } catch (e) {
+      console.error("Failed to load file icon:", e);
+    }
+  }, [fileIcons]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -146,6 +160,12 @@ export function QuicklaunchPage() {
           return aIdx - bIdx;
         });
         setItems(ordered);
+        // 加载图标
+        for (const item of ordered) {
+          if (item.item_type !== "url") {
+            loadFileIcon(item.path);
+          }
+        }
       } else {
         const filterOptions = {
           item_type: filter === "all" ? null : filter,
@@ -157,6 +177,12 @@ export function QuicklaunchPage() {
           filter: filterOptions,
         });
         setItems(result);
+        // 加载图标
+        for (const item of result) {
+          if (item.item_type !== "url") {
+            loadFileIcon(item.path);
+          }
+        }
       }
     } catch (e) {
       console.error("Failed to fetch items:", e);
@@ -449,6 +475,7 @@ export function QuicklaunchPage() {
                       item={item}
                       viewMode="grid"
                       gridSize={gridSize}
+                      icon={item.item_type === "url" ? null : fileIcons[item.path]}
                       selected={selectedId === item.id}
                       onSelect={setSelectedId}
                       onOpen={handleOpen}
@@ -481,6 +508,7 @@ export function QuicklaunchPage() {
                     <ItemCard
                       item={item}
                       viewMode="list"
+                      icon={item.item_type === "url" ? null : fileIcons[item.path]}
                       selected={selectedId === item.id}
                       onSelect={setSelectedId}
                       onOpen={handleOpen}

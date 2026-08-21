@@ -182,14 +182,8 @@ pub fn quicklaunch_add_from_path(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.clone());
     
-    // 获取文件图标
-    let icon_path = if !is_url {
-        crate::modules::clipboard::file_icons::file_icon_png(&path)
-    } else {
-        None
-    };
-    
-    st.db.create_item_with_icon(item_type, &name, &path, None, icon_path.as_deref())
+    // 图标由前端按需加载，不在此处获取
+    st.db.create_item(item_type, &name, &path, None)
 }
 
 #[tauri::command]

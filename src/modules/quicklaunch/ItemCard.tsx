@@ -18,6 +18,7 @@ interface ItemCardProps {
   viewMode: "grid" | "list";
   selected: boolean;
   gridSize?: number;
+  icon?: string | null;
   onSelect: (id: number) => void;
   onOpen: (item: QuicklaunchItem) => void;
   onDelete?: (id: number) => void;
@@ -37,6 +38,7 @@ export function ItemCard({
   viewMode,
   selected,
   gridSize = 64,
+  icon,
   onSelect,
   onOpen,
   onDelete: _onDelete,
@@ -93,9 +95,9 @@ export function ItemCard({
         onContextMenu={handleContextMenu}
       >
         <div className="flex shrink-0 items-center justify-center">
-          {item.icon_path ? (
+          {icon ? (
             <img
-              src={`data:image/png;base64,${item.icon_path}`}
+              src={`data:image/png;base64,${icon}`}
               className="object-contain"
               style={{ width: iconSize, height: iconSize }}
               alt=""

@@ -494,6 +494,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   // 网格单元
   const gridNode = (r: SearchResultDto) => {
     const gs = cfg.gridSize;
+    const iconSize = Math.max(gs * 0.5, 24);
     return (
       <div
         data-index={r.full_path}
@@ -510,15 +511,15 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         }}
         onMouseEnter={() => setSelected(r.full_path)}
         className={cn(
-          "flex cursor-pointer flex-col items-center gap-1 rounded-md border p-1.5 transition-colors",
+          "flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border transition-colors",
           selected === r.full_path
             ? "border-primary bg-accent"
             : "border-transparent hover:bg-accent/50",
         )}
-        style={{ width: gs + 12 }}
+        style={{ width: gs, height: gs, padding: `${gs * 0.1}px` }}
       >
-        {visualNode(r, gs)}
-        <span className="w-full truncate text-center text-[10px] leading-tight" title={r.name}>
+        {visualNode(r, iconSize)}
+        <span className="w-full truncate text-center leading-tight" style={{ fontSize: `${Math.max(gs * 0.15, 10)}px` }} title={r.name}>
           {r.name}
         </span>
       </div>
