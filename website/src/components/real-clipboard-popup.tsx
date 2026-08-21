@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FileText, GripVertical, Image, Link2, Pin, Search, Type } from "lucide-react";
 
 const INITIAL = [
-  { type: "file", icon: FileText, text: "EasyTool_0.4.4_x64-setup.exe", pinned: true, time: "" },
+  { type: "file", icon: FileText, text: "EasyTool_0.4.5_x64-setup.exe", pinned: true, time: "" },
   { type: "text", icon: Type, text: "开题报告终稿：答辩定在 9 月 12 日上午", pinned: false, time: "刚刚" },
   { type: "link", icon: Link2, text: "api-docs.deepseek.com/zh-cn", pinned: false, time: "1 分钟前" },
   { type: "text", icon: Type, text: "API Key 已存入 Windows 凭据管理器", pinned: false, time: "3 分钟前" },
