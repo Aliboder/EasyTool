@@ -1,6 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { X } from "lucide-react";
 import { ItemCard } from "./ItemCard";
 import type { QuicklaunchItem } from "./ItemCard";
 
@@ -15,6 +14,7 @@ interface FolderOverlayProps {
   onDelete: (id: number) => void;
   onRename: (id: number, name: string) => void;
   onContextMenu: (e: React.MouseEvent, item: QuicklaunchItem) => void;
+  onRenameFolder: (name: string) => void;
   onClose: () => void;
 }
 
@@ -29,9 +29,12 @@ export function FolderOverlay({
   onDelete,
   onRename,
   onContextMenu,
+  onRenameFolder,
   onClose,
 }: FolderOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(folderName);
 
   // 点击外部区域关闭
   useEffect(() => {
@@ -65,6 +68,22 @@ export function FolderOverlay({
   const expandedGridSize = Math.min(gridSize * 1.2, 96);
   const cols = Math.min(Math.ceil(Math.sqrt(items.length)), 6);
 
+  const handleRenameSubmit = () => {
+    if (editName.trim() && editName !== folderName) {
+      onRenameFolder(editName.trim());
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleRenameSubmit();
+    } else if (e.key === "Escape") {
+      setEditName(folderName);
+      setIsEditing(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div
@@ -78,16 +97,31 @@ export function FolderOverlay({
           maxWidth: "90vw",
         }}
       >
-        {/* 关闭按钮 */}
-        <button
-          onClick={onClose}
-          className="absolute right-2 top-2 rounded-full p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        {/* 文件夹名称 */}
-        <h3 className="mb-4 text-lg font-semibold text-center">{folderName}</h3>
+        {/* 分组名称（可编辑） */}
+        <div className="mb-4 text-center">
+          {isEditing ? (
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onBlur={handleRenameSubmit}
+              onKeyDown={handleKeyDown}
+              className="text-lg font-semibold text-center bg-transparent border-b border-primary outline-none"
+              autoFocus
+            />
+          ) : (
+            <h3
+              className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors"
+              onClick={() => {
+                setEditName(folderName);
+                setIsEditing(true);
+              }}
+              title="点击编辑名称"
+            >
+              {folderName}
+            </h3>
+          )}
+        </div>
 
         {/* 子项目网格 */}
         <div
@@ -111,6 +145,11 @@ export function FolderOverlay({
               onContextMenu={onContextMenu}
             />
           ))}
+        </div>
+
+        {/* 关闭提示文字 */}
+        <div className="mt-4 text-center text-xs text-muted-foreground">
+          点击空白处可关闭
         </div>
       </div>
     </div>

@@ -337,6 +337,16 @@ export function QuicklaunchPage() {
     }
   };
 
+  const handleRenameFolder = async (name: string) => {
+    if (!expandedFolder) return;
+    try {
+      await invoke("quicklaunch_update_folder", { id: expandedFolder, name });
+      fetchFolders();
+    } catch (e) {
+      console.error("Failed to rename folder:", e);
+    }
+  };
+
   const handlePastePath = async () => {
     try {
       const text = await invoke<string>("get_clipboard_text");
@@ -462,6 +472,7 @@ export function QuicklaunchPage() {
           onDelete={handleDelete}
           onRename={handleRename}
           onContextMenu={handleItemContextMenu}
+          onRenameFolder={handleRenameFolder}
           onClose={() => setExpandedFolder(null)}
         />
       )}

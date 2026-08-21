@@ -53,7 +53,10 @@ export function GroupCard({
       }}
       onClick={() => onSelect(id)}
       onDoubleClick={() => onOpen(id)}
-      onContextMenu={(e) => onContextMenu?.(e, id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu?.(e, id);
+      }}
     >
       {/* 2x2 子项目预览网格 */}
       <div
