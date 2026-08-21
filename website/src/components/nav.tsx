@@ -5,6 +5,7 @@ const LINKS = [
   { href: "#modules", label: "模块" },
   { href: "#why", label: "特性" },
   { href: "#screenshots", label: "界面" },
+  { href: "#download", label: "下载" },
 ];
 
 const REPO = "https://github.com/Aliboder/EasyTool";
