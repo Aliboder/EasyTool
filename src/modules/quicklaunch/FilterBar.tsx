@@ -38,7 +38,7 @@ export function FilterBar({
   onSearchChange,
 }: FilterBarProps) {
   return (
-    <div className="flex items-center gap-2 border-b px-2 py-1.5">
+    <div className="flex flex-1 items-center gap-2">
       <div className="flex items-center gap-1">
         {filters.map((f) => {
           const Icon = f.icon;

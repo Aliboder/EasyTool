@@ -21,6 +21,7 @@ interface ItemCardProps {
   onOpen: (item: QuicklaunchItem) => void;
   onDelete: (id: number) => void;
   onRename: (id: number, name: string) => void;
+  onContextMenu?: (e: React.MouseEvent, item: QuicklaunchItem) => void;
 }
 
 const typeIcons = {
@@ -38,6 +39,7 @@ export function ItemCard({
   onOpen,
   onDelete,
   onRename,
+  onContextMenu,
 }: ItemCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(item.name);
@@ -54,8 +56,7 @@ export function ItemCard({
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    // TODO: 实现右键菜单
-    console.log("Context menu for item:", item.id);
+    onContextMenu?.(e, item);
   };
 
   const handleRename = () => {

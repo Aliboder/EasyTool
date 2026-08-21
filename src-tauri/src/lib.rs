@@ -788,6 +788,8 @@ pub fn run() {
             modules::quicklaunch::commands::quicklaunch_delete_folder,
             modules::quicklaunch::commands::quicklaunch_sort_folders,
             modules::quicklaunch::commands::quicklaunch_open_item,
+            modules::quicklaunch::commands::save_quicklaunch_settings,
+            modules::quicklaunch::commands::quicklaunch_add_from_path,
             set_active_module,
         ])
         .on_window_event(|window, event| {
