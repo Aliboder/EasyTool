@@ -14,12 +14,14 @@ function Card({
   icon: Icon,
   title,
   desc,
+  accent,
   className,
   children,
 }: {
   icon: LucideIcon;
   title: string;
   desc: string;
+  accent?: boolean;
   className?: string;
   children: ReactNode;
 }) {
@@ -38,10 +40,16 @@ function Card({
       <div
         ref={ref}
         onMouseMove={onMouseMove}
-        className="bento-card flex h-full flex-col rounded-2xl border-2 border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
+        className={`bento-card group flex h-full flex-col rounded-2xl border-2 p-6 transition-all ${
+          accent
+            ? "border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-transparent dark:from-emerald-500/10"
+            : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+        }`}
       >
         <div className="relative z-10 flex items-center gap-3">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-400">
+          <span className={`flex size-9 items-center justify-center rounded-xl ${
+            accent ? "bg-emerald-500/20 text-emerald-400" : "bg-emerald-500/12 text-emerald-500 dark:text-emerald-400"
+          }`}>
             <Icon className="size-4.5" />
           </span>
           <h3 className="font-display text-lg font-semibold">{title}</h3>
@@ -66,12 +74,12 @@ export function Bento() {
         />
       </Reveal>
 
-      <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-6">
+      {/* 2x2 grid for first 4 modules */}
+      <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card
           icon={ClipboardList}
           title="剪贴板历史"
           desc="文本、图片、文件统统记住。悬停任意条目，试试固定和复制。"
-          className="md:col-span-3 md:row-span-2"
         >
           <MiniClipboard />
         </Card>
@@ -80,7 +88,6 @@ export function Bento() {
           icon={Gauge}
           title="额度监控"
           desc="多账户余额与消费曲线，低于阈值自动告警。切换账户看看。"
-          className="md:col-span-3"
         >
           <MiniQuota />
         </Card>
@@ -88,8 +95,7 @@ export function Bento() {
         <Card
           icon={Smile}
           title="表情面板"
-          desc="点一下，试试手感。"
-          className="md:col-span-3"
+          desc="点一下，试试手感。分类浏览、收藏置顶。"
         >
           <MiniEmoji />
         </Card>
@@ -98,16 +104,18 @@ export function Bento() {
           icon={AppWindow}
           title="快速启动"
           desc="应用、文件、文件夹、网址，拖拽排序一键直达。"
-          className="md:col-span-3"
+          accent
         >
           <MiniQuicklaunch />
         </Card>
+      </div>
 
+      {/* search full width */}
+      <div className="mt-4">
         <Card
           icon={Search}
           title="文件秒搜"
           desc="Everything 全文引擎，输入即出结果（需安装 Everything）。"
-          className="md:col-span-6"
         >
           <MiniSearch />
         </Card>

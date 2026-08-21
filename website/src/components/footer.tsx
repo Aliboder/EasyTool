@@ -20,7 +20,7 @@ export function Footer() {
               <a href={REPO} target="_blank" rel="noreferrer" className="flex size-8 items-center justify-center rounded-lg border border-white/10 text-zinc-400 transition-colors hover:border-emerald-500/50 hover:text-white">
                 <Github className="size-4" />
               </a>
-              <span className="text-xs text-zinc-600">MIT License · v0.4.4</span>
+              <span className="text-xs text-zinc-600">MIT License · v0.4.5</span>
             </div>
           </div>
 

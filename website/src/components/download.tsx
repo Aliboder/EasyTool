@@ -54,7 +54,7 @@ export function Download() {
                 下载 Windows 版
               </a>
               <p className="font-display text-xs text-zinc-400 dark:text-zinc-500">
-                v0.4.4 · 2026-08-20 发布 · NSIS 安装包 · 约 8 MB
+                v0.4.5 · 2026-08-21 发布 · NSIS 安装包 · 约 8 MB
               </p>
 
               <div className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-zinc-100/60 p-4 text-left dark:border-zinc-800 dark:bg-zinc-900">
