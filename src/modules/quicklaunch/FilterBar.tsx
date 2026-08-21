@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import {
   LayoutGrid,
-  List,
+  LayoutList,
   AppWindow,
   File,
   Folder,
@@ -71,13 +71,12 @@ export function FilterBar({
         />
       </div>
       <button
-        className={cn(
-          "rounded-md p-1.5 transition-colors text-muted-foreground hover:bg-accent/50"
-        )}
         onClick={() => onViewModeChange(viewMode === "grid" ? "list" : "grid")}
-        title={viewMode === "grid" ? "切换到列表视图" : "切换到网格视图"}
+        aria-label="切换视图"
+        title={viewMode === "grid" ? "切换到列表" : "切换到网格"}
+        className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
-        {viewMode === "grid" ? <List className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+        {viewMode === "grid" ? <LayoutList className="size-4" /> : <LayoutGrid className="size-4" />}
       </button>
     </div>
   );

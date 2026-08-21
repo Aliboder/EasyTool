@@ -284,7 +284,7 @@ export function QuicklaunchPage() {
         </Button>
       </div>
 
-      <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="快速启动设置">
+      <Drawer open={showSettings} onClose={() => { setShowSettings(false); loadConfig(); }} title="快速启动设置">
         <QuicklaunchSettings onRefresh={fetchItems} />
       </Drawer>
 

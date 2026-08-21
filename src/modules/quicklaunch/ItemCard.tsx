@@ -79,7 +79,7 @@ export function ItemCard({
     return (
       <div
         className={cn(
-          "group relative flex flex-col items-center justify-center gap-2 rounded-md border p-2 cursor-pointer transition-colors overflow-hidden",
+          "group relative flex flex-col items-center justify-center gap-1 rounded-md border p-2 cursor-pointer transition-colors min-h-0",
           selected
             ? "border-primary bg-accent"
             : "border-transparent hover:bg-accent/50"
@@ -88,15 +88,15 @@ export function ItemCard({
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
       >
-        <div className="flex items-center justify-center">
+        <div className="flex shrink-0 items-center justify-center">
           {item.icon_path ? (
             <img
               src={`data:image/png;base64,${item.icon_path}`}
-              className="h-10 w-10 object-contain"
+              className="h-8 w-8 object-contain"
               alt=""
             />
           ) : (
-            <Icon className="h-10 w-10 text-muted-foreground" />
+            <Icon className="h-8 w-8 text-muted-foreground" />
           )}
         </div>
         {isEditing ? (
@@ -106,12 +106,12 @@ export function ItemCard({
             onChange={(e) => setEditName(e.target.value)}
             onBlur={handleRename}
             onKeyDown={handleKeyDown}
-            className="w-full text-center text-xs bg-transparent border border-primary outline-none"
+            className="w-full min-w-0 text-center text-[10px] bg-transparent border border-primary outline-none truncate"
             autoFocus
           />
         ) : (
           <span
-            className="w-full truncate text-center text-xs"
+            className="w-full min-w-0 truncate text-center text-[10px] leading-tight"
             title={item.name}
           >
             {item.name}
