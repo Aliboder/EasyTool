@@ -17,6 +17,7 @@ interface ItemCardProps {
   item: QuicklaunchItem;
   viewMode: "grid" | "list";
   selected: boolean;
+  gridSize?: number;
   onSelect: (id: number) => void;
   onOpen: (item: QuicklaunchItem) => void;
   onDelete?: (id: number) => void;
@@ -35,6 +36,7 @@ export function ItemCard({
   item,
   viewMode,
   selected,
+  gridSize = 64,
   onSelect,
   onOpen,
   onDelete: _onDelete,
@@ -76,14 +78,16 @@ export function ItemCard({
   };
 
   if (viewMode === "grid") {
+    const iconSize = Math.max(gridSize * 0.5, 24);
     return (
       <div
         className={cn(
-          "group relative flex flex-col items-center justify-center gap-1 rounded-md border p-2 cursor-pointer transition-colors min-h-0",
+          "group relative flex flex-col items-center justify-center gap-1 rounded-md border cursor-pointer transition-colors min-h-0",
           selected
             ? "border-primary bg-accent"
             : "border-transparent hover:bg-accent/50"
         )}
+        style={{ padding: `${gridSize * 0.1}px` }}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
@@ -92,11 +96,12 @@ export function ItemCard({
           {item.icon_path ? (
             <img
               src={`data:image/png;base64,${item.icon_path}`}
-              className="h-8 w-8 object-contain"
+              className="object-contain"
+              style={{ width: iconSize, height: iconSize }}
               alt=""
             />
           ) : (
-            <Icon className="h-8 w-8 text-muted-foreground" />
+            <Icon className="text-muted-foreground" style={{ width: iconSize, height: iconSize }} />
           )}
         </div>
         {isEditing ? (
@@ -106,12 +111,14 @@ export function ItemCard({
             onChange={(e) => setEditName(e.target.value)}
             onBlur={handleRename}
             onKeyDown={handleKeyDown}
-            className="w-full min-w-0 text-center text-[10px] bg-transparent border border-primary outline-none truncate"
+            className="w-full min-w-0 text-center bg-transparent border border-primary outline-none truncate"
+            style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}
             autoFocus
           />
         ) : (
           <span
-            className="w-full min-w-0 truncate text-center text-[10px] leading-tight"
+            className="w-full min-w-0 truncate text-center leading-tight"
+            style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}
             title={item.name}
           >
             {item.name}

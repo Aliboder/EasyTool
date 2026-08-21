@@ -185,8 +185,10 @@ export function SearchSettings({
                   max={128}
                   step={4}
                   value={[s.gridSize]}
-                  onValueChange={([v]) => setS({ ...s, gridSize: v })}
-                  onValueCommit={([v]) => save({ gridSize: v })}
+                  onValueChange={([v]) => {
+                    setS({ ...s, gridSize: v });
+                    save({ gridSize: v });
+                  }}
                 />
                 <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                   {s.gridSize}px

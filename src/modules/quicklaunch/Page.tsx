@@ -448,6 +448,7 @@ export function QuicklaunchPage() {
                     <ItemCard
                       item={item}
                       viewMode="grid"
+                      gridSize={gridSize}
                       selected={selectedId === item.id}
                       onSelect={setSelectedId}
                       onOpen={handleOpen}
@@ -459,11 +460,14 @@ export function QuicklaunchPage() {
                 ))}
                 <button
                   className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
-                  style={{ height: `${gridSize}px` }}
+                  style={{
+                    height: `${gridSize}px`,
+                    padding: `${gridSize * 0.1}px`,
+                  }}
                   onClick={handleAddItem}
                 >
-                  <Plus className="h-6 w-6 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">添加</span>
+                  <Plus className="text-muted-foreground" style={{ width: gridSize * 0.5, height: gridSize * 0.5 }} />
+                  <span className="text-muted-foreground" style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}>添加</span>
                 </button>
               </div>
             </SortableContext>
