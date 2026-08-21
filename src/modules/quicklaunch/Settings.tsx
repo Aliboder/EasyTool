@@ -137,8 +137,10 @@ export function QuicklaunchSettings({ onRefresh, onSettingsChange }: Quicklaunch
                   max={96}
                   step={8}
                   value={[settings.grid_size]}
-                  onValueChange={([v]) => setSettings({ ...settings, grid_size: v })}
-                  onValueCommit={([v]) => saveSettings({ grid_size: v })}
+                  onValueChange={([v]) => {
+                    setSettings({ ...settings, grid_size: v });
+                    saveSettings({ grid_size: v });
+                  }}
                 />
                 <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                   {settings.grid_size}px
@@ -157,7 +159,11 @@ export function QuicklaunchSettings({ onRefresh, onSettingsChange }: Quicklaunch
           <SettingRow title="默认排序" hint="选择排序方式">
             <Select
               value={settings.sort_by}
-              onValueChange={(v) => saveSettings({ sort_by: v as "name" | "created_at" | "manual" })}
+              onValueChange={(v) => {
+                saveSettings({ sort_by: v as "name" | "created_at" | "manual" });
+                // 排序方式变化后需要重新加载数据
+                setTimeout(() => onRefresh?.(), 100);
+              }}
             >
               <SelectTrigger className="w-32">
                 <SelectValue />

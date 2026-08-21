@@ -907,6 +907,23 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
               打开所在位置
             </button>
           )}
+          {menu.item.kind === "files" && menu.item.preview && (
+            <button
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
+              onClick={async () => {
+                try {
+                  await invoke("quicklaunch_add_from_path", { path: menu.item.preview });
+                  toast("已固定到快速启动");
+                } catch (e) {
+                  toast(String(e));
+                }
+                setMenu(null);
+              }}
+            >
+              <Pin className="size-3.5" />
+              固定到快速启动
+            </button>
+          )}
           <button
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive hover:bg-accent"
             onClick={() => del(menu.item.id)}

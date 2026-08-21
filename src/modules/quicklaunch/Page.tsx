@@ -87,7 +87,7 @@ export function QuicklaunchPage() {
   });
   const [folders, setFolders] = useState<{ id: number; name: string }[]>([]);
   const [gridSize, setGridSize] = useState(64);
-  const [_sortBy, setSortBy] = useState<"manual" | "name" | "created_at">("manual");
+  const [sortBy, setSortBy] = useState<"manual" | "name" | "created_at">("manual");
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -108,31 +108,62 @@ export function QuicklaunchPage() {
     const newItems = arrayMove(items, oldIndex, newIndex);
     setItems(newItems);
 
+    // 保存手动排序顺序到缓存（用于排序记忆功能）
+    manualOrderRef.current = newItems.map((item) => item.id);
+
     // 保存排序到后端
     invoke("quicklaunch_sort_items", {
       itemIds: newItems.map((item) => item.id),
     }).catch(console.error);
   };
 
+  // 手动排序缓存（用于排序记忆功能）
+  const manualOrderRef = useRef<number[]>([]);
+
   const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      const filterOptions = {
-        item_type: filter === "all" ? null : filter,
-        search: search || null,
-        sort_by: "sort_order",
-        sort_desc: false,
-      };
-      const result = await invoke<QuicklaunchItem[]>("quicklaunch_list_items", {
-        filter: filterOptions,
-      });
-      setItems(result);
+      // 如果是手动排序且有缓存，使用缓存的顺序
+      if (sortBy === "manual" && manualOrderRef.current.length > 0) {
+        const filterOptions = {
+          item_type: filter === "all" ? null : filter,
+          search: search || null,
+          sort_by: "sort_order",
+          sort_desc: false,
+        };
+        const result = await invoke<QuicklaunchItem[]>("quicklaunch_list_items", {
+          filter: filterOptions,
+        });
+        // 按缓存顺序排序
+        const ordered = [...result].sort((a, b) => {
+          const aIdx = manualOrderRef.current.indexOf(a.id);
+          const bIdx = manualOrderRef.current.indexOf(b.id);
+          // 如果都不在缓存中，按 sort_order 排序
+          if (aIdx === -1 && bIdx === -1) return a.sort_order - b.sort_order;
+          // 如果只有一个在缓存中，缓存的排前面
+          if (aIdx === -1) return 1;
+          if (bIdx === -1) return -1;
+          return aIdx - bIdx;
+        });
+        setItems(ordered);
+      } else {
+        const filterOptions = {
+          item_type: filter === "all" ? null : filter,
+          search: search || null,
+          sort_by: sortBy === "manual" ? "sort_order" : sortBy,
+          sort_desc: false,
+        };
+        const result = await invoke<QuicklaunchItem[]>("quicklaunch_list_items", {
+          filter: filterOptions,
+        });
+        setItems(result);
+      }
     } catch (e) {
       console.error("Failed to fetch items:", e);
     } finally {
       setLoading(false);
     }
-  }, [filter, search]);
+  }, [filter, search, sortBy]);
 
   const fetchFolders = useCallback(async () => {
     try {
@@ -428,6 +459,7 @@ export function QuicklaunchPage() {
                 ))}
                 <button
                   className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
+                  style={{ height: `${gridSize}px` }}
                   onClick={handleAddItem}
                 >
                   <Plus className="h-6 w-6 text-muted-foreground" />
