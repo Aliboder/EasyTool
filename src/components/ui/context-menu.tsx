@@ -20,8 +20,7 @@ export function ContextMenu({
   className,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isReady, setIsReady] = useState(false);
+  const [adjustedPosition, setAdjustedPosition] = useState<{ x: number; y: number } | null>(null);
 
   // 点击外部关闭
   useEffect(() => {
@@ -55,16 +54,9 @@ export function ContextMenu({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [visible, onClose]);
 
-  // 当 visible 变化时，重置 ready 状态
+  // 菜单渲染到 DOM 后，计算实际位置
   useEffect(() => {
-    if (visible) {
-      setIsReady(false);
-    }
-  }, [visible]);
-
-  // 菜单渲染到 DOM 后，计算实际位置并显示
-  useEffect(() => {
-    if (visible && menuRef.current && !isReady) {
+    if (visible && menuRef.current) {
       const menuRect = menuRef.current.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
@@ -93,12 +85,14 @@ export function ContextMenu({
         newY = padding;
       }
 
-      setPosition({ x: newX, y: newY });
-      setIsReady(true);
+      setAdjustedPosition({ x: newX, y: newY });
     }
-  }, [visible, x, y, isReady]);
+  }, [visible, x, y]);
 
   if (!visible) return null;
+
+  // 使用调整后的位置，如果没有则使用原始位置
+  const position = adjustedPosition || { x, y };
 
   return createPortal(
     <div
@@ -107,11 +101,7 @@ export function ContextMenu({
         "fixed z-50 min-w-[180px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
         className
       )}
-      style={{
-        left: isReady ? position.x : -9999,
-        top: isReady ? position.y : -9999,
-        visibility: isReady ? "visible" : "hidden",
-      }}
+      style={{ left: position.x, top: position.y }}
     >
       {children}
     </div>,
