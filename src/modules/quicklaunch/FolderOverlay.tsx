@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Folder, X } from "lucide-react";
 import { ItemCard } from "./ItemCard";
 import type { QuicklaunchItem } from "./ItemCard";
 
@@ -85,47 +86,66 @@ export function FolderOverlay({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl animate-in fade-in-0 duration-200">
       <div
         ref={overlayRef}
         className={cn(
-          "relative rounded-2xl bg-background p-6 shadow-2xl",
-          "animate-in zoom-in-95 fade-in-0 duration-200"
+          "relative rounded-3xl bg-background/95 backdrop-blur-2xl p-8 shadow-2xl shadow-primary/10 border border-white/10",
+          "animate-in zoom-in-95 fade-in-0 duration-300"
         )}
         style={{
-          minWidth: `${expandedGridSize * cols + 48}px`,
+          minWidth: `${expandedGridSize * cols + 64}px`,
           maxWidth: "90vw",
         }}
       >
-        {/* 分组名称（可编辑） */}
-        <div className="mb-4 text-center">
-          {isEditing ? (
-            <input
-              type="text"
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              onBlur={handleRenameSubmit}
-              onKeyDown={handleKeyDown}
-              className="text-lg font-semibold text-center bg-transparent border-b border-primary outline-none"
-              autoFocus
-            />
-          ) : (
-            <h3
-              className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors"
-              onClick={() => {
-                setEditName(folderName);
-                setIsEditing(true);
-              }}
-              title="点击编辑名称"
-            >
-              {folderName}
-            </h3>
-          )}
+        {/* 关闭按钮 */}
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 rounded-full p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        {/* 分组标题 */}
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+            <Folder className="h-6 w-6 text-primary" />
+          </div>
+          <div className="text-center">
+            {isEditing ? (
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onBlur={handleRenameSubmit}
+                onKeyDown={handleKeyDown}
+                className="text-xl font-bold text-center bg-transparent border-b-2 border-primary outline-none"
+                autoFocus
+              />
+            ) : (
+              <h3
+                className="text-xl font-bold cursor-pointer hover:text-primary transition-colors"
+                onClick={() => {
+                  setEditName(folderName);
+                  setIsEditing(true);
+                }}
+                title="点击编辑名称"
+              >
+                {folderName}
+              </h3>
+            )}
+            <p className="text-sm text-muted-foreground mt-1">
+              {items.length} 个项目
+            </p>
+          </div>
         </div>
+
+        {/* 分隔线 */}
+        <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent mb-6" />
 
         {/* 子项目网格 */}
         <div
-          className="grid gap-2"
+          className="grid gap-3 justify-center"
           style={{
             gridTemplateColumns: `repeat(${cols}, ${expandedGridSize}px)`,
           }}
@@ -147,9 +167,11 @@ export function FolderOverlay({
           ))}
         </div>
 
-        {/* 关闭提示文字 */}
-        <div className="mt-4 text-center text-xs text-muted-foreground">
-          点击空白处可关闭
+        {/* 底部提示 */}
+        <div className="mt-6 pt-4 border-t border-border/50">
+          <p className="text-center text-xs text-muted-foreground">
+            点击空白处或按 <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">ESC</kbd> 关闭
+          </p>
         </div>
       </div>
     </div>
