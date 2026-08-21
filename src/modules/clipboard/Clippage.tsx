@@ -530,26 +530,28 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       }}
       onMouseEnter={() => setSelected(item.id)}
       className={cn(
-        "flex w-full cursor-pointer flex-col gap-1 rounded-lg border px-3 py-2 transition-colors",
+        "flex w-full cursor-pointer flex-col rounded-lg border px-3 py-2 transition-colors",
         selected === item.id
           ? "border-primary ring-2 ring-primary/40"
           : "border-border bg-card hover:border-accent",
       )}
     >
-      <div
-        className={cn(
-          "whitespace-pre-wrap break-words text-xs leading-relaxed",
-          LINE_CLAMP[textLines] ?? "line-clamp-2",
-        )}
-        title={item.full ?? item.preview}
-      >
-        {item.preview}
-      </div>
-      {showTimestamps && (
-        <div className="text-[10px] text-muted-foreground">
-          {fmtTime(item.created_at)}
+      <div className="flex gap-2">
+        <div
+          className={cn(
+            "min-w-0 flex-1 whitespace-pre-wrap break-words text-xs leading-relaxed",
+            LINE_CLAMP[textLines] ?? "line-clamp-2",
+          )}
+          title={item.full ?? item.preview}
+        >
+          {item.preview}
         </div>
-      )}
+        {showTimestamps && (
+          <div className="shrink-0 text-[10px] text-muted-foreground">
+            {fmtTime(item.created_at)}
+          </div>
+        )}
+      </div>
       <div className="flex items-center justify-end gap-0.5 text-muted-foreground">
         <button
           onClick={(e) => {
