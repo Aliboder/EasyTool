@@ -55,6 +55,7 @@ export function GroupCard({
       onDoubleClick={() => onOpen(id)}
       onContextMenu={(e) => {
         e.preventDefault();
+        e.stopPropagation();
         onContextMenu?.(e, id);
       }}
     >

@@ -60,6 +60,7 @@ export function ItemCard({
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     onContextMenu?.(e, item);
   };
 
