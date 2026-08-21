@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Reveal } from "./reveal";
 import { SectionHead } from "./section-head";
 import { RealMainWindow } from "./real-main-window";
@@ -7,67 +8,81 @@ import { RealQuotaSettings } from "./real-quota-settings";
 import { RealAppShell } from "./real-app-shell";
 import { RealQuicklaunch } from "./real-quicklaunch";
 
-const UI_ITEMS = [
-  { label: "主窗口 · 文件搜索", color: "text-emerald-400" },
-  { label: "剪贴板弹窗", color: "text-blue-400" },
-  { label: "快速启动面板", color: "text-violet-400" },
-  { label: "表情面板", color: "text-amber-400" },
-  { label: "额度设置", color: "text-cyan-400" },
-  { label: "App 外壳 · 底部导航", color: "text-zinc-400" },
+const MODULES = [
+  { id: "search", label: "文件搜索", desc: "Everything 引擎，输入即出结果", color: "text-emerald-400" },
+  { id: "clipboard", label: "剪贴板", desc: "历史记录，固定复制", color: "text-blue-400" },
+  { id: "quicklaunch", label: "快速启动", desc: "应用文件一键直达", color: "text-violet-400" },
+  { id: "emoji", label: "表情面板", desc: "1900+ 表情分类浏览", color: "text-amber-400" },
+  { id: "quota", label: "额度监控", desc: "多账户余额追踪", color: "text-cyan-400" },
+  { id: "shell", label: "App 外壳", desc: "底部导航模块切换", color: "text-zinc-400" },
 ];
 
 export function Screenshots() {
+  const [active, setActive] = useState(0);
+
+  const renderComponent = () => {
+    switch (MODULES[active].id) {
+      case "search": return <RealMainWindow />;
+      case "clipboard": return <RealClipboardPopup />;
+      case "quicklaunch": return <RealQuicklaunch />;
+      case "emoji": return <RealEmojiPopup />;
+      case "quota": return <RealQuotaSettings />;
+      case "shell": return <RealAppShell />;
+      default: return <RealMainWindow />;
+    }
+  };
+
   return (
     <section id="screenshots" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
         <SectionHead no="06" title="真实界面" sub="全部用代码还原——所见即所得。" />
       </Reveal>
 
-      {/* legend */}
-      <Reveal delay={0.05}>
-        <div className="mt-6 flex flex-wrap gap-3">
-          {UI_ITEMS.map((item) => (
-            <span key={item.label} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1 text-xs text-zinc-400">
-              <span className={`size-1.5 rounded-full ${item.color.replace("text-", "bg-")}`} />
-              {item.label}
-            </span>
-          ))}
+      <Reveal delay={0.08}>
+        <div className="mt-10 grid gap-8 lg:grid-cols-[220px_1fr]">
+          {/* left: module selector */}
+          <div className="space-y-2">
+            {MODULES.map((m, i) => (
+              <button
+                key={m.id}
+                onClick={() => setActive(i)}
+                className={`group flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-sm transition-all duration-200 ${
+                  i === active
+                    ? "bg-emerald-500/10 text-emerald-500 shadow-sm shadow-emerald-500/10 dark:text-emerald-400"
+                    : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300"
+                }`}
+              >
+                <div className={`absolute left-0 top-1/2 -translate-y-1/2 h-8 w-[3px] rounded-full bg-emerald-500 transition-all duration-200 ${i === active ? "opacity-100" : "opacity-0"}`} />
+                <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold transition-all ${
+                  i === active ? "bg-emerald-500/15 text-emerald-400" : "bg-white/5 text-zinc-500"
+                }`}>
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <div className="min-w-0">
+                  <span className="block truncate font-medium">{m.label}</span>
+                  <span className="block truncate text-[10px] text-zinc-600 dark:text-zinc-500">{m.desc}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* right: live component */}
+          <div className="min-h-[500px] overflow-hidden rounded-2xl border-2 border-white/10 bg-gradient-to-br from-white/[0.03] to-transparent p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className={`rounded-full px-2.5 py-1 font-display text-[10px] font-bold ${MODULES[active].color.replace("text-", "bg-")}/15 ${MODULES[active].color}`}>
+                  {String(active + 1).padStart(2, "0")}
+                </span>
+                <span className="font-display font-semibold">{MODULES[active].label}</span>
+              </div>
+              <span className="font-mono text-xs text-zinc-500">{active + 1}/{MODULES.length}</span>
+            </div>
+            <div className="flex justify-center">
+              {renderComponent()}
+            </div>
+          </div>
         </div>
       </Reveal>
-
-      {/* row 1: main window + clipboard popup */}
-      <div className="mt-8 grid grid-cols-1 items-center gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <Reveal>
-          <RealMainWindow />
-        </Reveal>
-        <Reveal delay={0.08}>
-          <div className="flex justify-center">
-            <RealClipboardPopup />
-          </div>
-        </Reveal>
-      </div>
-
-      {/* row 2: quicklaunch + emoji + quota settings */}
-      <div className="mt-6 grid grid-cols-1 items-start gap-6 md:grid-cols-3">
-        <Reveal delay={0.1}>
-          <RealQuicklaunch />
-        </Reveal>
-        <Reveal delay={0.15}>
-          <div className="flex justify-center">
-            <RealEmojiPopup />
-          </div>
-        </Reveal>
-        <Reveal delay={0.2}>
-          <RealQuotaSettings />
-        </Reveal>
-      </div>
-
-      {/* row 3: app shell */}
-      <div className="mt-6 flex justify-center">
-        <Reveal delay={0.25}>
-          <RealAppShell />
-        </Reveal>
-      </div>
     </section>
   );
 }
