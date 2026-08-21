@@ -20,6 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ItemCard, QuicklaunchItem } from "./ItemCard";
+import { GroupCard } from "./GroupCard";
 import { FilterBar, FilterType } from "./FilterBar";
 import { QuicklaunchSettings } from "./Settings";
 import { Drawer } from "@/components/ui/drawer";
@@ -71,8 +72,15 @@ function SortableItem({
   );
 }
 
+export interface FolderWithItems {
+  id: number;
+  name: string;
+  items: QuicklaunchItem[];
+}
+
 export function QuicklaunchPage() {
   const [items, setItems] = useState<QuicklaunchItem[]>([]);
+  const [foldersWithItems, setFoldersWithItems] = useState<FolderWithItems[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
@@ -197,10 +205,28 @@ export function QuicklaunchPage() {
         parentId: null,
       });
       setFolders(result);
+      
+      // 获取分组及其子项目
+      const foldersWithItemsResult = await invoke<[any, any[]][]>("quicklaunch_list_folders_with_items");
+      const foldersWithItemsData: FolderWithItems[] = foldersWithItemsResult.map(([folder, items]) => ({
+        id: folder.id,
+        name: folder.name,
+        items: items,
+      }));
+      setFoldersWithItems(foldersWithItemsData);
+      
+      // 加载子项目的图标
+      for (const folderData of foldersWithItemsResult) {
+        for (const item of folderData[1]) {
+          if (item.item_type !== "url") {
+            loadFileIcon(item.path);
+          }
+        }
+      }
     } catch (e) {
       console.error("Failed to fetch folders:", e);
     }
-  }, []);
+  }, [loadFileIcon]);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -469,6 +495,24 @@ export function QuicklaunchPage() {
                   gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
                 }}
               >
+                {/* 显示分组 */}
+                {foldersWithItems.map((folder) => (
+                  <div key={`folder-${folder.id}`}>
+                    <GroupCard
+                      id={folder.id}
+                      name={folder.name}
+                      items={folder.items}
+                      gridSize={gridSize}
+                      fileIcons={fileIcons}
+                      selected={selectedId === folder.id}
+                      onSelect={setSelectedId}
+                      onOpen={() => {/* TODO: 打开分组 */}}
+                      onContextMenu={() => {/* TODO: 分组右键菜单 */}}
+                    />
+                  </div>
+                ))}
+                
+                {/* 显示项目 */}
                 {items.map((item) => (
                   <SortableItem key={item.id} id={String(item.id)}>
                     <ItemCard

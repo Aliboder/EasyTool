@@ -784,6 +784,7 @@ pub fn run() {
             modules::quicklaunch::commands::quicklaunch_create_folder,
             modules::quicklaunch::commands::quicklaunch_get_folder,
             modules::quicklaunch::commands::quicklaunch_list_folders,
+            modules::quicklaunch::commands::quicklaunch_list_folders_with_items,
             modules::quicklaunch::commands::quicklaunch_update_folder,
             modules::quicklaunch::commands::quicklaunch_delete_folder,
             modules::quicklaunch::commands::quicklaunch_sort_folders,

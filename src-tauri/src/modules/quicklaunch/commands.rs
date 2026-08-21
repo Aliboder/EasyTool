@@ -92,6 +92,14 @@ pub fn quicklaunch_list_folders(
 }
 
 #[tauri::command]
+pub fn quicklaunch_list_folders_with_items(
+    state: State<'_, Mutex<QuicklaunchState>>,
+) -> CmdResult<Vec<(Folder, Vec<Item>)>> {
+    let st = state.lock().map_err(|e| format!("锁状态失败: {e}"))?;
+    st.db.list_folders_with_items()
+}
+
+#[tauri::command]
 pub fn quicklaunch_update_folder(
     state: State<'_, Mutex<QuicklaunchState>>,
     id: i64,

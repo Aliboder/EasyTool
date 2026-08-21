@@ -300,4 +300,56 @@ impl QuicklaunchDb {
         }
         Ok(())
     }
+    
+    /// 获取文件夹及其子项目（最多返回4个子项目用于预览）
+    pub fn get_folder_with_items(&self, folder_id: i64) -> Result<(Folder, Vec<Item>), String> {
+        let folder = self.get_folder(folder_id)?;
+        
+        let mut stmt = self.conn.prepare(
+            "SELECT id, type, name, path, icon_path, folder_id, sort_order, created_at 
+             FROM items WHERE folder_id = ?1 
+             ORDER BY sort_order ASC LIMIT 4"
+        ).map_err(|e| format!("准备查询失败: {e}"))?;
+        
+        let rows = stmt.query_map(params![folder_id], |row| {
+            let type_str: String = row.get(1)?;
+            let item_type = match type_str.as_str() {
+                "app" => ItemType::App,
+                "file" => ItemType::File,
+                "folder" => ItemType::Folder,
+                "url" => ItemType::Url,
+                _ => ItemType::File,
+            };
+            Ok(Item {
+                id: row.get(0)?,
+                item_type,
+                name: row.get(2)?,
+                path: row.get(3)?,
+                icon_path: row.get(4)?,
+                folder_id: row.get(5)?,
+                sort_order: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        }).map_err(|e| format!("查询失败: {e}"))?;
+        
+        let mut items = Vec::new();
+        for row in rows {
+            items.push(row.map_err(|e| format!("读取行失败: {e}"))?);
+        }
+        
+        Ok((folder, items))
+    }
+    
+    /// 获取所有分组及其子项目预览
+    pub fn list_folders_with_items(&self) -> Result<Vec<(Folder, Vec<Item>)>, String> {
+        let folders = self.list_folders(None)?;
+        let mut result = Vec::new();
+        
+        for folder in folders {
+            let items = self.get_folder_with_items(folder.id)?;
+            result.push(items);
+        }
+        
+        Ok(result)
+    }
 }
