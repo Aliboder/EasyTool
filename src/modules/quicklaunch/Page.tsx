@@ -660,16 +660,48 @@ export function QuicklaunchPage() {
           <>
             <ContextMenuItem
               label="打开"
-              onClick={() => {/* TODO: 打开分组 */}}
+              onClick={() => {
+                if (contextMenu.folderId) {
+                  setExpandedFolder(contextMenu.folderId);
+                }
+                setContextMenu((prev) => ({ ...prev, visible: false }));
+              }}
             />
             <ContextMenuItem
               label="重命名"
-              onClick={() => {/* TODO: 重命名分组 */}}
+              onClick={async () => {
+                if (contextMenu.folderId) {
+                  const folder = folders.find((f) => f.id === contextMenu.folderId);
+                  if (folder) {
+                    const newName = await prompt("重命名分组", { defaultValue: folder.name });
+                    if (newName && newName !== folder.name) {
+                      try {
+                        await invoke("quicklaunch_update_folder", { id: contextMenu.folderId, name: newName });
+                        fetchFolders();
+                      } catch (e) {
+                        console.error("Failed to rename folder:", e);
+                      }
+                    }
+                  }
+                }
+                setContextMenu((prev) => ({ ...prev, visible: false }));
+              }}
             />
             <ContextMenuDivider />
             <ContextMenuItem
               label="删除"
-              onClick={() => {/* TODO: 删除分组 */}}
+              onClick={async () => {
+                if (contextMenu.folderId) {
+                  try {
+                    await invoke("quicklaunch_delete_folder", { id: contextMenu.folderId });
+                    fetchFolders();
+                    fetchItems();
+                  } catch (e) {
+                    console.error("Failed to delete folder:", e);
+                  }
+                }
+                setContextMenu((prev) => ({ ...prev, visible: false }));
+              }}
               className="text-destructive"
             />
           </>
