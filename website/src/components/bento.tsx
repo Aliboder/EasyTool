@@ -43,7 +43,7 @@ function Card({
         className={`bento-card group flex h-full flex-col rounded-2xl border-2 p-6 transition-all ${
           accent
             ? "border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 to-transparent dark:from-emerald-500/10"
-            : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+            : "border-white/10 bg-gradient-to-br from-white/[0.03] to-transparent dark:from-white/[0.02]"
         }`}
       >
         <div className="relative z-10 flex items-center gap-3">
