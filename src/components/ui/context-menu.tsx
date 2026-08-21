@@ -20,7 +20,8 @@ export function ContextMenu({
   className,
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x, y });
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isPositionCalculated, setIsPositionCalculated] = useState(false);
 
   // 点击外部关闭
   useEffect(() => {
@@ -54,9 +55,16 @@ export function ContextMenu({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [visible, onClose]);
 
+  // 当 visible 或 x, y 变化时，重置位置计算状态
+  useEffect(() => {
+    if (visible) {
+      setIsPositionCalculated(false);
+    }
+  }, [visible, x, y]);
+
   // 菜单显示后，使用实际尺寸计算位置
   useEffect(() => {
-    if (visible && menuRef.current) {
+    if (visible && menuRef.current && !isPositionCalculated) {
       const menuRect = menuRef.current.getBoundingClientRect();
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
@@ -86,8 +94,12 @@ export function ContextMenu({
       }
 
       setPosition({ x: newX, y: newY });
+      setIsPositionCalculated(true);
     }
-  }, [visible, x, y]);
+  }, [visible, x, y, isPositionCalculated]);
+
+  // 初始位置：使用鼠标坐标（避免闪现）
+  const displayPosition = isPositionCalculated ? position : { x, y };
 
   if (!visible) return null;
 
@@ -98,7 +110,7 @@ export function ContextMenu({
         "fixed z-50 min-w-[180px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
         className
       )}
-      style={{ left: position.x, top: position.y }}
+      style={{ left: displayPosition.x, top: displayPosition.y }}
     >
       {children}
     </div>,
