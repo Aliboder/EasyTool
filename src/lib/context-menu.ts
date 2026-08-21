@@ -59,10 +59,10 @@ export function calculateMenuPosition(
  * @returns 预估的宽度和高度
  */
 export function estimateMenuSize(itemCount: number): { width: number; height: number } {
-  // 每个菜单项高度约 32px，加上 padding
-  const itemHeight = 32;
-  const padding = 8; // 上下 padding
-  const width = 180; // 菜单宽度
+  // 每个菜单项高度约 28px（py-1.5 = 6px*2 + text-sm = 14px + gap = 28px）
+  const itemHeight = 28;
+  const padding = 4; // 上下 padding（p-1 = 4px）
+  const width = 144; // min-w-36 = 144px
   
   return {
     width,
