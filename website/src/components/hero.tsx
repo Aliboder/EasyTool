@@ -9,7 +9,7 @@ export function Hero() {
   return (
     <section id="top" className="pt-16">
       <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6">
-        <div className="relative overflow-hidden border-2 border-zinc-900 bg-[radial-gradient(var(--dot)_1px,transparent_1px)] bg-[length:14px_14px] dark:border-zinc-100 dark:bg-[radial-gradient(var(--dot)_1px,transparent_1px)]">
+        <div className="relative overflow-hidden border-2 border-zinc-900 bg-[radial-gradient(var(--dot)_1px,transparent_1px)] bg-[length:14px_14px] dark:border-zinc-100">
           {/* masthead */}
           <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 font-display text-[11px] uppercase tracking-[0.2em] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
             <span className="flex items-center gap-2.5">
@@ -26,11 +26,12 @@ export function Hero() {
           <div className="grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
             {/* left: copy */}
             <div className="flex flex-col justify-center border-b border-zinc-200 px-6 py-12 sm:px-10 lg:border-b-0 lg:border-r lg:py-20 dark:border-zinc-800">
-              <h1 className="font-display text-5xl font-bold leading-[1.05] tracking-tight md:text-6xl lg:text-7xl">
-                一个
-                <span className="inline-block bg-emerald-500 px-2 py-0 text-white">热键</span>
-                ，<br className="hidden md:block" />
-                唤出整套效率工具
+              <h1 className="overflow-hidden font-display text-5xl font-bold leading-[1.05] tracking-tight md:text-6xl lg:text-7xl">
+                <span className="press-in block">一个</span>
+                <span className="press-in block">
+                  <span className="inline-block bg-emerald-500 px-2 text-white">热键</span>，
+                </span>
+                <span className="press-in block">唤出整套效率工具</span>
               </h1>
 
               <p className="mt-6 max-w-[42ch] text-[15px] leading-relaxed text-zinc-600 dark:text-zinc-400">
@@ -42,7 +43,7 @@ export function Hero() {
                   href={RELEASE}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex h-11 items-center gap-2 bg-emerald-500 px-6 font-medium text-zinc-950 transition-transform hover:bg-emerald-400 active:scale-[0.98]"
+                  className="btn-lift inline-flex h-11 items-center gap-2 bg-emerald-500 px-6 font-medium text-zinc-950"
                 >
                   <Download className="size-4" />
                   下载 Windows 版
@@ -51,7 +52,7 @@ export function Hero() {
                   href={REPO}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex h-11 items-center gap-2 border-2 border-zinc-900 px-6 font-medium transition-colors hover:bg-zinc-900 hover:text-white active:scale-[0.98] dark:border-zinc-100 dark:hover:bg-zinc-100 dark:hover:text-zinc-950"
+                  className="btn-lift inline-flex h-11 items-center gap-2 border-2 border-zinc-900 px-6 font-medium dark:border-zinc-100"
                 >
                   <Github className="size-4" />
                   查看源码

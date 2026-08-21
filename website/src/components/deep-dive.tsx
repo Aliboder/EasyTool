@@ -125,7 +125,7 @@ export function DeepDive() {
                 <h3 className="font-display text-xl font-semibold">{mod.tagline}</h3>
                 <ul className="mt-5 space-y-3">
                   {mod.features.map((f) => (
-                    <li key={f} className="flex gap-3 text-sm leading-relaxed">
+                    <li key={f} className="feat-row flex gap-3 rounded-lg px-3 py-2 text-sm leading-relaxed">
                       <Check className="mt-0.5 size-4 shrink-0 text-emerald-500" />
                       <span className="text-zinc-700 dark:text-zinc-300">{f}</span>
                     </li>

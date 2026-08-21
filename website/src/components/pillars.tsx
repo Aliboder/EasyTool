@@ -31,7 +31,7 @@ export function Pillars() {
         <div className="mt-10 divide-y divide-zinc-200 dark:divide-zinc-800">
           {PILLARS.map((p, i) => (
             <Reveal key={p.no} delay={i * 0.08}>
-              <div className="grid gap-3 py-8 md:grid-cols-[120px_240px_1fr] md:items-baseline md:gap-8">
+              <div className="feat-row grid gap-3 rounded-lg py-8 md:grid-cols-[120px_240px_1fr] md:items-baseline md:gap-8">
                 <span className="font-display text-4xl font-bold text-emerald-500/60 tabular-nums">
                   {p.no}
                 </span>

@@ -28,6 +28,13 @@ html {
   html {
     scroll-behavior: auto;
   }
+  .press-in,
+  .outline-num {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+  }
 }
 
 body {
@@ -38,6 +45,18 @@ body {
   @apply bg-emerald-500/25;
 }
 
+/* ---- grain overlay (film texture) ---- */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
+}
+
 /* ---- scroll progress bar ---- */
 .scroll-progress {
   position: fixed;
@@ -45,7 +64,7 @@ body {
   left: 0;
   z-index: 60;
   height: 2px;
-  background: var(--tw-gradient-stops, theme(colors.emerald.500));
+  background: theme(colors.emerald.500);
   transform-origin: left;
   will-change: transform;
 }
@@ -66,6 +85,19 @@ body {
   animation: ripple-out 0.55s ease-out forwards;
 }
 
+/* ---- button tactile lift ---- */
+.btn-lift {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-lift:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 2px 2px 0 theme(colors.emerald.500);
+}
+.btn-lift:active {
+  transform: translate(0, 0);
+  box-shadow: none;
+}
+
 /* ---- typing caret ---- */
 @keyframes caret-blink {
   50% { opacity: 0; }
@@ -80,6 +112,21 @@ body {
   animation: caret-blink 0.7s step-end infinite;
 }
 
+/* ---- hero press-in animation ---- */
+.press-in {
+  clip-path: inset(0 0 0 0);
+}
+@keyframes pressIn {
+  0% { transform: translateY(110%); }
+  100% { transform: translateY(0); }
+}
+.press-in {
+  transform: translateY(110%);
+  animation: pressIn 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.press-in:nth-child(2) { animation-delay: 0.1s; }
+.press-in:nth-child(3) { animation-delay: 0.2s; }
+
 /* ---- section outline number ---- */
 .outline-num {
   font-family: var(--font-display);
@@ -92,6 +139,24 @@ body {
 }
 .dark .outline-num {
   -webkit-text-stroke-color: theme(colors.zinc.700);
+}
+
+/* ---- bento card hover tilt ---- */
+.bento-card {
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.bento-card:hover {
+  transform: perspective(800px) rotateX(1deg) rotateY(-1deg) translateY(-2px);
+  border-color: theme(colors.emerald.500 / 0.3);
+  box-shadow: 0 8px 30px -8px theme(colors.emerald.500 / 0.1);
+}
+
+/* ---- feature row hover tint ---- */
+.feat-row {
+  transition: background 0.15s ease;
+}
+.feat-row:hover {
+  background: color-mix(in srgb, theme(colors.emerald.500) 5%, transparent);
 }
 
 /* ---- page boom (theme switch flash) ---- */
@@ -110,4 +175,32 @@ body.boom {
 }
 @keyframes toast-out {
   to { opacity: 0; transform: translateY(8px); }
+}
+
+/* ---- nav scrollspy underline ---- */
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  height: 2px;
+  width: 100%;
+  background: theme(colors.emerald.500);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.25s ease;
+}
+.nav-link:hover::after,
+.nav-link.active::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+.nav-link.active {
+  color: theme(colors.zinc.900);
+}
+.dark .nav-link.active {
+  color: theme(colors.zinc.100);
 }
