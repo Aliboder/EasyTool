@@ -33,6 +33,7 @@ export function QuicklaunchPage() {
     type: "panel",
   });
   const [folders, setFolders] = useState<{ id: number; name: string }[]>([]);
+  const [gridSize, setGridSize] = useState(64);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -67,10 +68,24 @@ export function QuicklaunchPage() {
     }
   }, []);
 
+  const loadConfig = useCallback(async () => {
+    try {
+      const config = await invoke<{ modules?: Record<string, Record<string, unknown>> }>("get_config");
+      const moduleConfig = config?.modules?.quicklaunch;
+      if (moduleConfig) {
+        if (moduleConfig.grid_size) setGridSize(moduleConfig.grid_size as number);
+        if (moduleConfig.view_mode) setViewMode(moduleConfig.view_mode as "grid" | "list");
+      }
+    } catch (e) {
+      console.error("Failed to load config:", e);
+    }
+  }, []);
+
   useEffect(() => {
     fetchItems();
     fetchFolders();
-  }, [fetchItems, fetchFolders]);
+    loadConfig();
+  }, [fetchItems, fetchFolders, loadConfig]);
 
   // 关闭右键菜单
   useEffect(() => {
@@ -303,7 +318,13 @@ export function QuicklaunchPage() {
             没有找到匹配的项目
           </div>
         ) : viewMode === "grid" ? (
-          <div className="grid grid-cols-6 gap-2">
+          <div
+            className="grid gap-2"
+            style={{
+              gridAutoRows: `${gridSize}px`,
+              gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
+            }}
+          >
             {items.map((item) => (
               <ItemCard
                 key={item.id}
@@ -317,6 +338,13 @@ export function QuicklaunchPage() {
                 onContextMenu={handleItemContextMenu}
               />
             ))}
+            <button
+              className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
+              onClick={handleAddItem}
+            >
+              <Plus className="h-6 w-6 text-muted-foreground" />
+              <span className="text-[10px] text-muted-foreground">添加</span>
+            </button>
           </div>
         ) : (
           <div className="flex flex-col">
@@ -333,6 +361,13 @@ export function QuicklaunchPage() {
                 onContextMenu={handleItemContextMenu}
               />
             ))}
+            <button
+              className="flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors hover:bg-accent/50 text-muted-foreground"
+              onClick={handleAddItem}
+            >
+              <Plus className="h-4 w-4" />
+              <span className="text-sm">添加项目</span>
+            </button>
           </div>
         )}
       </div>

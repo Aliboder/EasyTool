@@ -70,30 +70,15 @@ export function FilterBar({
           className="h-7 w-32 rounded-md border bg-transparent pl-7 pr-2 text-xs outline-none focus:w-48 focus:border-primary transition-all"
         />
       </div>
-      <div className="flex items-center gap-1">
-        <button
-          className={cn(
-            "rounded-md p-1.5 transition-colors",
-            viewMode === "grid"
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:bg-accent/50"
-          )}
-          onClick={() => onViewModeChange("grid")}
-        >
-          <LayoutGrid className="h-4 w-4" />
-        </button>
-        <button
-          className={cn(
-            "rounded-md p-1.5 transition-colors",
-            viewMode === "list"
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:bg-accent/50"
-          )}
-          onClick={() => onViewModeChange("list")}
-        >
-          <List className="h-4 w-4" />
-        </button>
-      </div>
+      <button
+        className={cn(
+          "rounded-md p-1.5 transition-colors text-muted-foreground hover:bg-accent/50"
+        )}
+        onClick={() => onViewModeChange(viewMode === "grid" ? "list" : "grid")}
+        title={viewMode === "grid" ? "切换到列表视图" : "切换到网格视图"}
+      >
+        {viewMode === "grid" ? <List className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+      </button>
     </div>
   );
 }

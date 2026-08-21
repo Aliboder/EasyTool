@@ -79,7 +79,7 @@ export function ItemCard({
     return (
       <div
         className={cn(
-          "group relative flex flex-col items-center justify-center gap-2 rounded-md border p-2 cursor-pointer transition-colors aspect-square",
+          "group relative flex flex-col items-center justify-center gap-2 rounded-md border p-2 cursor-pointer transition-colors overflow-hidden",
           selected
             ? "border-primary bg-accent"
             : "border-transparent hover:bg-accent/50"
