@@ -21,6 +21,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { ItemCard, QuicklaunchItem } from "./ItemCard";
 import { GroupCard } from "./GroupCard";
+import { FolderOverlay } from "./FolderOverlay";
 import { FilterBar, FilterType } from "./FilterBar";
 import { QuicklaunchSettings } from "./Settings";
 import { Drawer } from "@/components/ui/drawer";
@@ -252,7 +253,11 @@ export function QuicklaunchPage() {
 
   // 关闭右键菜单
   useEffect(() => {
-    const handleClick = () => setContextMenu((prev) => ({ ...prev, visible: false }));
+    const handleClick = (e: MouseEvent) => {
+      // 右键点击时不关闭菜单
+      if (e.button === 2) return;
+      setContextMenu((prev) => ({ ...prev, visible: false }));
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setContextMenu((prev) => ({ ...prev, visible: false }));
     };
@@ -435,9 +440,31 @@ export function QuicklaunchPage() {
     }
   };
 
+  // 获取当前展开的分组信息
+  const expandedFolderData = expandedFolder
+    ? foldersWithItems.find((f) => f.id === expandedFolder)
+    : null;
+
   return (
     <div className="relative flex h-full flex-col">
       {PromptDialog}
+      
+      {/* 分组展开覆盖层 */}
+      {expandedFolderData && (
+        <FolderOverlay
+          folderName={expandedFolderData.name}
+          items={expandedFolderData.items}
+          gridSize={gridSize}
+          fileIcons={fileIcons}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onOpen={handleOpen}
+          onDelete={handleDelete}
+          onRename={handleRename}
+          onContextMenu={handleItemContextMenu}
+          onClose={() => setExpandedFolder(null)}
+        />
+      )}
       <div className="flex items-center border-b px-2 py-1.5">
         <FilterBar
           filter={filter}
@@ -517,16 +544,11 @@ export function QuicklaunchPage() {
                       gridSize={gridSize}
                       fileIcons={fileIcons}
                       selected={selectedId === folder.id}
-                      expanded={expandedFolder === folder.id}
                       onSelect={(id) => {
-                        if (expandedFolder === id) {
-                          setExpandedFolder(null);
-                        } else {
-                          setExpandedFolder(id);
-                        }
+                        setExpandedFolder(id);
                       }}
                       onOpen={(id) => {
-                        setExpandedFolder(expandedFolder === id ? null : id);
+                        setExpandedFolder(id);
                       }}
                       onContextMenu={(e, id) => {
                         e.preventDefault();
@@ -539,32 +561,6 @@ export function QuicklaunchPage() {
                         });
                       }}
                     />
-                    {/* 展开时显示子项目 */}
-                    {expandedFolder === folder.id && folder.items.length > 0 && (
-                      <div
-                        className="grid gap-2 mt-2"
-                        style={{
-                          gridAutoRows: `${gridSize}px`,
-                          gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
-                        }}
-                      >
-                        {folder.items.map((item) => (
-                          <ItemCard
-                            key={item.id}
-                            item={item}
-                            viewMode="grid"
-                            gridSize={gridSize}
-                            icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                            selected={selectedId === item.id}
-                            onSelect={setSelectedId}
-                            onOpen={handleOpen}
-                            onDelete={handleDelete}
-                            onRename={handleRename}
-                            onContextMenu={handleItemContextMenu}
-                          />
-                        ))}
-                      </div>
-                    )}
                   </div>
                 ))}
                 
