@@ -55,11 +55,10 @@ export function ContextMenu({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [visible, onClose]);
 
-  // 当 visible 变化时，重置 ready 状态和位置
+  // 当 visible 变化时，重置 ready 状态
   useEffect(() => {
     if (visible) {
       setIsReady(false);
-      setPosition({ x: -9999, y: -9999 });
     }
   }, [visible]);
 
