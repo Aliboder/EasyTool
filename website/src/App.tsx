@@ -1,19 +1,23 @@
-import { Route, Routes } from "react-router-dom";
-import Layout from "@/components/layout";
-import Home from "@/pages/home";
-import ModulePage from "@/pages/module-page";
-import { modules } from "@/data/modules";
+import { Nav } from "./components/nav";
+import { Hero } from "./components/hero";
+import { Bento } from "./components/bento";
+import { Pillars } from "./components/pillars";
+import { Screenshots } from "./components/screenshots";
+import { VersionBar } from "./components/version-bar";
+import { Footer } from "./components/footer";
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Home />} />
-        {modules.map((m) => (
-          <Route key={m.id} path={m.path} element={<ModulePage module={m} />} />
-        ))}
-        <Route path="*" element={<Home />} />
-      </Route>
-    </Routes>
+    <>
+      <Nav />
+      <main>
+        <Hero />
+        <Bento />
+        <Pillars />
+        <Screenshots />
+        <VersionBar />
+      </main>
+      <Footer />
+    </>
   );
 }

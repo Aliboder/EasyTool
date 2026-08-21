@@ -621,3 +621,22 @@
 
 **相关代码**：...
 -->
+---
+
+## 2026-08-21
+
+### Playwright 测试「悬停才显示」的按钮：滚动打断 :hover + aria-label 随状态变化
+
+**问题描述**：用 Playwright 自动化验收新官网时，点击剪贴板迷你组件的「固定」按钮超时失败。两个坑叠加：① 按钮放在 `hidden group-hover:flex` 容器里，只有鼠标悬停所在行才可见；Playwright 的 click 在行动前会重新把元素滚到视口内，页面一滚鼠标坐标对应的行就变了，:hover 失效 → 按钮「不可见」无限重试。② 列表第一行默认处于已固定状态，该行按钮的 aria-label 是「取消固定」而不是「固定」，按初始状态写死的选择器根本匹配不到。
+
+**根本原因**：CSS :hover 是鼠标坐标和页面滚动的耦合产物，自动化中任何额外滚动都可能让它失效；aria-label 随交互状态变化的元素，「按当前状态猜标签」的选择器天然脆弱。
+
+**解决方案**：三步走——先 `scroll_into_view_if_needed()` 滚到位，再 `hover()` 建立悬停态，最后 `click(force=True)` 跳过可见性断言（click 事件照常触发 React handler）；选择器改用 `[aria-label*="固定"]` 模糊匹配，同时覆盖固定/取消固定两种状态。
+
+**教训**：
+1. 测 hover 才出现的控件：滚动 → 悬停 → force 点击，不要指望一次自带滚动的 click 能保住 :hover
+2. aria-label / 文案随状态变化的元素，测试选择器一律模糊匹配或加 data-testid
+3. 见到「element is not visible」重试循环，先查两件事：hover 被滚动打断、元素标签随状态变了
+
+**相关代码**：
+- `website/src/components/minis/clipboard.tsx` - group-hover 显隐的操作按钮

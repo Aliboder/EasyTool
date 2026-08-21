@@ -1,19 +1,26 @@
+import { motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
-import { useReveal } from "@/hooks/use-reveal";
 
-export default function Reveal({
+export function Reveal({
   children,
-  className = "",
-  as: Tag = "div",
+  delay = 0,
+  className,
 }: {
   children: ReactNode;
+  delay?: number;
   className?: string;
-  as?: "div" | "section" | "li" | "p" | "h2" | "h3";
 }) {
-  const ref = useReveal<HTMLDivElement>();
+  const reduce = useReducedMotion();
+
   return (
-    <Tag ref={ref as never} className={`reveal ${className}`}>
+    <motion.div
+      className={className}
+      initial={reduce ? false : { opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.3 }}
+      transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
+    >
       {children}
-    </Tag>
+    </motion.div>
   );
 }

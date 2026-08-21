@@ -43,7 +43,7 @@
 
 - 原地重建 `website/src`，保留 Vite/Tailwind v4/TS 骨架
 - 删 `react-router-dom`（单页不需要）；增 `@fontsource-variable/space-grotesk`；motion/lucide-react 复用
-- `vite.config.ts` base = `/EasyTool/`
+- `vite.config.ts` base 保持 `./`（相对路径同时兼容 GitHub Pages 子路径与本地 file:// 预览）
 - 新增 `.github/workflows/deploy.yml`：push main 自动发布 GitHub Pages
 - 验证：`npx tsc --noEmit` + `npm run build` 通过；用户本地 preview 亲自验收
 
