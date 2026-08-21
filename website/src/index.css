@@ -204,3 +204,24 @@ body.boom {
 .dark .nav-link.active {
   color: theme(colors.zinc.100);
 }
+
+/* ---- tech marquee ---- */
+@keyframes marquee-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-33.333%); }
+}
+.marquee {
+  animation: marquee-scroll 25s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee { animation: none; }
+}
+
+/* ---- floating animation ---- */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.float-anim {
+  animation: float 4s ease-in-out infinite;
+}

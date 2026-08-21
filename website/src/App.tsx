@@ -1,6 +1,7 @@
 import { Nav } from "./components/nav";
 import { Hero } from "./components/hero";
 import { StatsTicker } from "./components/stats-ticker";
+import { TechMarquee } from "./components/tech-marquee";
 import { Bento } from "./components/bento";
 import { DeepDive } from "./components/deep-dive";
 import { Hotkeys } from "./components/hotkeys";
@@ -24,6 +25,7 @@ export default function App() {
       <main>
         <Hero />
         <StatsTicker />
+        <TechMarquee />
         <Bento />
         <DeepDive />
         <Hotkeys />
