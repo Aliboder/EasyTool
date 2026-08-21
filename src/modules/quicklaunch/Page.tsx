@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
 import {
   DndContext,
   closestCenter,
@@ -27,10 +26,12 @@ import { FilterBar, FilterType } from "./FilterBar";
 import { QuicklaunchSettings } from "./Settings";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
+import { ContextMenu } from "@/components/ui/context-menu";
+import { ContextMenuItem } from "@/components/ui/context-menu-item";
+import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
 import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { cn } from "@/lib/utils";
-import { calculateMenuPositionFromElement } from "@/lib/context-menu";
 
 interface ContextMenuState {
   visible: boolean;
@@ -39,8 +40,6 @@ interface ContextMenuState {
   type: "panel" | "item" | "folder";
   item?: QuicklaunchItem;
   folderId?: number;
-  actualX?: number;
-  actualY?: number;
 }
 
 // 可排序的项目包装组件
@@ -106,7 +105,6 @@ export function QuicklaunchPage() {
   const [expandedFolder, setExpandedFolder] = useState<number | null>(null);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // 按需加载文件图标（与剪贴板模块一致）
   const loadFileIcon = useCallback(async (path: string) => {
@@ -259,35 +257,7 @@ export function QuicklaunchPage() {
     loadConfig();
   }, [fetchItems, fetchFolders, loadConfig]);
 
-  // 关闭右键菜单
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      // 右键点击时不关闭菜单
-      if (e.button === 2) return;
-      setContextMenu((prev) => ({ ...prev, visible: false }));
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setContextMenu((prev) => ({ ...prev, visible: false }));
-    };
-    window.addEventListener("click", handleClick);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("click", handleClick);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
 
-  // 菜单显示后，使用实际尺寸计算位置
-  useEffect(() => {
-    if (contextMenu.visible && contextMenuRef.current && contextMenu.actualX === undefined) {
-      const position = calculateMenuPositionFromElement(contextMenu.x, contextMenu.y, contextMenuRef.current);
-      setContextMenu((prev) => ({
-        ...prev,
-        actualX: position.x,
-        actualY: position.y,
-      }));
-    }
-  }, [contextMenu.visible, contextMenu.actualX, contextMenu.x, contextMenu.y]);
 
   const handleOpen = async (item: QuicklaunchItem) => {
     try {
@@ -659,141 +629,96 @@ export function QuicklaunchPage() {
       </div>
 
       {/* 右键菜单 */}
-      {contextMenu.visible && createPortal(
-        (() => {
-          // 使用实际位置（如果已计算）或初始位置
-          const x = contextMenu.actualX ?? contextMenu.x;
-          const y = contextMenu.actualY ?? contextMenu.y;
-          
-          return (
-            <div
-              ref={contextMenuRef}
-              className="fixed z-50 min-w-[180px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-              style={{ left: x, top: y }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {contextMenu.type === "panel" ? (
-                <>
+      <ContextMenu
+        visible={contextMenu.visible}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        onClose={() => setContextMenu((prev) => ({ ...prev, visible: false }))}
+      >
+        {contextMenu.type === "panel" ? (
+          <>
+            <ContextMenuItem
+              icon={<Plus className="h-4 w-4" />}
+              label="添加项目"
+              onClick={() => handleContextAction("add-item")}
+            />
+            <ContextMenuItem
+              icon={<FolderPlus className="h-4 w-4" />}
+              label="新建分组"
+              onClick={() => handleContextAction("add-folder")}
+            />
+            <ContextMenuItem
+              icon={<ClipboardPaste className="h-4 w-4" />}
+              label="粘贴路径"
+              onClick={() => handleContextAction("paste-path")}
+            />
+          </>
+        ) : contextMenu.type === "folder" ? (
+          <>
+            <ContextMenuItem
+              label="打开"
+              onClick={() => {/* TODO: 打开分组 */}}
+            />
+            <ContextMenuItem
+              label="重命名"
+              onClick={() => {/* TODO: 重命名分组 */}}
+            />
+            <ContextMenuDivider />
+            <ContextMenuItem
+              label="删除"
+              onClick={() => {/* TODO: 删除分组 */}}
+              className="text-destructive"
+            />
+          </>
+        ) : (
+          <>
+            <ContextMenuItem
+              label="打开"
+              onClick={() => handleContextAction("open")}
+            />
+            {contextMenu.item?.item_type === "app" && (
+              <ContextMenuItem
+                label="以管理员身份运行"
+                onClick={() => {/* TODO */}}
+              />
+            )}
+            <ContextMenuItem
+              label="打开文件所在位置"
+              onClick={() => handleContextAction("open-location")}
+            />
+            <ContextMenuDivider />
+            <ContextMenuItem
+              label="复制路径"
+              onClick={() => handleContextAction("copy-path")}
+            />
+            <ContextMenuItem
+              label="重命名"
+              onClick={() => handleContextAction("rename")}
+            />
+            <ContextMenuDivider />
+            {folders.length > 0 && contextMenu.item && (
+              <ContextMenuItem
+                label="移动到文件夹"
+                submenu
+              >
+                {folders.map((folder) => (
                   <ContextMenuItem
-                    icon={<Plus className="h-4 w-4" />}
-                    label="添加项目"
-                    onClick={() => handleContextAction("add-item")}
+                    key={folder.id}
+                    label={folder.name}
+                    onClick={() => handleMoveToFolder(contextMenu.item!.id, folder.id)}
                   />
-                  <ContextMenuItem
-                    icon={<FolderPlus className="h-4 w-4" />}
-                    label="新建分组"
-                    onClick={() => handleContextAction("add-folder")}
-                  />
-                  <ContextMenuItem
-                    icon={<ClipboardPaste className="h-4 w-4" />}
-                    label="粘贴路径"
-                    onClick={() => handleContextAction("paste-path")}
-                  />
-                </>
-              ) : contextMenu.type === "folder" ? (
-                <>
-                  <ContextMenuItem
-                    label="打开"
-                    onClick={() => {/* TODO: 打开分组 */}}
-                  />
-                  <ContextMenuItem
-                    label="重命名"
-                    onClick={() => {/* TODO: 重命名分组 */}}
-                  />
-                  <div className="my-1 h-px bg-border" />
-                  <ContextMenuItem
-                    label="删除"
-                    onClick={() => {/* TODO: 删除分组 */}}
-                    className="text-destructive"
-                  />
-                </>
-              ) : (
-                <>
-                  <ContextMenuItem
-                    label="打开"
-                    onClick={() => handleContextAction("open")}
-                  />
-                  {contextMenu.item?.item_type === "app" && (
-                    <ContextMenuItem
-                      label="以管理员身份运行"
-                      onClick={() => {/* TODO */}}
-                    />
-                  )}
-                  <ContextMenuItem
-                    label="打开文件所在位置"
-                    onClick={() => handleContextAction("open-location")}
-                  />
-                  <div className="my-1 h-px bg-border" />
-                  <ContextMenuItem
-                    label="复制路径"
-                    onClick={() => handleContextAction("copy-path")}
-                  />
-                  <ContextMenuItem
-                    label="重命名"
-                    onClick={() => handleContextAction("rename")}
-                  />
-                  <div className="my-1 h-px bg-border" />
-                  {folders.length > 0 && contextMenu.item && (
-                    <div className="relative group">
-                      <ContextMenuItem
-                        label="移动到文件夹"
-                        submenu
-                      />
-                      <div className="absolute left-full top-0 hidden min-w-[120px] rounded-md border bg-popover p-1 shadow-md group-hover:block">
-                        {folders.map((folder) => (
-                          <ContextMenuItem
-                            key={folder.id}
-                            label={folder.name}
-                            onClick={() => handleMoveToFolder(contextMenu.item!.id, folder.id)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="my-1 h-px bg-border" />
-                  <ContextMenuItem
-                    label="删除"
-                    onClick={() => handleContextAction("delete")}
-                    className="text-destructive"
-                  />
-                </>
-              )}
-            </div>
-          );
-        })(),
-        document.body
-      )}
+                ))}
+              </ContextMenuItem>
+            )}
+            <ContextMenuDivider />
+            <ContextMenuItem
+              label="删除"
+              onClick={() => handleContextAction("delete")}
+              className="text-destructive"
+            />
+          </>
+        )}
+      </ContextMenu>
     </div>
-  );
-}
-
-function ContextMenuItem({
-  icon,
-  label,
-  onClick,
-  className,
-  submenu,
-}: {
-  icon?: React.ReactNode;
-  label: string;
-  onClick?: () => void;
-  className?: string;
-  submenu?: boolean;
-}) {
-  return (
-    <button
-      className={cn(
-        "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground",
-        className
-      )}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick?.();
-      }}
-    >
-      {icon}
-      <span className="flex-1 text-left">{label}</span>
-      {submenu && <span className="text-muted-foreground">▶</span>}
-    </button>
   );
 }

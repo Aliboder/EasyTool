@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -29,7 +28,9 @@ import { toast } from "@/lib/toast";
 import { ClipSettings } from "./ClipSettings";
 import { LazyImage } from "@/components/LazyImage";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
-import { calculateMenuPositionFromElement } from "@/lib/context-menu";
+import { ContextMenu } from "@/components/ui/context-menu";
+import { ContextMenuItem } from "@/components/ui/context-menu-item";
+import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
 
 interface ItemDto {
   id: number;
@@ -111,7 +112,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; item: ItemDto; actualX?: number; actualY?: number } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; item: ItemDto } | null>(null);
   const [thumbs, setThumbs] = useState<Record<number, string>>({});
   const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
   const [fileThumbs, setFileThumbs] = useState<Record<string, string>>({});
@@ -125,7 +126,6 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
     showTimestamps: boolean;
   } | null>(null);
   const debounce = useRef<number | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
   const [preview, setPreview] = useState<{ src: string; name: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
@@ -197,39 +197,12 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
     load();
   }, [load]);
 
-  // 菜单显示后，使用实际尺寸计算位置
-  useEffect(() => {
-    if (menu && menuRef.current && menu.actualX === undefined) {
-      const position = calculateMenuPositionFromElement(menu.x, menu.y, menuRef.current);
-      setMenu((prev) => prev ? { ...prev, actualX: position.x, actualY: position.y } : null);
-    }
-  }, [menu]);
-
   useEffect(() => {
     const un = listen("clipboard://changed", () => load());
     return () => {
       un.then((fn) => fn());
     };
   }, [load]);
-
-  useEffect(() => {
-    if (menu) {
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key === "Escape") setMenu(null);
-      };
-      const onDown = (e: MouseEvent) => {
-        if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-          setMenu(null);
-        }
-      };
-      window.addEventListener("keydown", onKey);
-      window.addEventListener("mousedown", onDown);
-      return () => {
-        window.removeEventListener("keydown", onKey);
-        window.removeEventListener("mousedown", onDown);
-      };
-    }
-  }, [menu]);
 
   // 固定位置模式下：拖动弹窗后防抖保存位置（仅弹窗窗口）
   useEffect(() => {
@@ -868,92 +841,73 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       )}
         </>
 
-      {menu && createPortal(
-        (() => {
-          // 使用实际位置（如果已计算）或初始位置
-          const x = menu.actualX ?? menu.x;
-          const y = menu.actualY ?? menu.y;
-          
-          return (
-            <div
-              ref={menuRef}
-              className="fixed z-50 min-w-36 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-              style={{ left: x, top: y }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-                onClick={() => togglePin(menu.item.id, !menu.item.pinned)}
-              >
-                <Pin className="size-3.5" />
-                {menu.item.pinned ? "取消固定" : "固定"}
-              </button>
-              <button
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-                onClick={() => copy(menu.item.id)}
-              >
-                <Copy className="size-3.5" />
-                复制到剪贴板
-              </button>
-              {isImageItem(menu.item) && (
-                <button
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-                  onClick={() => addAsEmoji(menu.item)}
-                >
-                  <Smile className="size-3.5" />
-                  添加为表情
-                </button>
-              )}
-              {isImageItem(menu.item) && (
-                <button
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-                  onClick={() => viewImage(menu.item)}
-                >
-                  <Eye className="size-3.5" />
-                  查看大图
-                </button>
-              )}
-              {menu.item.kind === "files" && (
-                <button
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-                  onClick={() => {
-                    invoke("open_file_location", { path: menu.item.preview });
-                    setMenu(null);
-                  }}
-                >
-                  <FolderOpen className="size-3.5" />
-                  打开所在位置
-                </button>
-              )}
-              {menu.item.kind === "files" && menu.item.preview && (
-                <button
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-                  onClick={async () => {
-                    try {
-                      await invoke("quicklaunch_add_from_path", { path: menu.item.preview });
-                      toast("已固定到快速启动");
-                    } catch (e) {
-                      toast(String(e));
-                    }
-                    setMenu(null);
-                  }}
-                >
-                  <Pin className="size-3.5" />
-                  固定到快速启动
-                </button>
-              )}
-              <button
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive hover:bg-accent"
-                onClick={() => del(menu.item.id)}
-              >
-                <Trash2 className="size-3.5" />
-                删除
-              </button>
-            </div>
-          );
-        })(),
-        document.body
-      )}
+      <ContextMenu
+        visible={!!menu}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        onClose={() => setMenu(null)}
+      >
+        <ContextMenuItem
+          icon={<Pin className="size-3.5" />}
+          label={menu?.item.pinned ? "取消固定" : "固定"}
+          onClick={() => menu && togglePin(menu.item.id, !menu.item.pinned)}
+        />
+        <ContextMenuItem
+          icon={<Copy className="size-3.5" />}
+          label="复制到剪贴板"
+          onClick={() => menu && copy(menu.item.id)}
+        />
+        {menu?.item && isImageItem(menu.item) && (
+          <ContextMenuItem
+            icon={<Smile className="size-3.5" />}
+            label="添加为表情"
+            onClick={() => menu && addAsEmoji(menu.item)}
+          />
+        )}
+        {menu?.item && isImageItem(menu.item) && (
+          <ContextMenuItem
+            icon={<Eye className="size-3.5" />}
+            label="查看大图"
+            onClick={() => menu && viewImage(menu.item)}
+          />
+        )}
+        {menu?.item.kind === "files" && (
+          <ContextMenuItem
+            icon={<FolderOpen className="size-3.5" />}
+            label="打开所在位置"
+            onClick={() => {
+              if (menu) {
+                invoke("open_file_location", { path: menu.item.preview });
+                setMenu(null);
+              }
+            }}
+          />
+        )}
+        {menu?.item.kind === "files" && menu?.item.preview && (
+          <ContextMenuItem
+            icon={<Pin className="size-3.5" />}
+            label="固定到快速启动"
+            onClick={async () => {
+              if (menu) {
+                try {
+                  await invoke("quicklaunch_add_from_path", { path: menu.item.preview });
+                  toast("已固定到快速启动");
+                } catch (e) {
+                  toast(String(e));
+                }
+                setMenu(null);
+              }
+            }}
+          />
+        )}
+        <ContextMenuDivider />
+        <ContextMenuItem
+          icon={<Trash2 className="size-3.5" />}
+          label="删除"
+          onClick={() => menu && del(menu.item.id)}
+          className="text-destructive"
+        />
+      </ContextMenu>
 
       {preview && (
         <div
