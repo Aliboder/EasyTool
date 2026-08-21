@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { cn } from "@/lib/utils";
-import { calculateMenuPosition, estimateMenuSize } from "@/lib/context-menu";
+import { calculateMenuPositionFromElement } from "@/lib/context-menu";
 
 interface ContextMenuState {
   visible: boolean;
@@ -39,6 +39,8 @@ interface ContextMenuState {
   type: "panel" | "item" | "folder";
   item?: QuicklaunchItem;
   folderId?: number;
+  actualX?: number;
+  actualY?: number;
 }
 
 // 可排序的项目包装组件
@@ -104,6 +106,7 @@ export function QuicklaunchPage() {
   const [expandedFolder, setExpandedFolder] = useState<number | null>(null);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // 按需加载文件图标（与剪贴板模块一致）
   const loadFileIcon = useCallback(async (path: string) => {
@@ -273,6 +276,18 @@ export function QuicklaunchPage() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  // 菜单显示后，使用实际尺寸计算位置
+  useEffect(() => {
+    if (contextMenu.visible && contextMenuRef.current && contextMenu.actualX === undefined) {
+      const position = calculateMenuPositionFromElement(contextMenu.x, contextMenu.y, contextMenuRef.current);
+      setContextMenu((prev) => ({
+        ...prev,
+        actualX: position.x,
+        actualY: position.y,
+      }));
+    }
+  }, [contextMenu.visible, contextMenu.actualX, contextMenu.x, contextMenu.y]);
 
   const handleOpen = async (item: QuicklaunchItem) => {
     try {
@@ -646,16 +661,15 @@ export function QuicklaunchPage() {
       {/* 右键菜单 */}
       {contextMenu.visible && createPortal(
         (() => {
-          // 根据菜单类型预估菜单项数量
-          const itemCount = contextMenu.type === "panel" ? 3 : 
-                           contextMenu.type === "folder" ? 3 : 8;
-          const menuSize = estimateMenuSize(itemCount);
-          const position = calculateMenuPosition(contextMenu.x, contextMenu.y, menuSize.width, menuSize.height);
+          // 使用实际位置（如果已计算）或初始位置
+          const x = contextMenu.actualX ?? contextMenu.x;
+          const y = contextMenu.actualY ?? contextMenu.y;
           
           return (
             <div
+              ref={contextMenuRef}
               className="fixed z-50 min-w-[180px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-              style={{ left: position.x, top: position.y }}
+              style={{ left: x, top: y }}
               onClick={(e) => e.stopPropagation()}
             >
               {contextMenu.type === "panel" ? (

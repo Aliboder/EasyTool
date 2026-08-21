@@ -29,7 +29,7 @@ import { toast } from "@/lib/toast";
 import { ClipSettings } from "./ClipSettings";
 import { LazyImage } from "@/components/LazyImage";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
-import { calculateMenuPosition, estimateMenuSize } from "@/lib/context-menu";
+import { calculateMenuPositionFromElement } from "@/lib/context-menu";
 
 interface ItemDto {
   id: number;
@@ -111,7 +111,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; item: ItemDto } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; item: ItemDto; actualX?: number; actualY?: number } | null>(null);
   const [thumbs, setThumbs] = useState<Record<number, string>>({});
   const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
   const [fileThumbs, setFileThumbs] = useState<Record<string, string>>({});
@@ -196,6 +196,14 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // 菜单显示后，使用实际尺寸计算位置
+  useEffect(() => {
+    if (menu && menuRef.current && menu.actualX === undefined) {
+      const position = calculateMenuPositionFromElement(menu.x, menu.y, menuRef.current);
+      setMenu((prev) => prev ? { ...prev, actualX: position.x, actualY: position.y } : null);
+    }
+  }, [menu]);
 
   useEffect(() => {
     const un = listen("clipboard://changed", () => load());
@@ -862,14 +870,15 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
 
       {menu && createPortal(
         (() => {
-          const menuSize = estimateMenuSize(8);
-          const position = calculateMenuPosition(menu.x, menu.y, menuSize.width, menuSize.height);
+          // 使用实际位置（如果已计算）或初始位置
+          const x = menu.actualX ?? menu.x;
+          const y = menu.actualY ?? menu.y;
           
           return (
             <div
               ref={menuRef}
               className="fixed z-50 min-w-36 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-              style={{ left: position.x, top: position.y }}
+              style={{ left: x, top: y }}
               onClick={(e) => e.stopPropagation()}
             >
               <button
