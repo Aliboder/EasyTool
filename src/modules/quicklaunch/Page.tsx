@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { cn } from "@/lib/utils";
+import { calculateMenuPosition, estimateMenuSize } from "@/lib/context-menu";
 
 interface ContextMenuState {
   visible: boolean;
@@ -642,12 +643,19 @@ export function QuicklaunchPage() {
       </div>
 
       {/* 右键菜单 */}
-      {contextMenu.visible && (
-        <div
-          className="fixed z-50 min-w-[180px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
+      {contextMenu.visible && (() => {
+        // 根据菜单类型预估菜单项数量
+        const itemCount = contextMenu.type === "panel" ? 3 : 
+                         contextMenu.type === "folder" ? 3 : 8;
+        const menuSize = estimateMenuSize(itemCount);
+        const position = calculateMenuPosition(contextMenu.x, contextMenu.y, menuSize.width, menuSize.height);
+        
+        return (
+          <div
+            className="fixed z-50 min-w-[180px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+            style={{ left: position.x, top: position.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
           {contextMenu.type === "panel" ? (
             <>
               <ContextMenuItem
@@ -735,7 +743,8 @@ export function QuicklaunchPage() {
             </>
           )}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

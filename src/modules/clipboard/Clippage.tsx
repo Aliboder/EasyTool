@@ -28,6 +28,7 @@ import { toast } from "@/lib/toast";
 import { ClipSettings } from "./ClipSettings";
 import { LazyImage } from "@/components/LazyImage";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
+import { calculateMenuPosition, estimateMenuSize } from "@/lib/context-menu";
 
 interface ItemDto {
   id: number;
@@ -858,13 +859,17 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       )}
         </>
 
-      {menu && (
-        <div
-          ref={menuRef}
-          className="fixed z-50 min-w-36 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-          style={{ left: menu.x, top: menu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
+      {menu && (() => {
+        const menuSize = estimateMenuSize(8); // 预估菜单项数量
+        const position = calculateMenuPosition(menu.x, menu.y, menuSize.width, menuSize.height);
+        
+        return (
+          <div
+            ref={menuRef}
+            className="fixed z-50 min-w-36 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+            style={{ left: position.x, top: position.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
           <button
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
             onClick={() => togglePin(menu.item.id, !menu.item.pinned)}
@@ -934,7 +939,8 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
             删除
           </button>
         </div>
-      )}
+        );
+      })()}
 
       {preview && (
         <div
