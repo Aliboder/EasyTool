@@ -575,6 +575,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         popup && "animate-in fade-in-0 duration-150",
       )}
       onKeyDown={onKeyDown}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <div className="flex items-center gap-2 border-b p-2">
         <Search className="size-4 shrink-0 text-muted-foreground" />

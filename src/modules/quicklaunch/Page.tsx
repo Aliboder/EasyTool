@@ -446,7 +446,10 @@ export function QuicklaunchPage() {
     : null;
 
   return (
-    <div className="relative flex h-full flex-col">
+    <div 
+      className="relative flex h-full flex-col"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {PromptDialog}
       
       {/* 分组展开覆盖层 */}

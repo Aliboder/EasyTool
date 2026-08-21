@@ -7,9 +7,14 @@ import {
   FolderPlus,
   Trash2,
   Settings2,
+  Copy,
+  Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Drawer } from "@/components/ui/drawer";
+import { ContextMenu } from "@/components/ui/context-menu";
+import { ContextMenuItem } from "@/components/ui/context-menu-item";
+import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
 import { EmojiSettings } from "./Settings";
 import { loadCatalog, type Catalog, type GroupDto } from "./api";
 import { SmartEmoji } from "./SmartEmoji";
@@ -51,6 +56,14 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
   const listLenRef = useRef(0);
   const lastLoadRef = useRef(0);
   const { prompt, PromptDialog } = usePrompt();
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    type: "emoji" | "custom";
+    emoji?: string;
+    customId?: number;
+  }>({ visible: false, x: 0, y: 0, type: "emoji" });
 
   // 切换分类/搜索时：重置渲染批次（列表容器用 key 强制重建，滚动位置自然归零）
   useEffect(() => {
@@ -183,7 +196,10 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
   listLenRef.current = Math.max(visibleEmoji.length, visibleCustoms.length);
 
   return (
-    <div className="relative flex h-full flex-col p-4">
+    <div 
+      className="relative flex h-full flex-col p-4"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {PromptDialog}
       <>
       <div className="flex items-center gap-2 border-b pb-3">
@@ -279,6 +295,16 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
                 key={e.char}
                 title={`${e.name_en}`}
                 onClick={() => onPick("emoji", e.char)}
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  setContextMenu({
+                    visible: true,
+                    x: ev.clientX,
+                    y: ev.clientY,
+                    type: "emoji",
+                    emoji: e.char,
+                  });
+                }}
                 className="flex size-9 items-center justify-center rounded-md text-2xl hover:bg-accent"
               >
                 <SmartEmoji char={e.char} code={e.code} size={28} />
@@ -292,6 +318,16 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
               <div key={c.id} className="group relative">
                 <button
                   onClick={() => onPick("custom", String(c.id))}
+                  onContextMenu={(ev) => {
+                    ev.preventDefault();
+                    setContextMenu({
+                      visible: true,
+                      x: ev.clientX,
+                      y: ev.clientY,
+                      type: "custom",
+                      customId: c.id,
+                    });
+                  }}
                   className="flex size-14 items-center justify-center overflow-hidden rounded-md border hover:border-primary"
                 >
                   {c.thumb ? (
@@ -323,6 +359,60 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
         )}
       </div>
         </>
+
+      <ContextMenu
+        visible={contextMenu.visible}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        onClose={() => setContextMenu((prev) => ({ ...prev, visible: false }))}
+      >
+        {contextMenu.type === "emoji" && contextMenu.emoji && (
+          <>
+            <ContextMenuItem
+              icon={<Copy className="size-3.5" />}
+              label="复制表情"
+              onClick={() => {
+                navigator.clipboard.writeText(contextMenu.emoji!);
+                toast("已复制到剪贴板");
+                setContextMenu((prev) => ({ ...prev, visible: false }));
+              }}
+            />
+          </>
+        )}
+        {contextMenu.type === "custom" && contextMenu.customId && (
+          <>
+            <ContextMenuItem
+              icon={<Copy className="size-3.5" />}
+              label="复制表情"
+              onClick={() => {
+                // TODO: 复制自定义表情
+                setContextMenu((prev) => ({ ...prev, visible: false }));
+              }}
+            />
+            <ContextMenuItem
+              icon={<Star className="size-3.5" />}
+              label="添加到收藏"
+              onClick={() => {
+                // TODO: 添加到收藏
+                setContextMenu((prev) => ({ ...prev, visible: false }));
+              }}
+            />
+            <ContextMenuDivider />
+            <ContextMenuItem
+              icon={<Trash2 className="size-3.5" />}
+              label="删除"
+              onClick={async () => {
+                if (contextMenu.customId) {
+                  await invoke("delete_custom_emoji", { id: contextMenu.customId });
+                  await refreshCustom();
+                }
+                setContextMenu((prev) => ({ ...prev, visible: false }));
+              }}
+              className="text-destructive"
+            />
+          </>
+        )}
+      </ContextMenu>
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="表情设置">
         <EmojiSettings onRefresh={load} />
