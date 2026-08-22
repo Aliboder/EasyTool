@@ -28,12 +28,13 @@ export function EmojiSettings({ onRefresh }: { onRefresh: () => void }) {
   const save = async (
     patch: Partial<{ hotkey: string; click_action: string; follow_mouse: boolean; emoji_grid_size: number; custom_grid_size: number }>,
   ) => {
+    // 注意：Tauri v2 命令参数 JS 侧必须用 camelCase
     await invoke("save_emoji_settings", {
       hotkey: patch.hotkey ?? hotkey,
-      click_action: patch.click_action ?? action,
-      follow_mouse: patch.follow_mouse ?? followMouse,
-      emoji_grid_size: patch.emoji_grid_size ?? emojiGridSize,
-      custom_grid_size: patch.custom_grid_size ?? customGridSize,
+      clickAction: patch.click_action ?? action,
+      followMouse: patch.follow_mouse ?? followMouse,
+      emojiGridSize: patch.emoji_grid_size ?? emojiGridSize,
+      customGridSize: patch.custom_grid_size ?? customGridSize,
     });
     onRefresh();
   };
