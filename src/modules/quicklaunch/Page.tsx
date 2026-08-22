@@ -525,8 +525,18 @@ export function QuicklaunchPage() {
     });
   };
 
+  // 获取要操作的项目列表（优先使用多选，否则使用右键点击的项目）
+  const getTargetItems = (): QuicklaunchItem[] => {
+    if (selectedIds.size > 0) {
+      // 有多选项目时，操作所有选中的项目
+      return items.filter((item) => selectedIds.has(item.id));
+    }
+    // 否则只操作右键点击的项目
+    return contextMenu.item ? [contextMenu.item] : [];
+  };
+
   const handleContextAction = async (action: string) => {
-    const { item } = contextMenu;
+    const targetItems = getTargetItems();
     setContextMenu((prev) => ({ ...prev, visible: false }));
 
     switch (action) {
@@ -540,31 +550,35 @@ export function QuicklaunchPage() {
         handlePastePath();
         break;
       case "open":
-        if (item) handleOpen(item);
+        for (const item of targetItems) {
+          handleOpen(item);
+        }
         break;
       case "open-location":
-        if (item) {
+        for (const item of targetItems) {
           await invoke("search_open_file_location", { path: item.path });
         }
         break;
       case "copy-path":
-        if (item) {
+        for (const item of targetItems) {
           await invoke("search_copy_path", { path: item.path });
         }
         break;
       case "rename":
-        if (item) {
-          const newName = await prompt("重命名", { defaultValue: item.name });
-          if (newName && newName !== item.name) {
-            handleRename(item.id, newName);
+        if (targetItems.length === 1) {
+          const newName = await prompt("重命名", { defaultValue: targetItems[0].name });
+          if (newName && newName !== targetItems[0].name) {
+            handleRename(targetItems[0].id, newName);
           }
         }
         break;
       case "move-to-folder":
-        // 移动功能通过子菜单处理，这里不需要额外操作
+        // 移动功能通过子菜单处理
         break;
       case "delete":
-        if (item) handleDelete(item.id);
+        for (const item of targetItems) {
+          await handleDelete(item.id);
+        }
         break;
     }
   };
@@ -632,7 +646,10 @@ export function QuicklaunchPage() {
 
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto p-2 relative"
+        className={cn(
+          "flex-1 overflow-auto p-2 relative select-none",
+          isSelecting && "cursor-crosshair"
+        )}
         onContextMenu={handlePanelContextMenu}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -873,7 +890,7 @@ export function QuicklaunchPage() {
               onClick={() => handleContextAction("rename")}
             />
             <ContextMenuDivider />
-            {folders.length > 0 && contextMenu.item && (
+            {folders.length > 0 && getTargetItems().length > 0 && (
               <ContextMenuItem
                 label="移动到文件夹"
                 submenu
@@ -882,7 +899,11 @@ export function QuicklaunchPage() {
                   <ContextMenuItem
                     key={folder.id}
                     label={folder.name}
-                    onClick={() => handleMoveToFolder(contextMenu.item!.id, folder.id)}
+                    onClick={() => {
+                      for (const item of getTargetItems()) {
+                        handleMoveToFolder(item.id, folder.id);
+                      }
+                    }}
                   />
                 ))}
               </ContextMenuItem>
