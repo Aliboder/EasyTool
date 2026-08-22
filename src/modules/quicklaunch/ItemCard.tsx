@@ -20,7 +20,7 @@ interface ItemCardProps {
   gridSize?: number;
   icon?: string | null;
   showExtension?: boolean;
-  onSelect: (id: number) => void;
+  onSelect: (id: number, e?: React.MouseEvent) => void;
   onOpen: (item: QuicklaunchItem) => void;
   onDelete?: (id: number) => void;
   onRename: (id: number, name: string) => void;
@@ -62,8 +62,8 @@ export function ItemCard({
 
   const Icon = typeIcons[item.item_type];
 
-  const handleClick = () => {
-    onSelect(item.id);
+  const handleClick = (e: React.MouseEvent) => {
+    onSelect(item.id, e);
   };
 
   const handleDoubleClick = () => {

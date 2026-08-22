@@ -90,7 +90,7 @@ export function QuicklaunchPage() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
@@ -107,6 +107,11 @@ export function QuicklaunchPage() {
   const [showExtension, setShowExtension] = useState(true);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // 框选状态
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
+  const [selectionEnd, setSelectionEnd] = useState<{ x: number; y: number } | null>(null);
 
   // 按需加载文件图标（与剪贴板模块一致）
   const loadFileIcon = useCallback(async (path: string) => {
@@ -285,6 +290,103 @@ export function QuicklaunchPage() {
       fetchItems();
     } catch (e) {
       console.error("Failed to rename item:", e);
+    }
+  };
+
+  // 键盘事件处理
+  const handleKeyDown = (_e: React.KeyboardEvent) => {
+    // 可以在这里添加其他键盘快捷键处理
+  };
+
+  const handleKeyUp = (_e: React.KeyboardEvent) => {
+    // 可以在这里添加其他键盘快捷键处理
+  };
+
+  // 鼠标按下事件（开始框选）
+  const handleMouseDown = (e: React.MouseEvent) => {
+    // 只在左键点击空白区域时开始框选
+    if (e.button !== 0) return;
+    if (e.target !== containerRef.current) return;
+    
+    setIsSelecting(true);
+    setSelectionStart({ x: e.clientX, y: e.clientY });
+    setSelectionEnd({ x: e.clientX, y: e.clientY });
+    
+    // 如果没有按住 Ctrl，清空选中
+    if (!e.ctrlKey) {
+      setSelectedIds(new Set());
+    }
+  };
+
+  // 鼠标移动事件（更新框选区域）
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isSelecting) return;
+    setSelectionEnd({ x: e.clientX, y: e.clientY });
+  };
+
+  // 鼠标抬起事件（结束框选，选中框内项目）
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (!isSelecting) return;
+    setIsSelecting(false);
+    
+    if (!selectionStart || !selectionEnd) return;
+    
+    // 计算框选区域
+    const minX = Math.min(selectionStart.x, selectionEnd.x);
+    const maxX = Math.max(selectionStart.x, selectionEnd.x);
+    const minY = Math.min(selectionStart.y, selectionEnd.y);
+    const maxY = Math.max(selectionStart.y, selectionEnd.y);
+    
+    // 如果框选区域太小，视为点击
+    if (maxX - minX < 5 && maxY - minY < 5) {
+      setSelectionStart(null);
+      setSelectionEnd(null);
+      return;
+    }
+    
+    // 找到框选区域内的项目
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const newSelectedIds = new Set(e.ctrlKey ? selectedIds : []);
+    
+    const itemElements = container.querySelectorAll("[data-item-id]");
+    itemElements.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      const itemId = Number(el.getAttribute("data-item-id"));
+      
+      // 检查元素是否在框选区域内
+      if (
+        rect.left < maxX &&
+        rect.right > minX &&
+        rect.top < maxY &&
+        rect.bottom > minY
+      ) {
+        newSelectedIds.add(itemId);
+      }
+    });
+    
+    setSelectedIds(newSelectedIds);
+    setSelectionStart(null);
+    setSelectionEnd(null);
+  };
+
+  // 项目点击事件（支持 Ctrl 多选）
+  const handleItemSelect = (id: number, e?: React.MouseEvent) => {
+    if (e?.ctrlKey) {
+      // Ctrl + 点击：追加/移除选中
+      setSelectedIds((prev) => {
+        const newSet = new Set(prev);
+        if (newSet.has(id)) {
+          newSet.delete(id);
+        } else {
+          newSet.add(id);
+        }
+        return newSet;
+      });
+    } else {
+      // 普通点击：只选中当前项目
+      setSelectedIds(new Set([id]));
     }
   };
 
@@ -486,9 +588,9 @@ export function QuicklaunchPage() {
           items={expandedFolderData.items}
           gridSize={gridSize}
           fileIcons={fileIcons}
-          selectedId={selectedId}
+          selectedId={selectedIds.size > 0 ? Array.from(selectedIds)[0] : null}
           anchorPosition={contextMenu.folderPosition}
-          onSelect={setSelectedId}
+          onSelect={(id) => setSelectedIds(id ? new Set([id]) : new Set())}
           onOpen={handleOpen}
           onDelete={handleDelete}
           onRename={handleRename}
@@ -530,8 +632,13 @@ export function QuicklaunchPage() {
 
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto p-2"
+        className="flex-1 overflow-auto p-2 relative"
         onContextMenu={handlePanelContextMenu}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onKeyDown={handleKeyDown}
+        onKeyUp={handleKeyUp}
       >
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -567,14 +674,14 @@ export function QuicklaunchPage() {
               >
                 {/* 显示分组 */}
                 {foldersWithItems.map((folder) => (
-                  <div key={`folder-${folder.id}`}>
+                  <div key={`folder-${folder.id}`} data-item-id={folder.id}>
                     <GroupCard
                       id={folder.id}
                       name={folder.name}
                       items={folder.items}
                       gridSize={gridSize}
                       fileIcons={fileIcons}
-                      selected={selectedId === folder.id}
+                      selected={selectedIds.has(folder.id)}
                       onSelect={(id) => {
                         setExpandedFolder(id);
                       }}
@@ -600,19 +707,21 @@ export function QuicklaunchPage() {
                 {/* 显示项目 */}
                 {items.map((item) => (
                   <SortableItem key={item.id} id={String(item.id)}>
-                    <ItemCard
-                      item={item}
-                      viewMode="grid"
-                      gridSize={gridSize}
-                      icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                      showExtension={showExtension}
-                      selected={selectedId === item.id}
-                      onSelect={setSelectedId}
-                      onOpen={handleOpen}
-                      onDelete={handleDelete}
-                      onRename={handleRename}
-                      onContextMenu={handleItemContextMenu}
-                    />
+                    <div data-item-id={item.id}>
+                      <ItemCard
+                        item={item}
+                        viewMode="grid"
+                        gridSize={gridSize}
+                        icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                        showExtension={showExtension}
+                        selected={selectedIds.has(item.id)}
+                        onSelect={(id, e) => handleItemSelect(id, e)}
+                        onOpen={handleOpen}
+                        onDelete={handleDelete}
+                        onRename={handleRename}
+                        onContextMenu={handleItemContextMenu}
+                      />
+                    </div>
                   </SortableItem>
                 ))}
                 <button
@@ -635,18 +744,20 @@ export function QuicklaunchPage() {
               <div className="flex flex-col">
                 {items.map((item) => (
                   <SortableItem key={item.id} id={String(item.id)}>
-                    <ItemCard
-                      item={item}
-                      viewMode="list"
-                      icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                      showExtension={showExtension}
-                      selected={selectedId === item.id}
-                      onSelect={setSelectedId}
-                      onOpen={handleOpen}
-                      onDelete={handleDelete}
-                      onRename={handleRename}
-                      onContextMenu={handleItemContextMenu}
-                    />
+                    <div data-item-id={item.id}>
+                      <ItemCard
+                        item={item}
+                        viewMode="list"
+                        icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                        showExtension={showExtension}
+                        selected={selectedIds.has(item.id)}
+                        onSelect={(id, e) => handleItemSelect(id, e)}
+                        onOpen={handleOpen}
+                        onDelete={handleDelete}
+                        onRename={handleRename}
+                        onContextMenu={handleItemContextMenu}
+                      />
+                    </div>
                   </SortableItem>
                 ))}
                 <button
@@ -785,6 +896,19 @@ export function QuicklaunchPage() {
           </>
         )}
       </ContextMenu>
+
+      {/* 框选框 */}
+      {isSelecting && selectionStart && selectionEnd && (
+        <div
+          className="fixed border border-primary/50 bg-primary/10 pointer-events-none z-40"
+          style={{
+            left: Math.min(selectionStart.x, selectionEnd.x),
+            top: Math.min(selectionStart.y, selectionEnd.y),
+            width: Math.abs(selectionEnd.x - selectionStart.x),
+            height: Math.abs(selectionEnd.y - selectionStart.y),
+          }}
+        />
+      )}
     </div>
   );
 }
