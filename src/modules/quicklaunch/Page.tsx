@@ -353,20 +353,26 @@ export function QuicklaunchPage() {
   // 文件拖拽处理（使用 Tauri 的 onDragDropEvent API）
   // 文件拖拽处理
   useEffect(() => {
+    let lastDropTime = 0;
     const setupDragDrop = async () => {
       const { listen } = await import("@tauri-apps/api/event");
       const unlisten = await listen<{ type: string; paths: string[] }>(
         "tauri://drag-drop",
         (event) => {
-          console.log("Drag drop event:", event.payload);
           if (event.payload.type === "drop") {
+            const now = Date.now();
+            // 去重：500ms 内的重复事件忽略
+            if (now - lastDropTime < 500) {
+              console.log("Ignoring duplicate drop event");
+              return;
+            }
+            lastDropTime = now;
+
             const paths = event.payload.paths;
-            console.log("Dropped paths:", paths);
-            for (const path of paths) {
-              console.log("Adding path:", path);
-              invoke("quicklaunch_add_from_path", { path }).then((result) => {
-                console.log("Added item:", result);
-              }).catch((err) => {
+            // 去重路径
+            const uniquePaths = [...new Set(paths)];
+            for (const path of uniquePaths) {
+              invoke("quicklaunch_add_from_path", { path }).catch((err) => {
                 console.error("Failed to add dropped file:", err);
               });
             }
