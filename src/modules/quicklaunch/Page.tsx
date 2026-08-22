@@ -31,6 +31,7 @@ import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
 import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
+import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { cn } from "@/lib/utils";
 
 // ==================== 配置类型（对齐文件搜索模块） ====================
@@ -52,6 +53,9 @@ const QL_DEFAULTS: QuicklaunchConfig = {
   showExtension: true,
   singleClickOpen: false,
 };
+
+export { QL_DEFAULTS };
+export type { QuicklaunchConfig };
 
 // ==================== 内部组件 ====================
 
@@ -126,31 +130,18 @@ export function QuicklaunchPage() {
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 统一配置状态（对齐文件搜索模块的 cfg 模式）
-  const [cfg, setCfg] = useState<QuicklaunchConfig>(QL_DEFAULTS);
+  // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
+  const { cfg, update: updateConfig } = useModuleConfig("quicklaunch", QL_DEFAULTS);
 
   // 框选状态
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<{ x: number; y: number } | null>(null);
 
-  // ==================== 配置操作函数 ====================
-
-  const updateConfig = useCallback((patch: Partial<QuicklaunchConfig>) => {
-    setCfg((prev) => {
-      const next = { ...prev, ...patch };
-      invoke("save_quicklaunch_settings", { settings: patch }).catch(console.error);
-      return next;
-    });
-  }, []);
-
+  // 切换视图（FilterBar 顶栏按钮用）
   const toggleView = useCallback(() => {
-    setCfg((prev) => {
-      const next = prev.viewMode === "grid" ? "list" : "grid";
-      invoke("save_quicklaunch_settings", { settings: { view_mode: next } }).catch(console.error);
-      return { ...prev, viewMode: next };
-    });
-  }, []);
+    updateConfig({ viewMode: cfg.viewMode === "grid" ? "list" : "grid" });
+  }, [updateConfig, cfg.viewMode]);
 
   // 按需加载文件图标（与剪贴板模块一致）
   const loadFileIcon = useCallback(async (path: string) => {
@@ -272,29 +263,6 @@ export function QuicklaunchPage() {
       console.error("Failed to fetch folders:", e);
     }
   }, [loadFileIcon]);
-
-  const loadConfig = useCallback(async () => {
-    try {
-      const config = await invoke<{ modules?: Record<string, Record<string, unknown>> }>("get_config");
-      const m = config?.modules?.quicklaunch;
-      if (m) {
-        setCfg({
-          viewMode: (m.view_mode as "grid" | "list") || QL_DEFAULTS.viewMode,
-          sortBy: (m.sort_by as "manual" | "name" | "created_at") || QL_DEFAULTS.sortBy,
-          sortDesc: (m.sort_desc as boolean) ?? QL_DEFAULTS.sortDesc,
-          gridSize: (m.grid_size as number) || QL_DEFAULTS.gridSize,
-          showExtension: (m.show_extension as boolean) ?? QL_DEFAULTS.showExtension,
-          singleClickOpen: (m.single_click_open as boolean) ?? QL_DEFAULTS.singleClickOpen,
-        });
-      }
-    } catch (e) {
-      console.error("Failed to load config:", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadConfig();
-  }, []);
 
   useEffect(() => {
     fetchItems().then(() => setLoading(false));
