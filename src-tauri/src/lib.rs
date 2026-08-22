@@ -704,6 +704,7 @@ pub fn run() {
             log_frontend,
             config::get_config,
             config::set_module_enabled,
+            config::set_module_config,
             config::set_module_order,
             config::set_theme,
             config::set_unified_hotkey,

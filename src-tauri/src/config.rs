@@ -101,6 +101,30 @@ pub fn set_module_enabled(
     Ok(())
 }
 
+/// 通用模块配置 patch 保存：写入 modules.<module_id> 的指定键并落盘。
+/// 所有模块的设置保存统一走这里（替代各模块独立的 save_xxx_settings 命令）。
+/// 保存后 reapply_hotkeys：热键变更即时生效；未变更时重注册为幂等空操作。
+#[tauri::command]
+pub fn set_module_config(
+    app: AppHandle,
+    state: State<ConfigState>,
+    module_id: String,
+    patch: serde_json::Value,
+) -> Result<(), String> {
+    {
+        let mut cfg = state.0.lock().unwrap();
+        let m = cfg.modules.entry(module_id).or_default();
+        if let Some(obj) = patch.as_object() {
+            for (k, v) in obj {
+                m[k] = v.clone();
+            }
+        }
+        save_config(&app, &cfg)?;
+    }
+    crate::reapply_hotkeys(&app);
+    Ok(())
+}
+
 /// 保存模块显示顺序（底部栏与设置页排序同步依据）
 #[tauri::command]
 pub fn set_module_order(
