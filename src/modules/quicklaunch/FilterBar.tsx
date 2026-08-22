@@ -67,6 +67,7 @@ export function FilterBar({
           placeholder="搜索..."
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
+          autoFocus
           className="h-7 w-32 rounded-md border bg-transparent pl-7 pr-2 text-xs outline-none focus:w-48 focus:border-primary transition-all"
         />
       </div>

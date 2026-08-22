@@ -8,6 +8,7 @@ import { SmartEmoji } from "./SmartEmoji";
 import { toast } from "@/lib/toast";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { EMOJI_DEFAULTS } from "./config";
+import { useWindowEntrance } from "@/lib/use-window-entrance";
 
 const TABS = [
   "favorite",
@@ -68,6 +69,7 @@ export function EmojiPopup() {
 
   // 统一配置（共享 Hook：focus 重读保证与主窗设置同步）
   const { cfg: emojiCfg } = useModuleConfig("emoji", EMOJI_DEFAULTS);
+  const entranceRef = useWindowEntrance(true, ["animate-in", "fade-in-0"]);
 
   useEffect(() => {
     loadCatalog()
@@ -78,7 +80,31 @@ export function EmojiPopup() {
   // 切换分类/搜索时：重置渲染批次（列表容器用 key 强制重建，滚动位置自然归零）
   useEffect(() => {
     setVisible(BATCH);
+    setActiveIdx(null);
   }, [tab, q]);
+
+  // 键盘导航：↑↓ 移动高亮、Enter 应用、Esc 隐藏窗口
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      getCurrentWindow().hide();
+      return;
+    }
+    if (!shown.length) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => (i == null ? 0 : (i + 1) % shown.length));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => (i == null ? shown.length - 1 : (i - 1 + shown.length) % shown.length));
+    } else if (e.key === "Enter" && activeIdx != null && activeIdx < shown.length) {
+      e.preventDefault();
+      const it = shown[activeIdx];
+      pick(it.type, it.id);
+      setActiveIdx(null);
+    }
+  };
 
   const list = useMemo(() => {
     if (!cat) return [];
@@ -157,7 +183,11 @@ export function EmojiPopup() {
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
+    <div
+      ref={entranceRef}
+      onKeyDown={onKeyDown}
+      className="flex h-screen flex-col bg-background text-foreground animate-in fade-in-0 duration-150"
+    >
       <div className="flex items-center gap-2 border-b p-2">
         <Search className="size-4 shrink-0 text-muted-foreground" />
         <input
@@ -184,12 +214,15 @@ export function EmojiPopup() {
       </div>
       <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-2">
         <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.emojiGridSize}px)` }}>
-          {shown.map((item) => (
+          {shown.map((item, idx) => (
             <button
               key={item.type + item.id}
               title={item.label}
               onClick={() => pick(item.type, item.id)}
-              className="flex items-center justify-center overflow-hidden rounded-md hover:bg-accent"
+              className={cn(
+                "flex items-center justify-center overflow-hidden rounded-md hover:bg-accent",
+                idx === activeIdx && "ring-2 ring-primary",
+              )}
               style={{ width: emojiCfg.emojiGridSize, height: emojiCfg.emojiGridSize }}
             >
               {item.thumb ? (

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
@@ -32,6 +33,7 @@ import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
 import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { useWindowEntrance } from "@/lib/use-window-entrance";
 import { cn } from "@/lib/utils";
 
 // ==================== 配置类型（对齐文件搜索模块） ====================
@@ -110,7 +112,7 @@ export interface FolderWithItems {
   items: QuicklaunchItem[];
 }
 
-export function QuicklaunchPage() {
+export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
   const [items, setItems] = useState<QuicklaunchItem[]>([]);
   const [foldersWithItems, setFoldersWithItems] = useState<FolderWithItems[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
@@ -129,6 +131,7 @@ export function QuicklaunchPage() {
   const [expandedFolder, setExpandedFolder] = useState<number | null>(null);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
+  const entranceRef = useWindowEntrance(popup, ["animate-in", "fade-in-0"]);
 
   // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
   const { cfg, update: updateConfig } = useModuleConfig("quicklaunch", QL_DEFAULTS);
@@ -297,13 +300,30 @@ export function QuicklaunchPage() {
     }
   };
 
-  // 键盘事件处理
-  const handleKeyDown = (_e: React.KeyboardEvent) => {
-    // 可以在这里添加其他键盘快捷键处理
-  };
+  // 键盘导航：↑↓ 移动高亮、Enter 打开、Delete 删除、Esc 关弹层/隐藏窗口
+  const [kbIdx, setKbIdx] = useState<number | null>(null);
 
-  const handleKeyUp = (_e: React.KeyboardEvent) => {
-    // 可以在这里添加其他键盘快捷键处理
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      if (expandedFolder != null) setExpandedFolder(null);
+      else if (popup) getCurrentWindow().hide();
+      return;
+    }
+    if (!items.length) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setKbIdx((i) => (i == null ? 0 : Math.min(i + 1, items.length - 1)));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setKbIdx((i) => (i == null ? items.length - 1 : Math.max(i - 1, 0)));
+    } else if (e.key === "Enter" && kbIdx != null && kbIdx < items.length) {
+      e.preventDefault();
+      handleOpen(items[kbIdx]);
+    } else if (e.key === "Delete" && kbIdx != null && kbIdx < items.length) {
+      e.preventDefault();
+      handleDelete(items[kbIdx].id);
+      setKbIdx(null);
+    }
   };
 
   // 鼠标按下事件（开始框选）
@@ -599,8 +619,12 @@ export function QuicklaunchPage() {
     : null;
 
   return (
-    <div 
-      className="relative flex h-full flex-col"
+    <div
+      ref={popup ? entranceRef : undefined}
+      className={cn(
+        "relative flex h-full flex-col",
+        popup && "animate-in fade-in-0 duration-150",
+      )}
       onContextMenu={(e) => e.preventDefault()}
     >
       {PromptDialog}
@@ -661,7 +685,6 @@ export function QuicklaunchPage() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onKeyDown={handleKeyDown}
-        onKeyUp={handleKeyUp}
       >
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -729,7 +752,7 @@ export function QuicklaunchPage() {
                   ))}
                   
                   {/* 显示项目 */}
-                  {items.map((item) => (
+                  {items.map((item, itemIdx) => (
                     <SortableItem key={item.id} id={String(item.id)}>
                       <div data-item-id={item.id}>
                         <ItemCard
@@ -739,7 +762,7 @@ export function QuicklaunchPage() {
                           icon={item.item_type === "url" ? null : fileIcons[item.path]}
                           showExtension={cfg.showExtension}
                           singleClickOpen={cfg.singleClickOpen}
-                          selected={selectedIds.has(item.id)}
+                          selected={selectedIds.has(item.id) || kbIdx === itemIdx}
                           onSelect={(id, e) => handleItemSelect(id, e)}
                           onOpen={handleOpen}
                           onDelete={handleDelete}
@@ -793,7 +816,7 @@ export function QuicklaunchPage() {
                   />
                 </div>
               ))}
-              {items.map((item) => (
+              {items.map((item, itemIdx) => (
                 <div key={item.id} data-item-id={item.id}>
                   <ItemCard
                     item={item}
@@ -802,7 +825,7 @@ export function QuicklaunchPage() {
                     icon={item.item_type === "url" ? null : fileIcons[item.path]}
                     showExtension={cfg.showExtension}
                     singleClickOpen={cfg.singleClickOpen}
-                    selected={selectedIds.has(item.id)}
+                    selected={selectedIds.has(item.id) || kbIdx === itemIdx}
                     onSelect={(id, e) => handleItemSelect(id, e)}
                     onOpen={handleOpen}
                     onDelete={handleDelete}
@@ -826,7 +849,7 @@ export function QuicklaunchPage() {
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={items.map((item) => String(item.id))} strategy={verticalListSortingStrategy}>
                 <div className="flex flex-col">
-                  {items.map((item) => (
+                  {items.map((item, itemIdx) => (
                     <SortableItem key={item.id} id={String(item.id)}>
                       <div data-item-id={item.id}>
                         <ItemCard
@@ -835,7 +858,7 @@ export function QuicklaunchPage() {
                           icon={item.item_type === "url" ? null : fileIcons[item.path]}
                           showExtension={cfg.showExtension}
                           singleClickOpen={cfg.singleClickOpen}
-                          selected={selectedIds.has(item.id)}
+                          selected={selectedIds.has(item.id) || kbIdx === itemIdx}
                           onSelect={(id, e) => handleItemSelect(id, e)}
                           onOpen={handleOpen}
                           onDelete={handleDelete}
@@ -857,7 +880,7 @@ export function QuicklaunchPage() {
             </DndContext>
           ) : (
             <div className="flex flex-col">
-              {items.map((item) => (
+              {items.map((item, itemIdx) => (
                 <div key={item.id} data-item-id={item.id}>
                   <ItemCard
                     item={item}
@@ -865,7 +888,7 @@ export function QuicklaunchPage() {
                     icon={item.item_type === "url" ? null : fileIcons[item.path]}
                     showExtension={cfg.showExtension}
                     singleClickOpen={cfg.singleClickOpen}
-                    selected={selectedIds.has(item.id)}
+                    selected={selectedIds.has(item.id) || kbIdx === itemIdx}
                     onSelect={(id, e) => handleItemSelect(id, e)}
                     onOpen={handleOpen}
                     onDelete={handleDelete}

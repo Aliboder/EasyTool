@@ -17,6 +17,6 @@ applyCurrentTheme();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <QuicklaunchPage />
+    <QuicklaunchPage popup />
   </React.StrictMode>,
 );
