@@ -350,27 +350,25 @@ export function QuicklaunchPage() {
     }
   };
 
-  // 文件拖拽处理（用于从桌面拖入文件）
-  const handleFileDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    // 尝试从 dataTransfer 获取文件路径（Tauri 支持）
-    const files = Array.from(e.dataTransfer.files);
-    for (const file of files) {
-      try {
-        // Tauri 的 File 对象有 path 属性
-        const path = (file as File & { path?: string }).path || file.name;
-        await invoke("quicklaunch_add_from_path", { path });
-      } catch (err) {
-        console.error("Failed to add dropped file:", err);
-      }
-    }
-    fetchItems();
-  };
+  // 文件拖拽处理（使用 Tauri 的 onDragDropEvent API）
+  useEffect(() => {
+    import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => {
+      const unlisten = getCurrentWebview().onDragDropEvent((event) => {
+        if (event.payload.type === "drop") {
+          const paths = event.payload.paths;
+          for (const path of paths) {
+            invoke("quicklaunch_add_from_path", { path }).catch((err) => {
+              console.error("Failed to add dropped file:", err);
+            });
+          }
+          fetchItems();
+        }
+      });
+      return () => {
+        unlisten.then((fn) => fn());
+      };
+    });
+  }, []);
 
   // 面板右键菜单
   const handlePanelContextMenu = (e: React.MouseEvent) => {
@@ -504,8 +502,6 @@ export function QuicklaunchPage() {
       <div
         ref={containerRef}
         className="flex-1 overflow-auto p-2"
-        onDragOver={handleFileDragOver}
-        onDrop={handleDrop}
         onContextMenu={handlePanelContextMenu}
       >
         {loading ? (
