@@ -351,23 +351,42 @@ export function QuicklaunchPage() {
   };
 
   // 文件拖拽处理（使用 Tauri 的 onDragDropEvent API）
+  // 文件拖拽处理
   useEffect(() => {
-    import("@tauri-apps/api/webview").then(({ getCurrentWebview }) => {
-      const unlisten = getCurrentWebview().onDragDropEvent((event) => {
-        if (event.payload.type === "drop") {
-          const paths = event.payload.paths;
-          for (const path of paths) {
-            invoke("quicklaunch_add_from_path", { path }).catch((err) => {
-              console.error("Failed to add dropped file:", err);
-            });
+    const setupDragDrop = async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      const unlisten = await listen<{ type: string; paths: string[] }>(
+        "tauri://drag-drop",
+        (event) => {
+          console.log("Drag drop event:", event.payload);
+          if (event.payload.type === "drop") {
+            const paths = event.payload.paths;
+            console.log("Dropped paths:", paths);
+            for (const path of paths) {
+              console.log("Adding path:", path);
+              invoke("quicklaunch_add_from_path", { path }).then((result) => {
+                console.log("Added item:", result);
+              }).catch((err) => {
+                console.error("Failed to add dropped file:", err);
+              });
+            }
+            setTimeout(() => fetchItems(), 500);
           }
-          fetchItems();
         }
-      });
-      return () => {
-        unlisten.then((fn) => fn());
-      };
+      );
+      return unlisten;
+    };
+
+    let unlistenFn: (() => void) | null = null;
+    setupDragDrop().then((fn) => {
+      unlistenFn = fn;
     });
+
+    return () => {
+      if (unlistenFn) {
+        unlistenFn();
+      }
+    };
   }, []);
 
   // 面板右键菜单
