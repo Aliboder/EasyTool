@@ -361,6 +361,7 @@ export function QuicklaunchPage() {
       dragDropUnlistenRef.current = null;
     }
 
+    const processedPaths = new Set<string>();
     const setupDragDrop = async () => {
       const { listen } = await import("@tauri-apps/api/event");
       const unlisten = await listen<{ paths: string[] }>(
@@ -368,12 +369,14 @@ export function QuicklaunchPage() {
         (event) => {
           const paths = event.payload.paths;
           if (paths && paths.length > 0) {
-            console.log("Processing drop with paths:", paths);
-            const uniquePaths = [...new Set(paths)];
-            for (const path of uniquePaths) {
-              invoke("quicklaunch_add_from_path", { path }).catch((err) => {
-                console.error("Failed to add dropped file:", err);
-              });
+            for (const path of paths) {
+              // 只处理未处理过的路径
+              if (!processedPaths.has(path)) {
+                processedPaths.add(path);
+                invoke("quicklaunch_add_from_path", { path }).catch((err) => {
+                  console.error("Failed to add dropped file:", err);
+                });
+              }
             }
             setTimeout(() => fetchItems(), 500);
           }
