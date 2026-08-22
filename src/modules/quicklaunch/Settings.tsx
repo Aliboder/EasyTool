@@ -22,10 +22,9 @@ interface QuicklaunchConfig {
 interface QuicklaunchSettingsProps {
   cfg: QuicklaunchConfig;
   onUpdate: (patch: Partial<QuicklaunchConfig>) => void;
-  onRefresh?: () => void;
 }
 
-export function QuicklaunchSettings({ cfg, onUpdate, onRefresh }: QuicklaunchSettingsProps) {
+export function QuicklaunchSettings({ cfg, onUpdate }: QuicklaunchSettingsProps) {
   return (
     <div className="space-y-4 p-4">
       <Card>
@@ -84,7 +83,6 @@ export function QuicklaunchSettings({ cfg, onUpdate, onRefresh }: QuicklaunchSet
               value={cfg.sortBy}
               onValueChange={(v) => {
                 onUpdate({ sortBy: v as QuicklaunchConfig["sortBy"] });
-                setTimeout(() => onRefresh?.(), 100);
               }}
             >
               <SelectTrigger className="w-32">

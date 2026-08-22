@@ -671,7 +671,6 @@ export function QuicklaunchPage() {
         <QuicklaunchSettings
           cfg={cfg}
           onUpdate={updateConfig}
-          onRefresh={fetchItems}
         />
       </Drawer>
 
