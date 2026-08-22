@@ -52,6 +52,24 @@ impl QuicklaunchDb {
     
     // ========== Items ==========
     
+    /// 检查文件路径是否已存在
+    pub fn item_exists_by_path(&self, path: &str) -> Result<Option<i64>, String> {
+        self.conn.query_row(
+            "SELECT id FROM items WHERE path = ?1",
+            params![path],
+            |row| row.get(0),
+        ).optional().map_err(|e| format!("查询失败: {e}"))
+    }
+    
+    /// 更新项目的时间戳（用于重复添加时刷新）
+    pub fn touch_item(&self, id: i64) -> Result<(), String> {
+        self.conn.execute(
+            "UPDATE items SET created_at = datetime('now') WHERE id = ?1",
+            params![id],
+        ).map_err(|e| format!("更新时间失败: {e}"))?;
+        Ok(())
+    }
+    
     pub fn create_item(&self, item_type: ItemType, name: &str, path: &str, folder_id: Option<i64>) -> Result<Item, String> {
         self.create_item_with_icon(item_type, name, path, folder_id, None)
     }

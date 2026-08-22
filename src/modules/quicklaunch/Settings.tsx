@@ -18,6 +18,7 @@ interface QuicklaunchSettings {
   sort_desc: boolean;
   grid_size: number;
   single_click_open: boolean;
+  show_extension: boolean;
 }
 
 const defaultSettings: QuicklaunchSettings = {
@@ -26,6 +27,7 @@ const defaultSettings: QuicklaunchSettings = {
   sort_desc: false,
   grid_size: 64,
   single_click_open: false,
+  show_extension: true,
 };
 
 interface QuicklaunchSettingsProps {
@@ -52,6 +54,7 @@ export function QuicklaunchSettings({ onRefresh, onSettingsChange }: Quicklaunch
           sort_desc: (moduleConfig.sort_desc as boolean) ?? defaultSettings.sort_desc,
           grid_size: (moduleConfig.grid_size as number) || defaultSettings.grid_size,
           single_click_open: (moduleConfig.single_click_open as boolean) ?? defaultSettings.single_click_open,
+          show_extension: (moduleConfig.show_extension as boolean) ?? defaultSettings.show_extension,
         });
       }
     } catch (e) {
@@ -160,6 +163,12 @@ export function QuicklaunchSettings({ onRefresh, onSettingsChange }: Quicklaunch
             <Switch
               checked={settings.single_click_open}
               onCheckedChange={(checked) => saveSettings({ single_click_open: checked })}
+            />
+          </SettingRow>
+          <SettingRow title="显示文件后缀名" hint="开启后显示文件扩展名">
+            <Switch
+              checked={settings.show_extension}
+              onCheckedChange={(checked) => saveSettings({ show_extension: checked })}
             />
           </SettingRow>
         </CardContent>

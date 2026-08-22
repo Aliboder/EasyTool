@@ -19,6 +19,7 @@ interface ItemCardProps {
   selected: boolean;
   gridSize?: number;
   icon?: string | null;
+  showExtension?: boolean;
   onSelect: (id: number) => void;
   onOpen: (item: QuicklaunchItem) => void;
   onDelete?: (id: number) => void;
@@ -33,12 +34,23 @@ const typeIcons = {
   url: Globe,
 };
 
+// 获取显示名称（根据 showExtension 设置决定是否显示后缀名）
+function getDisplayName(name: string, showExtension: boolean): string {
+  if (showExtension) return name;
+  const lastDotIndex = name.lastIndexOf('.');
+  if (lastDotIndex > 0) {
+    return name.substring(0, lastDotIndex);
+  }
+  return name;
+}
+
 export function ItemCard({
   item,
   viewMode,
   selected,
   gridSize = 64,
   icon,
+  showExtension = true,
   onSelect,
   onOpen,
   onDelete: _onDelete,
@@ -124,7 +136,7 @@ export function ItemCard({
             style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}
             title={item.name}
           >
-            {item.name}
+            {getDisplayName(item.name, showExtension)}
           </span>
         )}
       </div>
@@ -164,7 +176,7 @@ export function ItemCard({
             autoFocus
           />
         ) : (
-          <div className="truncate text-sm">{item.name}</div>
+          <div className="truncate text-sm">{getDisplayName(item.name, showExtension)}</div>
         )}
         <div className="truncate text-[10px] text-muted-foreground">
           {item.path}

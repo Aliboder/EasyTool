@@ -104,6 +104,7 @@ export function QuicklaunchPage() {
   const [sortBy, setSortBy] = useState<"manual" | "name" | "created_at">("manual");
   const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
   const [expandedFolder, setExpandedFolder] = useState<number | null>(null);
+  const [showExtension, setShowExtension] = useState(true);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -246,6 +247,7 @@ export function QuicklaunchPage() {
         if (moduleConfig.grid_size) setGridSize(moduleConfig.grid_size as number);
         if (moduleConfig.view_mode) setViewMode(moduleConfig.view_mode as "grid" | "list");
         if (moduleConfig.sort_by) setSortBy(moduleConfig.sort_by as "manual" | "name" | "created_at");
+        if (moduleConfig.show_extension !== undefined) setShowExtension(moduleConfig.show_extension as boolean);
       }
     } catch (e) {
       console.error("Failed to load config:", e);
@@ -521,6 +523,7 @@ export function QuicklaunchPage() {
             setGridSize(s.grid_size);
             setViewMode(s.view_mode);
             setSortBy(s.sort_by);
+            setShowExtension(s.show_extension);
           }}
         />
       </Drawer>
@@ -602,6 +605,7 @@ export function QuicklaunchPage() {
                       viewMode="grid"
                       gridSize={gridSize}
                       icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                      showExtension={showExtension}
                       selected={selectedId === item.id}
                       onSelect={setSelectedId}
                       onOpen={handleOpen}
@@ -635,6 +639,7 @@ export function QuicklaunchPage() {
                       item={item}
                       viewMode="list"
                       icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                      showExtension={showExtension}
                       selected={selectedId === item.id}
                       onSelect={setSelectedId}
                       onOpen={handleOpen}

@@ -173,6 +173,13 @@ pub fn quicklaunch_add_from_path(
 ) -> CmdResult<Item> {
     let st = state.lock().map_err(|e| format!("锁状态失败: {e}"))?;
     
+    // 检查文件是否已存在
+    if let Some(existing_id) = st.db.item_exists_by_path(&path).map_err(|e| format!("查询失败: {e}"))? {
+        // 文件已存在，更新时间戳并返回现有记录
+        st.db.touch_item(existing_id).map_err(|e| format!("更新失败: {e}"))?;
+        return st.db.get_item(existing_id).map_err(|e| format!("获取项目失败: {e}"));
+    }
+    
     // 判断文件类型
     let is_url = path.starts_with("http://") || path.starts_with("https://");
     let item_type = if is_url {
