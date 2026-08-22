@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, params, OptionalExtension};
 use super::types::{Item, Folder, ItemType};
 use std::path::Path;
 
