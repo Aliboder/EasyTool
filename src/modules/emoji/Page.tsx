@@ -105,14 +105,17 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
     load().catch(console.error);
   }, []);
 
-  // 加载网格大小配置
-  useEffect(() => {
-    getConfig().then((cfg) => {
-      const m = cfg.modules.emoji ?? {};
-      if (m.emoji_grid_size != null) setEmojiGridSize(m.emoji_grid_size as number);
-      if (m.custom_grid_size != null) setCustomGridSize(m.custom_grid_size as number);
-    });
+  // 加载网格大小配置（挂载时 + 设置保存后刷新）
+  const loadGridSizes = useCallback(async () => {
+    const cfg = await getConfig();
+    const m = cfg.modules.emoji ?? {};
+    if (m.emoji_grid_size != null) setEmojiGridSize(m.emoji_grid_size as number);
+    if (m.custom_grid_size != null) setCustomGridSize(m.custom_grid_size as number);
   }, []);
+
+  useEffect(() => {
+    loadGridSizes();
+  }, [loadGridSizes]);
 
   // 切回模块时刷新（keep-alive 下组件常驻，跨模块操作后需拿到最新数据）。
   // 早期卡顿源于激活时全量重载 + SmartEmoji 逐字符同步检测；检测已改分片（每帧 24 个），
@@ -427,7 +430,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
       </ContextMenu>
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="表情设置">
-        <EmojiSettings onRefresh={load} />
+        <EmojiSettings onRefresh={() => { load(); loadGridSizes(); }} />
       </Drawer>
     </div>
   );
