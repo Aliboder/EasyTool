@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Slider } from "@/components/ui/slider";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
@@ -96,6 +95,10 @@ export function ClipSettings({
     textLines: 2,
     showTimestamps: true,
   } as ClipboardConfig);
+
+  // 格子尺寸滑块：拖动草稿值，松手落盘
+  const [cellDraft, setCellDraft] = useState(adv.cellSize);
+  useEffect(() => setCellDraft(adv.cellSize), [adv.cellSize]);
 
   useEffect(() => setMaxInput(String(maxItems)), [maxItems]);
 
@@ -285,16 +288,18 @@ export function ClipSettings({
               <div className="text-sm font-medium">格子尺寸</div>
               <div className="text-xs text-muted-foreground">图片与文件格子的边长</div>
             </div>
-            <div className="w-44">
-              <Segmented
-                value={adv.cellSize}
-                options={[
-                  { value: 64, label: "小" },
-                  { value: 80, label: "中" },
-                  { value: 96, label: "大" },
-                ]}
-                onChange={(v) => saveAdv({ cellSize: v })}
+            <div className="flex w-44 items-center gap-2">
+              <Slider
+                min={48}
+                max={128}
+                step={4}
+                value={[cellDraft]}
+                onValueChange={([v]) => setCellDraft(v)}
+                onValueCommit={([v]) => saveAdv({ cellSize: v })}
               />
+              <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                {cellDraft}px
+              </span>
             </div>
           </div>
           <div className="flex items-center justify-between">

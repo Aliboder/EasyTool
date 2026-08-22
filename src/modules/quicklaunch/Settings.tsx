@@ -56,8 +56,8 @@ export function QuicklaunchSettings({ cfg, onUpdate }: QuicklaunchSettingsProps)
               <div className="flex w-40 items-center gap-2">
                 <Slider
                   min={48}
-                  max={96}
-                  step={8}
+                  max={128}
+                  step={4}
                   value={[gridDraft]}
                   onValueChange={([v]) => setGridDraft(v)}
                   onValueCommit={([v]) => onUpdate({ gridSize: v })}

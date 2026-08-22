@@ -251,13 +251,13 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
           onClick={() => setShowSettings((v) => !v)}
           aria-label="表情设置"
           className={cn(
-            "flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs",
+            "shrink-0 rounded p-1.5 transition-colors",
             showSettings
-              ? "border-primary text-primary"
-              : "text-muted-foreground hover:bg-accent",
+              ? "bg-accent text-foreground"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
-          <Settings2 className="size-3.5" />
+          <Settings2 className="size-4" />
         </button>
       </div>
 

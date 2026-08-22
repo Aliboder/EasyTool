@@ -669,14 +669,13 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
           search={search}
           onSearchChange={setSearch}
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          className="ml-2 h-7 w-7"
+        <button
           onClick={() => setShowSettings(true)}
+          aria-label="快速启动设置"
+          className="ml-1 shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          <Settings2 className="h-4 w-4" />
-        </Button>
+          <Settings2 className="size-4" />
+        </button>
       </div>
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="快速启动设置">
