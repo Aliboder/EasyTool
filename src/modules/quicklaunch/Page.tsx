@@ -351,23 +351,22 @@ export function QuicklaunchPage() {
   };
 
   // 文件拖拽处理（使用 Tauri 的 onDragDropEvent API）
-  // 文件拖拽处理
+  // 文件拖拽处理（确保只添加一次事件监听器）
+  const dragDropUnlistenRef = useRef<(() => void) | null>(null);
+  
   useEffect(() => {
-    let lastDropTime = 0;
+    // 如果已经添加过监听器，先移除
+    if (dragDropUnlistenRef.current) {
+      dragDropUnlistenRef.current();
+      dragDropUnlistenRef.current = null;
+    }
+
     const setupDragDrop = async () => {
       const { listen } = await import("@tauri-apps/api/event");
       const unlisten = await listen<{ type: string; paths: string[] }>(
         "tauri://drag-drop",
         (event) => {
           if (event.payload.type === "drop") {
-            const now = Date.now();
-            // 去重：500ms 内的重复事件忽略
-            if (now - lastDropTime < 500) {
-              console.log("Ignoring duplicate drop event");
-              return;
-            }
-            lastDropTime = now;
-
             const paths = event.payload.paths;
             // 去重路径
             const uniquePaths = [...new Set(paths)];
@@ -383,14 +382,14 @@ export function QuicklaunchPage() {
       return unlisten;
     };
 
-    let unlistenFn: (() => void) | null = null;
     setupDragDrop().then((fn) => {
-      unlistenFn = fn;
+      dragDropUnlistenRef.current = fn;
     });
 
     return () => {
-      if (unlistenFn) {
-        unlistenFn();
+      if (dragDropUnlistenRef.current) {
+        dragDropUnlistenRef.current();
+        dragDropUnlistenRef.current = null;
       }
     };
   }, []);
