@@ -11,6 +11,7 @@ interface FolderOverlayProps {
   fileIcons: Record<string, string>;
   selectedId: number | null;
   anchorPosition?: { x: number; y: number };
+  singleClickOpen?: boolean;
   onSelect: (id: number | null) => void;
   onOpen: (item: QuicklaunchItem) => void;
   onDelete: (id: number) => void;
@@ -27,6 +28,7 @@ export function FolderOverlay({
   fileIcons,
   selectedId,
   anchorPosition,
+  singleClickOpen = false,
   onSelect,
   onOpen,
   onDelete,
@@ -203,6 +205,7 @@ export function FolderOverlay({
               gridSize={expandedGridSize}
               icon={item.item_type === "url" ? null : fileIcons[item.path]}
               selected={selectedId === item.id}
+              singleClickOpen={singleClickOpen}
               onSelect={onSelect}
               onOpen={onOpen}
               onDelete={onDelete}

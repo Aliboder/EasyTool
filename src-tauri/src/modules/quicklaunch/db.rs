@@ -146,7 +146,13 @@ impl QuicklaunchDb {
             params.push(Box::new(format!("%{}%", search)));
         }
         
-        let sort_by = filter.sort_by.as_deref().unwrap_or("sort_order");
+        // SQL 注入防护：白名单验证排序字段
+        let sort_by = match filter.sort_by.as_deref() {
+            Some("name") => "name",
+            Some("created_at") => "created_at",
+            Some("sort_order") | None => "sort_order",
+            Some(_) => "sort_order", // 无效值使用默认排序
+        };
         let sort_desc = filter.sort_desc.unwrap_or(false);
         sql.push_str(&format!(" ORDER BY {} {}", sort_by, if sort_desc { "DESC" } else { "ASC" }));
         
@@ -292,13 +298,7 @@ impl QuicklaunchDb {
     }
     
     pub fn delete_folder(&self, id: i64) -> Result<(), String> {
-        // 删除文件夹下的所有项目
-        self.conn.execute(
-            "DELETE FROM items WHERE folder_id = ?1",
-            params![id],
-        ).map_err(|e| format!("删除文件夹项目失败: {e}"))?;
-        
-        // 删除文件夹
+        // 删除文件夹（级联删除会自动删除关联的 items）
         self.conn.execute(
             "DELETE FROM folders WHERE id = ?1",
             params![id],

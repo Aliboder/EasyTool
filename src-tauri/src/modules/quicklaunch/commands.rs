@@ -133,7 +133,13 @@ pub fn quicklaunch_open_item(
     item: Item,
 ) -> CmdResult<()> {
     match item.item_type {
-        ItemType::App | ItemType::File | ItemType::Folder => {
+        ItemType::App => {
+            // App 类型直接执行，不通过 explorer
+            std::process::Command::new(&item.path)
+                .spawn()
+                .map_err(|e| format!("打开应用失败: {e}"))?;
+        }
+        ItemType::File | ItemType::Folder => {
             std::process::Command::new("explorer")
                 .arg(&item.path)
                 .spawn()

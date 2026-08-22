@@ -105,6 +105,7 @@ export function QuicklaunchPage() {
   const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
   const [expandedFolder, setExpandedFolder] = useState<number | null>(null);
   const [showExtension, setShowExtension] = useState(true);
+  const [singleClickOpen, setSingleClickOpen] = useState(false);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -253,6 +254,7 @@ export function QuicklaunchPage() {
         if (moduleConfig.view_mode) setViewMode(moduleConfig.view_mode as "grid" | "list");
         if (moduleConfig.sort_by) setSortBy(moduleConfig.sort_by as "manual" | "name" | "created_at");
         if (moduleConfig.show_extension !== undefined) setShowExtension(moduleConfig.show_extension as boolean);
+        if (moduleConfig.single_click_open !== undefined) setSingleClickOpen(moduleConfig.single_click_open as boolean);
       }
     } catch (e) {
       console.error("Failed to load config:", e);
@@ -604,6 +606,7 @@ export function QuicklaunchPage() {
           fileIcons={fileIcons}
           selectedId={selectedIds.size > 0 ? Array.from(selectedIds)[0] : null}
           anchorPosition={contextMenu.folderPosition}
+          singleClickOpen={singleClickOpen}
           onSelect={(id) => setSelectedIds(id ? new Set([id]) : new Set())}
           onOpen={handleOpen}
           onDelete={handleDelete}
@@ -731,6 +734,7 @@ export function QuicklaunchPage() {
                         gridSize={gridSize}
                         icon={item.item_type === "url" ? null : fileIcons[item.path]}
                         showExtension={showExtension}
+                        singleClickOpen={singleClickOpen}
                         selected={selectedIds.has(item.id)}
                         onSelect={(id, e) => handleItemSelect(id, e)}
                         onOpen={handleOpen}
@@ -767,6 +771,7 @@ export function QuicklaunchPage() {
                         viewMode="list"
                         icon={item.item_type === "url" ? null : fileIcons[item.path]}
                         showExtension={showExtension}
+                        singleClickOpen={singleClickOpen}
                         selected={selectedIds.has(item.id)}
                         onSelect={(id, e) => handleItemSelect(id, e)}
                         onOpen={handleOpen}
