@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Folder, X } from "lucide-react";
+import { X } from "lucide-react";
 import { ItemCard } from "./ItemCard";
 import type { QuicklaunchItem } from "./ItemCard";
 
@@ -156,12 +156,9 @@ export function FolderOverlay({
         </button>
 
         {/* 分组标题 */}
-        <div className="flex items-center justify-center gap-3 mb-6">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
-            <Folder className="h-6 w-6 text-primary" />
-          </div>
-          <div className="text-center">
-            {isEditing ? (
+        <div className="text-center mb-6">
+          {isEditing ? (
+            <div className="inline-block">
               <input
                 type="text"
                 value={editName}
@@ -169,24 +166,25 @@ export function FolderOverlay({
                 onBlur={handleRenameSubmit}
                 onKeyDown={handleKeyDown}
                 className="text-xl font-bold text-center bg-transparent border-b-2 border-primary outline-none"
+                style={{ width: `${Math.max(editName.length * 1.2, 4)}ch` }}
                 autoFocus
               />
-            ) : (
-              <h3
-                className="text-xl font-bold cursor-pointer hover:text-primary transition-colors"
-                onClick={() => {
-                  setEditName(folderName);
-                  setIsEditing(true);
-                }}
-                title="点击编辑名称"
-              >
-                {folderName}
-              </h3>
-            )}
-            <p className="text-sm text-muted-foreground mt-1">
-              {items.length} 个项目
-            </p>
-          </div>
+            </div>
+          ) : (
+            <h3
+              className="text-xl font-bold cursor-pointer hover:text-primary transition-colors inline-block"
+              onClick={() => {
+                setEditName(folderName);
+                setIsEditing(true);
+              }}
+              title="点击编辑名称"
+            >
+              {folderName}
+            </h3>
+          )}
+          <p className="text-sm text-muted-foreground mt-2">
+            {items.length} 个项目
+          </p>
         </div>
 
         {/* 分隔线 */}
