@@ -351,8 +351,9 @@ export function QuicklaunchPage() {
   };
 
   // 文件拖拽处理（使用 Tauri 的 onDragDropEvent API）
-  // 文件拖拽处理（确保只添加一次事件监听器）
+  // 文件拖拽处理
   const dragDropUnlistenRef = useRef<(() => void) | null>(null);
+  const processedPathsRef = useRef<Set<string>>(new Set());
   
   useEffect(() => {
     // 如果已经添加过监听器，先移除
@@ -361,7 +362,6 @@ export function QuicklaunchPage() {
       dragDropUnlistenRef.current = null;
     }
 
-    const processedPaths = new Set<string>();
     const setupDragDrop = async () => {
       const { listen } = await import("@tauri-apps/api/event");
       const unlisten = await listen<{ paths: string[] }>(
@@ -370,9 +370,8 @@ export function QuicklaunchPage() {
           const paths = event.payload.paths;
           if (paths && paths.length > 0) {
             for (const path of paths) {
-              // 只处理未处理过的路径
-              if (!processedPaths.has(path)) {
-                processedPaths.add(path);
+              if (!processedPathsRef.current.has(path)) {
+                processedPathsRef.current.add(path);
                 invoke("quicklaunch_add_from_path", { path }).catch((err) => {
                   console.error("Failed to add dropped file:", err);
                 });
