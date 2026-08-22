@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -12,12 +11,6 @@ interface EmojiSettingsProps {
 }
 
 export function EmojiSettings({ cfg, onUpdate }: EmojiSettingsProps) {
-  // 滑块拖动用草稿值（流畅显示），松手（commit）才落盘
-  const [emojiGridDraft, setEmojiGridDraft] = useState(cfg.emojiGridSize);
-  const [customGridDraft, setCustomGridDraft] = useState(cfg.customGridSize);
-  useEffect(() => setEmojiGridDraft(cfg.emojiGridSize), [cfg.emojiGridSize]);
-  useEffect(() => setCustomGridDraft(cfg.customGridSize), [cfg.customGridSize]);
-
   return (
     <div className="space-y-4 p-4">
       <Card>
@@ -45,12 +38,11 @@ export function EmojiSettings({ cfg, onUpdate }: EmojiSettingsProps) {
                 min={28}
                 max={64}
                 step={4}
-                value={[emojiGridDraft]}
-                onValueChange={([v]) => setEmojiGridDraft(v)}
-                onValueCommit={([v]) => onUpdate({ emojiGridSize: v })}
+                value={[cfg.emojiGridSize]}
+                onValueChange={([v]) => onUpdate({ emojiGridSize: v })}
               />
               <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                {emojiGridDraft}px
+                {cfg.emojiGridSize}px
               </span>
             </div>
           </SettingRow>
@@ -60,12 +52,11 @@ export function EmojiSettings({ cfg, onUpdate }: EmojiSettingsProps) {
                 min={40}
                 max={96}
                 step={4}
-                value={[customGridDraft]}
-                onValueChange={([v]) => setCustomGridDraft(v)}
-                onValueCommit={([v]) => onUpdate({ customGridSize: v })}
+                value={[cfg.customGridSize]}
+                onValueChange={([v]) => onUpdate({ customGridSize: v })}
               />
               <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                {customGridDraft}px
+                {cfg.customGridSize}px
               </span>
             </div>
           </SettingRow>

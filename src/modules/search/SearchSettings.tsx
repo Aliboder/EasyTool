@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { SettingRow } from "@/components/setting-row";
 import { Slider } from "@/components/ui/slider";
@@ -64,10 +63,6 @@ interface SearchSettingsProps {
 }
 
 export function SearchSettings({ cfg, onUpdate }: SearchSettingsProps) {
-  // 滑块拖动用草稿值（流畅显示），松手（commit）才落盘
-  const [gridDraft, setGridDraft] = useState(cfg.gridSize);
-  useEffect(() => setGridDraft(cfg.gridSize), [cfg.gridSize]);
-
   const toggleColumn = (key: keyof SearchSettingsData["columns"]) => {
     onUpdate({ columns: { ...cfg.columns, [key]: !cfg.columns[key] } });
   };
@@ -124,12 +119,11 @@ export function SearchSettings({ cfg, onUpdate }: SearchSettingsProps) {
                   min={48}
                   max={128}
                   step={4}
-                  value={[gridDraft]}
-                  onValueChange={([v]) => setGridDraft(v)}
-                  onValueCommit={([v]) => onUpdate({ gridSize: v })}
+                  value={[cfg.gridSize]}
+                  onValueChange={([v]) => onUpdate({ gridSize: v })}
                 />
                 <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                  {gridDraft}px
+                  {cfg.gridSize}px
                 </span>
               </div>
             </SettingRow>

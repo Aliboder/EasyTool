@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 // camelCase <-> snake_case 键名转换：
@@ -31,6 +31,22 @@ function keysToCamel(obj: Record<string, unknown>): Record<string, unknown> {
  */
 export function useModuleConfig<T extends object>(moduleId: string, defaults: T) {
   const [cfg, setCfg] = useState<T>(defaults);
+  // 落盘防抖：拖动滑块等高频 update 只合并为最后一次写盘
+  const pendingRef = useRef<Record<string, unknown>>({});
+  const timerRef = useRef<number | null>(null);
+
+  const flush = useCallback(() => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    if (Object.keys(pendingRef.current).length === 0) return;
+    const patch = pendingRef.current;
+    pendingRef.current = {};
+    invoke("set_module_config", { moduleId, patch }).catch((e) =>
+      console.error(`[${moduleId}] save config failed:`, e),
+    );
+  }, [moduleId]);
 
   const reload = useCallback(async () => {
     try {
@@ -47,22 +63,23 @@ export function useModuleConfig<T extends object>(moduleId: string, defaults: T)
 
   const update = useCallback(
     (patch: Partial<T>) => {
+      // state 同步更新：界面实时跟手（滑块边拉边生效）
       setCfg((prev) => ({ ...prev, ...patch }));
-      const storagePatch: Record<string, unknown> = {};
+      // 磁盘写入防抖合并：高频调用只保留最新值
       for (const [k, v] of Object.entries(patch)) {
-        storagePatch[camelToSnake(k)] = v;
+        pendingRef.current[camelToSnake(k)] = v;
       }
-      invoke("set_module_config", { moduleId, patch: storagePatch }).catch((e) =>
-        console.error(`[${moduleId}] save config failed:`, e),
-      );
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(flush, 400);
     },
-    [moduleId],
+    [moduleId, flush],
   );
 
-  // 挂载时读取一次
+  // 挂载时读取一次；卸载时把未落盘的补写掉
   useEffect(() => {
     reload();
-  }, [reload]);
+    return () => flush();
+  }, [reload, flush]);
 
   // 窗口聚焦时重读（防抖）：主窗改了设置、弹窗聚焦后立即拿到新值
   useEffect(() => {

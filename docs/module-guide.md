@@ -241,16 +241,14 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 
 ### 3.3 控件提交时机
 
-- **Slider 一律 `onValueCommit` 落盘**；拖动中的流畅显示用本地草稿值：
+- **Slider 直接 `onValueChange` → `onUpdate`**：Hook 内置落盘防抖（400ms 合并），界面边拉边生效，无需草稿值：
 
 ```tsx
-const [draft, setDraft] = useState(cfg.gridSize);
-useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
-<Slider value={[draft]} onValueChange={([v]) => setDraft(v)}
-        onValueCommit={([v]) => onUpdate({ gridSize: v })} />
+<Slider value={[cfg.gridSize]} onValueChange={([v]) => onUpdate({ gridSize: v })} />
+<span>{cfg.gridSize}px</span>
 ```
 
-- Switch / 按钮组 / Select：即时生效
+- Switch / 按钮组 / Select：即时生效（同样经 Hook 防抖合并，无感知）
 
 ### 3.4 例外规则（何时允许专用命令）
 

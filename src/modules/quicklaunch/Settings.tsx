@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -18,10 +17,6 @@ interface QuicklaunchSettingsProps {
 }
 
 export function QuicklaunchSettings({ cfg, onUpdate }: QuicklaunchSettingsProps) {
-  // 滑块拖动用草稿值（流畅显示），松手（commit）才落盘
-  const [gridDraft, setGridDraft] = useState(cfg.gridSize);
-  useEffect(() => setGridDraft(cfg.gridSize), [cfg.gridSize]);
-
   return (
     <div className="space-y-4 p-4">
       <Card>
@@ -58,12 +53,11 @@ export function QuicklaunchSettings({ cfg, onUpdate }: QuicklaunchSettingsProps)
                   min={48}
                   max={128}
                   step={4}
-                  value={[gridDraft]}
-                  onValueChange={([v]) => setGridDraft(v)}
-                  onValueCommit={([v]) => onUpdate({ gridSize: v })}
+                  value={[cfg.gridSize]}
+                  onValueChange={([v]) => onUpdate({ gridSize: v })}
                 />
                 <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                  {gridDraft}px
+                  {cfg.gridSize}px
                 </span>
               </div>
             </SettingRow>

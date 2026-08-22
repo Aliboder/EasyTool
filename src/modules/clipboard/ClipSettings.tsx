@@ -93,10 +93,6 @@ export function ClipSettings({
   const adv = cfg;
   const saveAdv = onUpdate;
 
-  // 格子尺寸滑块：拖动草稿值，松手落盘
-  const [cellDraft, setCellDraft] = useState(adv.cellSize);
-  useEffect(() => setCellDraft(adv.cellSize), [adv.cellSize]);
-
   useEffect(() => setMaxInput(String(maxItems)), [maxItems]);
 
   useEffect(() => {
@@ -290,12 +286,11 @@ export function ClipSettings({
                 min={48}
                 max={128}
                 step={4}
-                value={[cellDraft]}
-                onValueChange={([v]) => setCellDraft(v)}
-                onValueCommit={([v]) => saveAdv({ cellSize: v })}
+                value={[adv.cellSize]}
+                onValueChange={([v]) => saveAdv({ cellSize: v })}
               />
               <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                {cellDraft}px
+                {adv.cellSize}px
               </span>
             </div>
           </div>
