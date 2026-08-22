@@ -142,9 +142,9 @@ export function ItemCard({
       onContextMenu={handleContextMenu}
     >
       <div className="flex h-6 w-6 shrink-0 items-center justify-center">
-        {item.icon_path ? (
+        {icon ? (
           <img
-            src={`data:image/png;base64,${item.icon_path}`}
+            src={`data:image/png;base64,${icon}`}
             className="h-full w-full object-contain"
             alt=""
           />
