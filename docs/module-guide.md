@@ -17,6 +17,9 @@ src/modules/<id>/                      # React 前端组件
 - 模块可拥有独立窗口（目前仅剪贴板弹窗），也可仅作为主窗口内的一个页面
 - **复用共享前端工具**（不要重复造轮子）：
   - `src/hooks/useModuleConfig.ts` 的 `useModuleConfig`（**模块配置统一读写，见「3. 配置管理标准」——新模块设置功能的地基，必用**）
+- `src/hooks/useFileIcons.ts` 的 `useFileIcons`（文件图标/缩略图按路径缓存 + 并发去重，返回 `{ icons, thumbs, loadIcon(path), loadThumb(path) }`）
+- `src/hooks/usePopupGeometry.ts` 的 `usePopupGeometry`（弹窗位置/尺寸记忆：移动/缩放停止 400ms 后写回模块配置 `fixed_pos` / `popup_size` 键）
+- `src/lib/popup-entry.tsx` 的 `mountPopup(<XxxPage />)`（独立弹窗窗口统一挂载入口：主题跟随 + createRoot 样板全内置，见 Step 5）
   - `src/lib/theme.ts` 的 `applyTheme`（弹窗等独立窗口跟随主题）
   - `src/lib/use-horizontal-wheel.ts` 的 `useHorizontalWheel`（滚轮→横向滚动，如历史列表）
   - `src/lib/use-window-entrance.ts` 的 `useWindowEntrance`（窗口呼出入场动画，失焦置透明 + 聚焦重放，避免闪烁）
@@ -178,7 +181,12 @@ switch (activeModule.id) {
    ```ts
    foo_window: path.resolve(__dirname, "foo_window.html"),
    ```
-3. `src/foo_window.tsx`：独立 React 挂载入口（参考 `src/clipboard_popup.tsx`，记得调 `applyTheme` 跟随主题）
+3. `src/foo_window.tsx`：入口只需一行（主题跟随、React 挂载由 `mountPopup` 全包）：
+   ```tsx
+   import { mountPopup } from "@/lib/popup-entry";
+   import { FooPage } from "@/modules/foo/Page";
+   mountPopup(<FooPage />);
+   ```
 4. Rust 侧动态建窗（参考 lib.rs 中 clipboard_popup）：
    ```rust
    let win = tauri::WebviewWindowBuilder::new(
@@ -192,6 +200,8 @@ switch (activeModule.id) {
    win.hide()?;
    ```
 5. `src-tauri/capabilities/default.json`：`windows` 数组加入 `"foo_win"`，并按需补充权限（`core:window:allow-*`）
+
+> **弹窗几何记忆**：需要「记住位置/尺寸」时，页面内一行 `usePopupGeometry("foo", { trackSize: true, trackPos: true })` 即可（trackPos 仅固定位置模式开启）。**不要**自写 onMoved/onResized 防抖保存，也不要新增 save_xxx_geometry 类后端命令——写入统一走 `set_module_config`。
 
 ### Step 6：权限声明
 
@@ -263,6 +273,7 @@ useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
 ## 4. 数据与配置规范
 
 - 模块配置：`config.json` 的 `modules.<id>`（HashMap<String, Value>）。**前端读写走 `useModuleConfig` + `set_module_config`（见第 3 节）**；Rust 内部读取用 `module_config`、写回用 `save_config`
+- **文件图标/缩略图**：唯一入口是共享命令 `get_file_icon` / `get_file_thumb`，前端一律经 `useFileIcons` 缓存调用；禁止再造模块级图标加载命令或手写缓存 map
 - 模块私有数据：`app.path().app_data_dir()/<你的文件>`，即 `%APPDATA%\com.aliboder.easytool\`
 - 密钥：`keyring::Entry::new("com.aliboder.easytool", <用户标识>)`。**多账户场景每个账户独立槽位**（参考 quota 的 `get_account_key`/`set_account_key` + `key_ref`，绝不复用固定槽位，否则同类账户串号）
 - 配置迁移、旧数据导入：写进 `src-tauri/src/migrate.rs`（一次性，`config.migrated` 标记）
@@ -313,7 +324,8 @@ useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
 - [ ] 独立窗口的 4 处联动齐全，capabilities 权限完备
 - [ ] 配置读写走 `module_config` + `save_config`，无持锁嵌套调用
 - [ ] **模块设置走统一地基**：config.ts + useModuleConfig + 受控 Settings（第 3 节），未自写 save_xxx_settings 纯配置命令
-- [ ] Slider 用 onValueCommit 落盘；手写 invoke 的参数键名为 camelCase
+- [ ] **弹窗**：入口用 mountPopup；几何记忆用 usePopupGeometry；图标/缩略图经 useFileIcons（未手写缓存、未新增重复命令）
+- [ ] Slider 用 onValueChange 直连 onUpdate（Hook 防抖落盘）；手写 invoke 的参数键名为 camelCase
 - [ ] 网络/耗时操作在后台线程
 - [ ] 拖拽排序：小条目用 @dnd-kit；大卡片注意坑 9（不加 opacity、will-change、禁 transition）
 - [ ] 横向滚动 / 热键录制 / 主题复用共享组件（useHorizontalWheel / HotkeyRecorder / applyTheme）
