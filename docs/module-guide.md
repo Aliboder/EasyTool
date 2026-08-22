@@ -16,11 +16,13 @@ src/modules/<id>/                      # React 前端组件
 - 侧边栏/底部导航栏与模块页由 manifest 驱动，新增模块后**壳 UI 自动出现该模块**，无需改导航栏
 - 模块可拥有独立窗口（目前仅剪贴板弹窗），也可仅作为主窗口内的一个页面
 - **复用共享前端工具**（不要重复造轮子）：
+  - `src/hooks/useModuleConfig.ts` 的 `useModuleConfig`（**模块配置统一读写，见「3. 配置管理标准」——新模块设置功能的地基，必用**）
   - `src/lib/theme.ts` 的 `applyTheme`（弹窗等独立窗口跟随主题）
   - `src/lib/use-horizontal-wheel.ts` 的 `useHorizontalWheel`（滚轮→横向滚动，如历史列表）
   - `src/lib/use-window-entrance.ts` 的 `useWindowEntrance`（窗口呼出入场动画，失焦置透明 + 聚焦重放，避免闪烁）
   - `src/components/hotkey-recorder.tsx` 的 `HotkeyRecorder`（热键录制式设置）
   - `src/components/LazyImage.tsx` 的 `LazyImage`（IntersectionObserver 懒加载图片）
+  - `src/components/ui/context-menu(-item/-divider).tsx`（自研右键菜单三件套，参考 quicklaunch/emoji 用法：容器级 `preventDefault` + 条目级 handler）
 
 ## 2. 新增模块完整步骤（以模块 `foo` 为例）
 
@@ -85,17 +87,15 @@ pub fn module_config(app: &AppHandle) -> serde_json::Value {
 #[tauri::command]
 pub fn do_something(state: State<'_, Mutex<FooState>>) -> String { /* ... */ }
 
-#[tauri::command]
-pub fn save_settings(app: AppHandle, settings: FooSettings) -> Result<(), String> {
-    // 写模块配置：改 config.modules["foo"] 后调 save_config
-    // ⚠️ 见「坑 2」：不要持 ConfigState 锁时调用任何会再次取锁的函数
-    Ok(())
-}
+// ⚠️ 纯配置保存【不要】再写 save_xxx_settings 命令——
+// 统一走壳层现成的 set_module_config(module_id, patch)（已注册，直接可用）。
+// 只有带副作用/复合状态的设置才值得写专用命令（如 clipboard 的 set_hotkey
+// 做热键验证、quota 的 save_settings 保存后重评告警）。
 ```
 
 约定：
-- 命令命名前缀用模块语义（如 `set_max_items`、`get_stats`），避免全局泛名
-- 模块配置读写统一走 `module_config` + `crate::config::save_config`
+- 命令命名前缀用模块语义（如 `set_max_items`、`get_stats`），避免全局泛名；跨模块同名必须带模块前缀（`#[tauri::command]` 按函数名生成宏符号，rename 解决不了冲突）
+- 模块配置读取统一走 `module_config`；**写入统一走前端 `set_module_config`**（Rust 内部写配置仍用 `save_config`）
 - 密钥类数据存 Windows 凭据库（keyring），**不落盘明文**（见坑 7）
 
 ### Step 3：在 lib.rs 注册
@@ -201,16 +201,75 @@ switch (activeModule.id) {
 
 后端纯逻辑加 `#[cfg(test)]` 单元测试（参考 clipboard 的 24 个、quota 的 10 个，当前共 36），`cargo test` 全绿。前端无测试框架，靠人工验收。
 
-## 3. 数据与配置规范
+## 3. 配置管理标准（v0.4.6 起统一，新模块必须遵守）
 
-- 模块配置：`config.json` 的 `modules.<id>`（HashMap<String, Value>），通过 `module_config` 读取、`save_config` 写回
+模块设置的前后端机制已全项目统一为一份，**新模块直接踩在地基上，不要自己再造读写链路**：
+
+### 3.1 三件套写法
+
+```
+src/modules/foo/config.ts      # ① 配置类型 + 默认值
+src/modules/foo/Page.tsx       # ② 一行接入 Hook
+src/modules/foo/Settings.tsx   # ③ 纯受控展示组件
+```
+
+```tsx
+// ① config.ts —— state 字段用 camelCase；存储键由 Hook 自动转 snake_case
+export interface FooConfig {
+  viewMode: "grid" | "list";
+  gridSize: number;
+}
+export const FOO_DEFAULTS: FooConfig = { viewMode: "grid", gridSize: 64 };
+
+// ② Page.tsx / Popup.tsx —— 读取、保存、focus 重读、键名映射全部内置
+const { cfg, update } = useModuleConfig("foo", FOO_DEFAULTS);
+update({ gridSize: 80 });   // 即改即落盘，无需任何 invoke
+
+// ③ Settings.tsx —— 受控契约，禁止自持状态副本、禁止自行 invoke
+<FooSettings cfg={cfg} onUpdate={update} />
+function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<FooConfig>) => void }) { ... }
+```
+
+参考模板：`emoji/config.ts` + `quicklaunch/Settings.tsx`。
+
+### 3.2 内建行为（Hook 已处理，勿重复实现）
+
+- **键名双向映射**：JS camelCase ↔ config.json snake_case。曾因手写映射不一致导致 emoji 设置整页静默失败、quicklaunch 重启丢设置——此类 bug 已从机制上杜绝
+- **默认值合并**：存储缺失的字段回落 defaults
+- **窗口 focus 防抖重读**：主窗与弹窗共用同一 moduleId 即自动保持同步（弹窗呼出即拿到最新配置）
+- 后端 `set_module_config` 保存后自动 `reapply_hotkeys`（热键变更即时生效）
+
+### 3.3 控件提交时机
+
+- **Slider 一律 `onValueCommit` 落盘**；拖动中的流畅显示用本地草稿值：
+
+```tsx
+const [draft, setDraft] = useState(cfg.gridSize);
+useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
+<Slider value={[draft]} onValueChange={([v]) => setDraft(v)}
+        onValueCommit={([v]) => onUpdate({ gridSize: v })} />
+```
+
+- Switch / 按钮组 / Select：即时生效
+
+### 3.4 例外规则（何时允许专用命令）
+
+带副作用或复合状态的设置保留专用命令，不算破坏统一：
+- clipboard 的 `set_hotkey`（注册验证）、`set_max_items`（清理确认）
+- quota 的 `save_settings`（保存后立即重评告警）+ `get_settings`（返回含 keyring 账户的复合视图）
+
+判断标准：**纯「写 JSON 并落盘」→ 必须走统一机制；写入之外还有动作 → 才允许专用命令。**
+
+## 4. 数据与配置规范
+
+- 模块配置：`config.json` 的 `modules.<id>`（HashMap<String, Value>）。**前端读写走 `useModuleConfig` + `set_module_config`（见第 3 节）**；Rust 内部读取用 `module_config`、写回用 `save_config`
 - 模块私有数据：`app.path().app_data_dir()/<你的文件>`，即 `%APPDATA%\com.aliboder.easytool\`
 - 密钥：`keyring::Entry::new("com.aliboder.easytool", <用户标识>)`。**多账户场景每个账户独立槽位**（参考 quota 的 `get_account_key`/`set_account_key` + `key_ref`，绝不复用固定槽位，否则同类账户串号）
 - 配置迁移、旧数据导入：写进 `src-tauri/src/migrate.rs`（一次性，`config.migrated` 标记）
 - **时间序列数据**（余额历史/消费历史）：quota 按账户分文件 `balance_history_<account_id>.json`（`{"records":[{time,balance}]}`，ISO 时间），用 `history::daily_series_all` 聚合完整每日序列
 - **条目顺序持久化**：数据库加排序列（如剪贴板 `items.pin_order`，NULL=未排过序排最后），查询 `ORDER BY col IS NULL, col ASC`，新增 `set_xxx_order(ids)` 命令保存
 
-## 4. 关键坑（新增模块时必须遵守）
+## 5. 关键坑（新增模块时必须遵守）
 
 1. **不要用 PowerShell 的 `Get-Content`/`Set-Content` 改写源码**（会把 UTF-8 写成 GBK）。改文件一律用编辑器工具
 2. **std Mutex 不可重入**：持 `ConfigState` 或任何 Mutex 锁期间，**绝不调用会再次取锁的函数**（如 `module_config`、`fetch_once` 这类内部取锁的）。先收进块作用域释放锁，再把网络/耗时操作放 `spawn_blocking`
@@ -231,8 +290,9 @@ switch (activeModule.id) {
 17. **独立窗口延迟创建**：不要在 setup 创建隐藏弹窗（`.visible(false)` 在 Windows WebView2 上仍会闪现），首次呼出时才建窗（参考 `clipboard::ensure_popup_window`）
 18. **窗口入场动画**：用共享 `useWindowEntrance`（失焦置透明 + 聚焦重放），避免「先显示完整界面再补动画」的闪烁；不要重挂载根节点触发（会丢子组件状态）
 19. **SQLite 建索引必须在列添加之后**：索引引用的列若在版本迁移中才添加（如 `pin_order`），索引创建要放在迁移之后，否则新库建表直接失败
+20. **Tauri v2 invoke 参数 JS 侧必须 camelCase**：Rust 参数 `follow_mouse` ↔ JS 键名 `followMouse`。用 snake_case 键名调用会反序列化失败且**静默无报错**（emoji 曾因此所有设置存不上）。配置读写走 useModuleConfig 可天然避开；手写 invoke 其他命令时务必注意
 
-## 5. 完成清单
+## 6. 完成清单
 
 新增模块后逐项自检：
 
@@ -241,6 +301,8 @@ switch (activeModule.id) {
 - [ ] 前端页面/设置已接入 App.tsx（导航栏自动出现）
 - [ ] 独立窗口的 4 处联动齐全，capabilities 权限完备
 - [ ] 配置读写走 `module_config` + `save_config`，无持锁嵌套调用
+- [ ] **模块设置走统一地基**：config.ts + useModuleConfig + 受控 Settings（第 3 节），未自写 save_xxx_settings 纯配置命令
+- [ ] Slider 用 onValueCommit 落盘；手写 invoke 的参数键名为 camelCase
 - [ ] 网络/耗时操作在后台线程
 - [ ] 拖拽排序：小条目用 @dnd-kit；大卡片注意坑 9（不加 opacity、will-change、禁 transition）
 - [ ] 横向滚动 / 热键录制 / 主题复用共享组件（useHorizontalWheel / HotkeyRecorder / applyTheme）
@@ -248,7 +310,7 @@ switch (activeModule.id) {
 - [ ] 手动验收清单已给用户（启动命令 + 验证点）
 - [ ] `codegraph init` 重建索引后提交
 
-## 6. 参考实现
+## 7. 参考实现
 
 新增模块时对照这些现成模块：
 
@@ -256,3 +318,4 @@ switch (activeModule.id) {
 - **quota**：后台轮询线程 + **多账户支持**（账户增删改 + 独立密钥槽位 key_ref + 独立余额/历史）+ 告警通知 + 消费历史按账户分文件 + 完整时间线（横向滚动）+ 面板卡片拖拽排序（@dnd-kit + will-change），后台任务/数据可视化/多实例类模块参照
 - **search**：动态加载第三方 DLL（`Everything64.dll`，MIT，从官方 SDK 下载打包进 `modules/search/`）+ SDK 全局状态用互斥锁串行 + 查询放后台线程 + 复用剪贴板图标/缩略图命令 + 弹窗模式复用，外部依赖/FFI 类模块参照。⚠️ Tauri 命令若与其他模块同名，**函数名须带模块前缀**（`search_get_status`），`#[tauri::command(rename=...)]` 无法解决宏符号冲突
 - **quicklaunch**：固定项/文件夹管理（SQLite）+ 文件夹分组展示（2x2 网格预览）+ 拖拽排序（@dnd-kit）+ 网格/列表视图切换 + 文件拖入固定 + 右键菜单管理，文件夹/分组类模块参照
+- **emoji**：`config.ts` + `useModuleConfig` + 受控 Settings 的**配置管理标准参照实现**（主窗 Page 与弹窗 Popup 共用同一 Hook 自动同步）；含内置表情/图片表情双网格 + 收藏/分组
