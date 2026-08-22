@@ -739,3 +739,14 @@
 **相关代码**：
 - `src/modules/quicklaunch/Page.tsx` - 主组件重构
 - `src/modules/quicklaunch/Settings.tsx` - 简化为接收 cfg + onUpdate
+
+### 4. Tauri v2 命令参数 JS 侧必须用 camelCase
+
+**问题**：表情模块设置（热键/点击行为/跟随鼠标/网格大小）全部保存失败且无报错。
+
+**根因**：invoke 参数用了 snake_case 键名（如 ollow_mouse），Tauri v2 默认将 Rust snake_case 参数映射为 JS camelCase（如 ollowMouse）。键名不匹配 → 反序列化失败 → Promise 静默 reject。
+
+**解决方案**：JS invoke 一律传 camelCase 键名。排查信号：设置改完重启后回退旧值 = 保存没写进去。
+
+**相关代码**：
+- `src/modules/emoji/Settings.tsx` - save 函数
