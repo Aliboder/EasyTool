@@ -192,7 +192,8 @@ export function EmojiPopup() {
               key={item.type + item.id}
               title={item.label}
               onClick={() => pick(item.type, item.id)}
-              className="flex size-9 items-center justify-center overflow-hidden rounded-md text-2xl hover:bg-accent"
+              className="flex items-center justify-center overflow-hidden rounded-md hover:bg-accent"
+              style={{ width: emojiGridSize, height: emojiGridSize }}
             >
               {item.thumb ? (
                 <img
@@ -201,7 +202,7 @@ export function EmojiPopup() {
                   alt=""
                 />
               ) : item.type === "emoji" ? (
-                <SmartEmoji char={item.id} code={item.code} size={28} />
+                <SmartEmoji char={item.id} code={item.code} size={Math.round(emojiGridSize * 0.7)} />
               ) : (
                 item.id
               )}

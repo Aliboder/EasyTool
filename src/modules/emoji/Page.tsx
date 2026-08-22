@@ -320,9 +320,10 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
                     emoji: e.char,
                   });
                 }}
-                className="flex size-9 items-center justify-center rounded-md text-2xl hover:bg-accent"
+                className="flex items-center justify-center rounded-md hover:bg-accent"
+                style={{ width: emojiGridSize, height: emojiGridSize }}
               >
-                <SmartEmoji char={e.char} code={e.code} size={28} />
+                <SmartEmoji char={e.char} code={e.code} size={Math.round(emojiGridSize * 0.7)} />
               </button>
             ))}
           </div>
@@ -343,7 +344,8 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
                       customId: c.id,
                     });
                   }}
-                  className="flex size-14 items-center justify-center overflow-hidden rounded-md border hover:border-primary"
+                  className="flex items-center justify-center overflow-hidden rounded-md border hover:border-primary"
+                  style={{ width: customGridSize, height: customGridSize }}
                 >
                   {c.thumb ? (
                     <img
