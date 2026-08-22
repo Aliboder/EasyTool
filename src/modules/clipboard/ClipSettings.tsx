@@ -9,8 +9,9 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { getConfig } from "@/lib/api";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
+import { useModuleConfig } from "@/hooks/useModuleConfig";
+import type { ClipboardConfig } from "./config";
 import {
   Dialog,
   DialogContent,
@@ -70,7 +71,6 @@ export function ClipSettings({
   onMaxItems,
   onHotkey,
   onFollowMouse,
-  onRefresh,
 }: {
   maxItems: number;
   hotkey: string;
@@ -78,51 +78,29 @@ export function ClipSettings({
   onMaxItems: () => void;
   onHotkey: () => void;
   onFollowMouse: () => void;
-  onRefresh: () => void;
 }) {
   const [maxInput, setMaxInput] = useState(String(maxItems));
   const [stats, setStats] = useState<StatsDto | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [pendingLimit, setPendingLimit] = useState<number | null>(null);
-  const [adv, setAdv] = useState({
-    record_text: true,
-    record_image: true,
-    record_files: true,
-    min_text_len: 0,
-    cell_size: 80,
-    text_lines: 2,
-    show_timestamps: true,
-  });
+
+  // 监听规则/弹窗显示等纯配置走共享 Hook（camelCase patch 自动落盘）
+  const { cfg: adv, update: saveAdv } = useModuleConfig("clipboard", {
+    recordText: true,
+    recordImage: true,
+    recordFiles: true,
+    minTextLen: 0,
+    cellSize: 80,
+    textLines: 2,
+    showTimestamps: true,
+  } as ClipboardConfig);
 
   useEffect(() => setMaxInput(String(maxItems)), [maxItems]);
 
   useEffect(() => {
     invoke<StatsDto>("get_stats").then(setStats).catch(console.error);
   }, []);
-
-  useEffect(() => {
-    getConfig()
-      .then((c) => {
-        const m = c.modules.clipboard ?? {};
-        setAdv({
-          record_text: (m.record_text as boolean) ?? true,
-          record_image: (m.record_image as boolean) ?? true,
-          record_files: (m.record_files as boolean) ?? true,
-          min_text_len: (m.min_text_len as number) ?? 0,
-          cell_size: (m.cell_size as number) ?? 80,
-          text_lines: (m.text_lines as number) ?? 2,
-          show_timestamps: (m.show_timestamps as boolean) ?? true,
-        });
-      })
-      .catch(console.error);
-  }, []);
-
-  const saveAdv = async (patch: Partial<typeof adv>) => {
-    setAdv((prev) => ({ ...prev, ...patch }));
-    await invoke("save_clipboard_settings", { settings: patch });
-    onRefresh();
-  };
 
   const saveMax = async (v?: string) => {
     const n = parseInt(v ?? maxInput, 10);
@@ -157,8 +135,7 @@ export function ClipSettings({
   const resetSize = async () => {
     const w = await WebviewWindow.getByLabel("clipboard_popup");
     await w?.setSize(new PhysicalSize(620, 480));
-    await invoke("save_clipboard_settings", { settings: { popup_size: null } });
-    onRefresh();
+    saveAdv({ popupSize: null });
   };
 
   const clearHistory = async () => {
@@ -259,21 +236,21 @@ export function ClipSettings({
               <div className="text-sm font-medium">记录文本</div>
               <div className="text-xs text-muted-foreground">复制文本时保存到历史</div>
             </div>
-            <Switch checked={adv.record_text} onCheckedChange={(v) => saveAdv({ record_text: v })} />
+            <Switch checked={adv.recordText} onCheckedChange={(v) => saveAdv({ recordText: v })} />
           </div>
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium">记录图片</div>
               <div className="text-xs text-muted-foreground">复制图片时保存到历史</div>
             </div>
-            <Switch checked={adv.record_image} onCheckedChange={(v) => saveAdv({ record_image: v })} />
+            <Switch checked={adv.recordImage} onCheckedChange={(v) => saveAdv({ recordImage: v })} />
           </div>
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium">记录文件</div>
               <div className="text-xs text-muted-foreground">复制文件时保存到历史</div>
             </div>
-            <Switch checked={adv.record_files} onCheckedChange={(v) => saveAdv({ record_files: v })} />
+            <Switch checked={adv.recordFiles} onCheckedChange={(v) => saveAdv({ recordFiles: v })} />
           </div>
           <div className="flex items-center justify-between">
             <div>
@@ -286,8 +263,8 @@ export function ClipSettings({
               type="number"
               min={0}
               max={100}
-              value={String(adv.min_text_len)}
-              onChange={(e) => saveAdv({ min_text_len: Math.max(0, Number(e.target.value) || 0) })}
+              value={String(adv.minTextLen)}
+              onChange={(e) => saveAdv({ minTextLen: Math.max(0, Number(e.target.value) || 0) })}
               className="w-20"
             />
           </div>
@@ -309,13 +286,13 @@ export function ClipSettings({
             </div>
             <div className="w-44">
               <Segmented
-                value={adv.cell_size}
+                value={adv.cellSize}
                 options={[
                   { value: 64, label: "小" },
                   { value: 80, label: "中" },
                   { value: 96, label: "大" },
                 ]}
-                onChange={(v) => saveAdv({ cell_size: v })}
+                onChange={(v) => saveAdv({ cellSize: v })}
               />
             </div>
           </div>
@@ -326,13 +303,13 @@ export function ClipSettings({
             </div>
             <div className="w-44">
               <Segmented
-                value={adv.text_lines}
+                value={adv.textLines}
                 options={[
                   { value: 1, label: "1 行" },
                   { value: 2, label: "2 行" },
                   { value: 3, label: "3 行" },
                 ]}
-                onChange={(v) => saveAdv({ text_lines: v })}
+                onChange={(v) => saveAdv({ textLines: v })}
               />
             </div>
           </div>
@@ -344,8 +321,8 @@ export function ClipSettings({
               </div>
             </div>
             <Switch
-              checked={adv.show_timestamps}
-              onCheckedChange={(v) => saveAdv({ show_timestamps: v })}
+              checked={adv.showTimestamps}
+              onCheckedChange={(v) => saveAdv({ showTimestamps: v })}
             />
           </div>
         </CardContent>

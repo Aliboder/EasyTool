@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
-import { getConfig } from "@/lib/api";
+import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { CLIPBOARD_DEFAULTS } from "./config";
 import { Drawer } from "@/components/ui/drawer";
 import { Search, Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile } from "lucide-react";
 import {
@@ -117,44 +118,11 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
   const [fileThumbs, setFileThumbs] = useState<Record<string, string>>({});
   const [showSettings, setShowSettings] = useState(false);
-  const [clipCfg, setClipCfg] = useState<{
-    maxItems: number;
-    hotkey: string;
-    followMouse: boolean;
-    cellSize: number;
-    textLines: number;
-    showTimestamps: boolean;
-  } | null>(null);
+  // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
+  const { cfg: clipCfg, reload: refreshClipCfg } = useModuleConfig("clipboard", CLIPBOARD_DEFAULTS);
   const debounce = useRef<number | null>(null);
   const [preview, setPreview] = useState<{ src: string; name: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-
-  const refreshClipCfg = useCallback(async () => {
-    try {
-      const cfg = await getConfig();
-      const m = cfg.modules.clipboard ?? {};
-      setClipCfg({
-        maxItems: (m.max_items as number) ?? 500,
-        hotkey: (m.hotkey as string) ?? "Ctrl+Shift+V",
-        followMouse: (m.follow_mouse as boolean) ?? true,
-        cellSize: (m.cell_size as number) ?? 80,
-        textLines: (m.text_lines as number) ?? 2,
-        showTimestamps: (m.show_timestamps as boolean) ?? true,
-      });
-    } catch (e) {
-      console.error("load clip config failed", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshClipCfg();
-  }, [refreshClipCfg]);
-
-  // 每次呼出（窗口聚焦）刷新配置，跟随/固定模式切换即时生效
-  useEffect(() => {
-    window.addEventListener("focus", refreshClipCfg);
-    return () => window.removeEventListener("focus", refreshClipCfg);
-  }, [refreshClipCfg]);
 
   const load = useCallback(async () => {
     try {
@@ -206,7 +174,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
 
   // 固定位置模式下：拖动弹窗后防抖保存位置（仅弹窗窗口）
   useEffect(() => {
-    if (!popup || clipCfg?.followMouse !== false) return;
+    if (!popup || clipCfg.followMouse !== false) return;
     const win = getCurrentWindow();
     let t: number | null = null;
     const un = win.onMoved(({ payload }) => {
@@ -322,9 +290,9 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
 
   const composite = filter === "all" || filter === "pinned";
   const pinned = filter === "pinned";
-  const cellSize = clipCfg?.cellSize ?? 80;
-  const textLines = clipCfg?.textLines ?? 2;
-  const showTimestamps = clipCfg?.showTimestamps ?? true;
+  const cellSize = clipCfg.cellSize;
+  const textLines = clipCfg.textLines;
+  const showTimestamps = clipCfg.showTimestamps;
   const imgItems = composite ? items.filter(isImageItem) : [];
   const fileItems = composite
     ? items.filter((it) => it.kind === "files" && !isImageItem(it))
@@ -654,7 +622,6 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
         {!popup && (
           <button
             onClick={() => {
-              if (!clipCfg) refreshClipCfg();
               setShowSettings((v) => !v);
             }}
             aria-label="剪贴板设置"
@@ -948,13 +915,12 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="剪贴板设置">
         <ClipSettings
-          maxItems={clipCfg?.maxItems ?? 500}
-          hotkey={clipCfg?.hotkey ?? "Ctrl+Shift+V"}
-          followMouse={clipCfg?.followMouse ?? true}
+          maxItems={clipCfg.maxItems}
+          hotkey={clipCfg.hotkey}
+          followMouse={clipCfg.followMouse}
           onMaxItems={refreshClipCfg}
           onHotkey={refreshClipCfg}
           onFollowMouse={refreshClipCfg}
-          onRefresh={refreshClipCfg}
         />
       </Drawer>
     </div>
