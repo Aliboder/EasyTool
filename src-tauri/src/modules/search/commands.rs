@@ -189,30 +189,6 @@ pub fn search_copy_file(app: AppHandle, path: String) -> CmdResult<()> {
     Ok(())
 }
 
-/// 保存弹窗固定位置（物理像素坐标）
-#[tauri::command]
-pub fn search_save_fixed_pos(app: AppHandle, x: i32, y: i32) -> CmdResult<()> {
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut("search") {
-        v["fixed_pos"] = serde_json::json!({ "x": x, "y": y });
-    }
-    crate::config::save_config(&app, &cfg).map_err(CommandError::from)?;
-    Ok(())
-}
-
-/// 保存弹窗尺寸
-#[tauri::command]
-pub fn search_save_popup_size(app: AppHandle, width: u32, height: u32) -> CmdResult<()> {
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut("search") {
-        v["popup_size"] = serde_json::json!({ "w": width, "h": height });
-    }
-    crate::config::save_config(&app, &cfg).map_err(CommandError::from)?;
-    Ok(())
-}
-
 /// 设置搜索模块热键（统一呼出模式下禁用，与剪贴板一致）
 #[tauri::command]
 pub fn search_set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {

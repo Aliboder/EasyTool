@@ -205,28 +205,6 @@ pub fn set_follow_mouse(app: AppHandle, follow: bool) -> CmdResult<()> {
     crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
 }
 
-/// 保存固定位置（物理像素坐标，弹窗拖动后由前端上报）
-#[tauri::command]
-pub fn save_fixed_pos(app: AppHandle, x: i32, y: i32) -> CmdResult<()> {
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut("clipboard") {
-        v["fixed_pos"] = serde_json::json!({ "x": x, "y": y });
-    }
-    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
-}
-
-/// 保存弹窗尺寸（物理像素，弹窗调整大小后由前端上报）
-#[tauri::command]
-pub fn save_popup_size(app: AppHandle, width: u32, height: u32) -> CmdResult<()> {
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut("clipboard") {
-        v["popup_size"] = serde_json::json!({ "w": width, "h": height });
-    }
-    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
-}
-
 /// 设置全局呼出热键（立即生效并持久化）
 #[tauri::command]
 pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
