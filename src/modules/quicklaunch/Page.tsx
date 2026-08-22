@@ -259,10 +259,13 @@ export function QuicklaunchPage() {
   }, []);
 
   useEffect(() => {
+    loadConfig();
+  }, []);
+
+  useEffect(() => {
     fetchItems();
     fetchFolders();
-    loadConfig();
-  }, [fetchItems, fetchFolders, loadConfig]);
+  }, [fetchItems, fetchFolders]);
 
 
 
@@ -686,115 +689,203 @@ export function QuicklaunchPage() {
             没有找到匹配的项目
           </div>
         ) : viewMode === "grid" ? (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={items.map((item) => String(item.id))} strategy={rectSortingStrategy}>
-              <div
-                className="grid gap-2"
-                style={{
-                  gridAutoRows: `${gridSize}px`,
-                  gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
-                }}
-              >
-                {/* 显示分组 */}
-                {foldersWithItems.map((folder) => (
-                  <div key={`folder-${folder.id}`} data-item-id={folder.id}>
-                    <GroupCard
-                      id={folder.id}
-                      name={folder.name}
-                      items={folder.items}
-                      gridSize={gridSize}
-                      fileIcons={fileIcons}
-                      selected={selectedIds.has(folder.id)}
-                      onSelect={(id) => {
-                        setExpandedFolder(id);
-                      }}
-                      onOpen={(id) => {
-                        setExpandedFolder(id);
-                      }}
-                      onContextMenu={(e, id) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setContextMenu({
-                          visible: true,
-                          x: e.clientX,
-                          y: e.clientY,
-                          type: "folder",
-                          folderId: id,
-                          folderPosition: { x: e.clientX, y: e.clientY },
-                        });
-                      }}
-                    />
-                  </div>
-                ))}
-                
-                {/* 显示项目 */}
-                {items.map((item) => (
-                  <SortableItem key={item.id} id={String(item.id)}>
-                    <div data-item-id={item.id}>
-                      <ItemCard
-                        item={item}
-                        viewMode="grid"
-                        gridSize={gridSize}
-                        icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                        showExtension={showExtension}
-                        singleClickOpen={singleClickOpen}
-                        selected={selectedIds.has(item.id)}
-                        onSelect={(id, e) => handleItemSelect(id, e)}
-                        onOpen={handleOpen}
-                        onDelete={handleDelete}
-                        onRename={handleRename}
-                        onContextMenu={handleItemContextMenu}
-                      />
-                    </div>
-                  </SortableItem>
-                ))}
-                <button
-                  className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
+          sortBy === "manual" ? (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={items.map((item) => String(item.id))} strategy={rectSortingStrategy}>
+                <div
+                  className="grid gap-2"
                   style={{
-                    height: `${gridSize}px`,
-                    padding: `${gridSize * 0.1}px`,
+                    gridAutoRows: `${gridSize}px`,
+                    gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
                   }}
-                  onClick={handleAddItem}
                 >
-                  <Plus className="text-muted-foreground" style={{ width: gridSize * 0.5, height: gridSize * 0.5 }} />
-                  <span className="text-muted-foreground" style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}>添加</span>
-                </button>
-              </div>
-            </SortableContext>
-          </DndContext>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={items.map((item) => String(item.id))} strategy={verticalListSortingStrategy}>
-              <div className="flex flex-col">
-                {items.map((item) => (
-                  <SortableItem key={item.id} id={String(item.id)}>
-                    <div data-item-id={item.id}>
-                      <ItemCard
-                        item={item}
-                        viewMode="list"
-                        icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                        showExtension={showExtension}
-                        singleClickOpen={singleClickOpen}
-                        selected={selectedIds.has(item.id)}
-                        onSelect={(id, e) => handleItemSelect(id, e)}
-                        onOpen={handleOpen}
-                        onDelete={handleDelete}
-                        onRename={handleRename}
-                        onContextMenu={handleItemContextMenu}
+                  {/* 显示分组 */}
+                  {foldersWithItems.map((folder) => (
+                    <div key={`folder-${folder.id}`} data-item-id={folder.id}>
+                      <GroupCard
+                        id={folder.id}
+                        name={folder.name}
+                        items={folder.items}
+                        gridSize={gridSize}
+                        fileIcons={fileIcons}
+                        selected={selectedIds.has(folder.id)}
+                        onSelect={(id) => {
+                          setExpandedFolder(id);
+                        }}
+                        onOpen={(id) => {
+                          setExpandedFolder(id);
+                        }}
+                        onContextMenu={(e, id) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setContextMenu({
+                            visible: true,
+                            x: e.clientX,
+                            y: e.clientY,
+                            type: "folder",
+                            folderId: id,
+                            folderPosition: { x: e.clientX, y: e.clientY },
+                          });
+                        }}
                       />
                     </div>
-                  </SortableItem>
-                ))}
-                <button
-                  className="flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors hover:bg-accent/50 text-muted-foreground"
-                  onClick={handleAddItem}
-                >
-                  <Plus className="h-4 w-4" />
-                  <span className="text-sm">添加项目</span>
-                </button>
-              </div>
-            </SortableContext>
-          </DndContext>
+                  ))}
+                  
+                  {/* 显示项目 */}
+                  {items.map((item) => (
+                    <SortableItem key={item.id} id={String(item.id)}>
+                      <div data-item-id={item.id}>
+                        <ItemCard
+                          item={item}
+                          viewMode="grid"
+                          gridSize={gridSize}
+                          icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                          showExtension={showExtension}
+                          singleClickOpen={singleClickOpen}
+                          selected={selectedIds.has(item.id)}
+                          onSelect={(id, e) => handleItemSelect(id, e)}
+                          onOpen={handleOpen}
+                          onDelete={handleDelete}
+                          onRename={handleRename}
+                          onContextMenu={handleItemContextMenu}
+                        />
+                      </div>
+                    </SortableItem>
+                  ))}
+                  <button
+                    className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
+                    style={{
+                      height: `${gridSize}px`,
+                      padding: `${gridSize * 0.1}px`,
+                    }}
+                    onClick={handleAddItem}
+                  >
+                    <Plus className="text-muted-foreground" style={{ width: gridSize * 0.5, height: gridSize * 0.5 }} />
+                    <span className="text-muted-foreground" style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}>添加</span>
+                  </button>
+                </div>
+              </SortableContext>
+            </DndContext>
+          ) : (
+            <div
+              className="grid gap-2"
+              style={{
+                gridAutoRows: `${gridSize}px`,
+                gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
+              }}
+            >
+              {foldersWithItems.map((folder) => (
+                <div key={`folder-${folder.id}`} data-item-id={folder.id}>
+                  <GroupCard
+                    id={folder.id}
+                    name={folder.name}
+                    items={folder.items}
+                    gridSize={gridSize}
+                    fileIcons={fileIcons}
+                    selected={selectedIds.has(folder.id)}
+                    onSelect={(id) => { setExpandedFolder(id); }}
+                    onOpen={(id) => { setExpandedFolder(id); }}
+                    onContextMenu={(e, id) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setContextMenu({
+                        visible: true, x: e.clientX, y: e.clientY,
+                        type: "folder", folderId: id, folderPosition: { x: e.clientX, y: e.clientY },
+                      });
+                    }}
+                  />
+                </div>
+              ))}
+              {items.map((item) => (
+                <div key={item.id} data-item-id={item.id}>
+                  <ItemCard
+                    item={item}
+                    viewMode="grid"
+                    gridSize={gridSize}
+                    icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                    showExtension={showExtension}
+                    singleClickOpen={singleClickOpen}
+                    selected={selectedIds.has(item.id)}
+                    onSelect={(id, e) => handleItemSelect(id, e)}
+                    onOpen={handleOpen}
+                    onDelete={handleDelete}
+                    onRename={handleRename}
+                    onContextMenu={handleItemContextMenu}
+                  />
+                </div>
+              ))}
+              <button
+                className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
+                style={{ height: `${gridSize}px`, padding: `${gridSize * 0.1}px` }}
+                onClick={handleAddItem}
+              >
+                <Plus className="text-muted-foreground" style={{ width: gridSize * 0.5, height: gridSize * 0.5 }} />
+                <span className="text-muted-foreground" style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}>添加</span>
+              </button>
+            </div>
+          )
+        ) : (
+          sortBy === "manual" ? (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={items.map((item) => String(item.id))} strategy={verticalListSortingStrategy}>
+                <div className="flex flex-col">
+                  {items.map((item) => (
+                    <SortableItem key={item.id} id={String(item.id)}>
+                      <div data-item-id={item.id}>
+                        <ItemCard
+                          item={item}
+                          viewMode="list"
+                          icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                          showExtension={showExtension}
+                          singleClickOpen={singleClickOpen}
+                          selected={selectedIds.has(item.id)}
+                          onSelect={(id, e) => handleItemSelect(id, e)}
+                          onOpen={handleOpen}
+                          onDelete={handleDelete}
+                          onRename={handleRename}
+                          onContextMenu={handleItemContextMenu}
+                        />
+                      </div>
+                    </SortableItem>
+                  ))}
+                  <button
+                    className="flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors hover:bg-accent/50 text-muted-foreground"
+                    onClick={handleAddItem}
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span className="text-sm">添加项目</span>
+                  </button>
+                </div>
+              </SortableContext>
+            </DndContext>
+          ) : (
+            <div className="flex flex-col">
+              {items.map((item) => (
+                <div key={item.id} data-item-id={item.id}>
+                  <ItemCard
+                    item={item}
+                    viewMode="list"
+                    icon={item.item_type === "url" ? null : fileIcons[item.path]}
+                    showExtension={showExtension}
+                    singleClickOpen={singleClickOpen}
+                    selected={selectedIds.has(item.id)}
+                    onSelect={(id, e) => handleItemSelect(id, e)}
+                    onOpen={handleOpen}
+                    onDelete={handleDelete}
+                    onRename={handleRename}
+                    onContextMenu={handleItemContextMenu}
+                  />
+                </div>
+              ))}
+              <button
+                className="flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors hover:bg-accent/50 text-muted-foreground"
+                onClick={handleAddItem}
+              >
+                <Plus className="h-4 w-4" />
+                <span className="text-sm">添加项目</span>
+              </button>
+            </div>
+          )
         )}
       </div>
 
