@@ -363,12 +363,12 @@ export function QuicklaunchPage() {
 
     const setupDragDrop = async () => {
       const { listen } = await import("@tauri-apps/api/event");
-      const unlisten = await listen<{ type: string; paths: string[] }>(
+      const unlisten = await listen<{ paths: string[] }>(
         "tauri://drag-drop",
         (event) => {
-          if (event.payload.type === "drop") {
-            const paths = event.payload.paths;
-            // 去重路径
+          const paths = event.payload.paths;
+          if (paths && paths.length > 0) {
+            console.log("Processing drop with paths:", paths);
             const uniquePaths = [...new Set(paths)];
             for (const path of uniquePaths) {
               invoke("quicklaunch_add_from_path", { path }).catch((err) => {
