@@ -33,6 +33,28 @@ import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { cn } from "@/lib/utils";
 
+// ==================== 配置类型（对齐文件搜索模块） ====================
+
+interface QuicklaunchConfig {
+  viewMode: "grid" | "list";
+  sortBy: "manual" | "name" | "created_at";
+  sortDesc: boolean;
+  gridSize: number;
+  showExtension: boolean;
+  singleClickOpen: boolean;
+}
+
+const QL_DEFAULTS: QuicklaunchConfig = {
+  viewMode: "grid",
+  sortBy: "manual",
+  sortDesc: false,
+  gridSize: 64,
+  showExtension: true,
+  singleClickOpen: false,
+};
+
+// ==================== 内部组件 ====================
+
 interface ContextMenuState {
   visible: boolean;
   x: number;
@@ -88,7 +110,6 @@ export function QuicklaunchPage() {
   const [items, setItems] = useState<QuicklaunchItem[]>([]);
   const [foldersWithItems, setFoldersWithItems] = useState<FolderWithItems[]>([]);
   const [filter, setFilter] = useState<FilterType>("all");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -100,19 +121,36 @@ export function QuicklaunchPage() {
     type: "panel",
   });
   const [folders, setFolders] = useState<{ id: number; name: string }[]>([]);
-  const [gridSize, setGridSize] = useState(64);
-  const [sortBy, setSortBy] = useState<"manual" | "name" | "created_at">("manual");
   const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
   const [expandedFolder, setExpandedFolder] = useState<number | null>(null);
-  const [showExtension, setShowExtension] = useState(true);
-  const [singleClickOpen, setSingleClickOpen] = useState(false);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
+  // 统一配置状态（对齐文件搜索模块的 cfg 模式）
+  const [cfg, setCfg] = useState<QuicklaunchConfig>(QL_DEFAULTS);
+
   // 框选状态
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<{ x: number; y: number } | null>(null);
+
+  // ==================== 配置操作函数 ====================
+
+  const updateConfig = useCallback((patch: Partial<QuicklaunchConfig>) => {
+    setCfg((prev) => {
+      const next = { ...prev, ...patch };
+      invoke("save_quicklaunch_settings", { settings: patch }).catch(console.error);
+      return next;
+    });
+  }, []);
+
+  const toggleView = useCallback(() => {
+    setCfg((prev) => {
+      const next = prev.viewMode === "grid" ? "list" : "grid";
+      invoke("save_quicklaunch_settings", { settings: { view_mode: next } }).catch(console.error);
+      return { ...prev, viewMode: next };
+    });
+  }, []);
 
   // 按需加载文件图标（与剪贴板模块一致）
   const loadFileIcon = useCallback(async (path: string) => {
@@ -159,59 +197,44 @@ export function QuicklaunchPage() {
   // 手动排序缓存（用于排序记忆功能）
   const manualOrderRef = useRef<number[]>([]);
 
-  const fetchItems = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true);
+  const fetchItems = useCallback(async () => {
     try {
       const filterOptions = {
         item_type: filter === "all" ? null : filter,
         search: search || null,
-        sort_by: sortBy === "manual" ? "sort_order" : sortBy,
-        sort_desc: false,
+        sort_by: cfg.sortBy === "manual" ? "sort_order" : cfg.sortBy,
+        sort_desc: cfg.sortDesc,
       };
       const result = await invoke<QuicklaunchItem[]>("quicklaunch_list_items", {
         filter: filterOptions,
       });
-      
-      // 如果是手动排序模式
-      if (sortBy === "manual") {
-        // 如果缓存为空，从数据库的 sort_order 初始化缓存
+
+      if (cfg.sortBy === "manual") {
         if (manualOrderRef.current.length === 0) {
           manualOrderRef.current = result.map((item) => item.id);
         }
-        // 按缓存顺序排序
         const ordered = [...result].sort((a, b) => {
           const aIdx = manualOrderRef.current.indexOf(a.id);
           const bIdx = manualOrderRef.current.indexOf(b.id);
-          // 如果都不在缓存中，按 sort_order 排序
           if (aIdx === -1 && bIdx === -1) return a.sort_order - b.sort_order;
-          // 如果只有一个在缓存中，缓存的排前面
           if (aIdx === -1) return 1;
           if (bIdx === -1) return -1;
           return aIdx - bIdx;
         });
         setItems(ordered);
-        // 加载图标
         for (const item of ordered) {
-          if (item.item_type !== "url") {
-            loadFileIcon(item.path);
-          }
+          if (item.item_type !== "url") loadFileIcon(item.path);
         }
       } else {
-        // 非手动排序模式，直接使用数据库返回的顺序
         setItems(result);
-        // 加载图标
         for (const item of result) {
-          if (item.item_type !== "url") {
-            loadFileIcon(item.path);
-          }
+          if (item.item_type !== "url") loadFileIcon(item.path);
         }
       }
     } catch (e) {
       console.error("Failed to fetch items:", e);
-    } finally {
-      if (showLoading) setLoading(false);
     }
-  }, [filter, search, sortBy]);
+  }, [filter, search, cfg.sortBy, cfg.sortDesc, loadFileIcon]);
 
   const fetchFolders = useCallback(async () => {
     try {
@@ -245,13 +268,16 @@ export function QuicklaunchPage() {
   const loadConfig = useCallback(async () => {
     try {
       const config = await invoke<{ modules?: Record<string, Record<string, unknown>> }>("get_config");
-      const moduleConfig = config?.modules?.quicklaunch;
-      if (moduleConfig) {
-        if (moduleConfig.grid_size) setGridSize(moduleConfig.grid_size as number);
-        if (moduleConfig.view_mode) setViewMode(moduleConfig.view_mode as "grid" | "list");
-        if (moduleConfig.sort_by) setSortBy(moduleConfig.sort_by as "manual" | "name" | "created_at");
-        if (moduleConfig.show_extension !== undefined) setShowExtension(moduleConfig.show_extension as boolean);
-        if (moduleConfig.single_click_open !== undefined) setSingleClickOpen(moduleConfig.single_click_open as boolean);
+      const m = config?.modules?.quicklaunch;
+      if (m) {
+        setCfg({
+          viewMode: (m.view_mode as "grid" | "list") || QL_DEFAULTS.viewMode,
+          sortBy: (m.sort_by as "manual" | "name" | "created_at") || QL_DEFAULTS.sortBy,
+          sortDesc: (m.sort_desc as boolean) ?? QL_DEFAULTS.sortDesc,
+          gridSize: (m.grid_size as number) || QL_DEFAULTS.gridSize,
+          showExtension: (m.show_extension as boolean) ?? QL_DEFAULTS.showExtension,
+          singleClickOpen: (m.single_click_open as boolean) ?? QL_DEFAULTS.singleClickOpen,
+        });
       }
     } catch (e) {
       console.error("Failed to load config:", e);
@@ -263,7 +289,7 @@ export function QuicklaunchPage() {
   }, []);
 
   useEffect(() => {
-    fetchItems();
+    fetchItems().then(() => setLoading(false));
     fetchFolders();
   }, [fetchItems, fetchFolders]);
 
@@ -608,11 +634,11 @@ export function QuicklaunchPage() {
         <FolderOverlay
           folderName={expandedFolderData.name}
           items={expandedFolderData.items}
-          gridSize={gridSize}
+          gridSize={cfg.gridSize}
           fileIcons={fileIcons}
           selectedId={selectedIds.size > 0 ? Array.from(selectedIds)[0] : null}
           anchorPosition={contextMenu.folderPosition}
-          singleClickOpen={singleClickOpen}
+          singleClickOpen={cfg.singleClickOpen}
           onSelect={(id) => setSelectedIds(id ? new Set([id]) : new Set())}
           onOpen={handleOpen}
           onDelete={handleDelete}
@@ -626,8 +652,8 @@ export function QuicklaunchPage() {
         <FilterBar
           filter={filter}
           onFilterChange={setFilter}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
+          viewMode={cfg.viewMode}
+          onViewModeChange={toggleView}
           search={search}
           onSearchChange={setSearch}
         />
@@ -641,15 +667,11 @@ export function QuicklaunchPage() {
         </Button>
       </div>
 
-      <Drawer open={showSettings} onClose={() => { setShowSettings(false); loadConfig(); }} title="快速启动设置">
+      <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="快速启动设置">
         <QuicklaunchSettings
-          onRefresh={() => fetchItems(false)}
-          onSettingsChange={(s) => {
-            setGridSize(s.grid_size);
-            setViewMode(s.view_mode);
-            setSortBy(s.sort_by);
-            setShowExtension(s.show_extension);
-          }}
+          cfg={cfg}
+          onUpdate={updateConfig}
+          onRefresh={fetchItems}
         />
       </Drawer>
 
@@ -688,15 +710,15 @@ export function QuicklaunchPage() {
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             没有找到匹配的项目
           </div>
-        ) : viewMode === "grid" ? (
-          sortBy === "manual" ? (
+        ) : cfg.viewMode === "grid" ? (
+          cfg.sortBy === "manual" ? (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={items.map((item) => String(item.id))} strategy={rectSortingStrategy}>
                 <div
                   className="grid gap-2"
                   style={{
-                    gridAutoRows: `${gridSize}px`,
-                    gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
+                    gridAutoRows: `${cfg.gridSize}px`,
+                    gridTemplateColumns: `repeat(auto-fill, ${cfg.gridSize}px)`,
                   }}
                 >
                   {/* 显示分组 */}
@@ -706,7 +728,7 @@ export function QuicklaunchPage() {
                         id={folder.id}
                         name={folder.name}
                         items={folder.items}
-                        gridSize={gridSize}
+                        gridSize={cfg.gridSize}
                         fileIcons={fileIcons}
                         selected={selectedIds.has(folder.id)}
                         onSelect={(id) => {
@@ -738,10 +760,10 @@ export function QuicklaunchPage() {
                         <ItemCard
                           item={item}
                           viewMode="grid"
-                          gridSize={gridSize}
+                          gridSize={cfg.gridSize}
                           icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                          showExtension={showExtension}
-                          singleClickOpen={singleClickOpen}
+                          showExtension={cfg.showExtension}
+                          singleClickOpen={cfg.singleClickOpen}
                           selected={selectedIds.has(item.id)}
                           onSelect={(id, e) => handleItemSelect(id, e)}
                           onOpen={handleOpen}
@@ -755,13 +777,13 @@ export function QuicklaunchPage() {
                   <button
                     className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
                     style={{
-                      height: `${gridSize}px`,
-                      padding: `${gridSize * 0.1}px`,
+                      height: `${cfg.gridSize}px`,
+                      padding: `${cfg.gridSize * 0.1}px`,
                     }}
                     onClick={handleAddItem}
                   >
-                    <Plus className="text-muted-foreground" style={{ width: gridSize * 0.5, height: gridSize * 0.5 }} />
-                    <span className="text-muted-foreground" style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}>添加</span>
+                    <Plus className="text-muted-foreground" style={{ width: cfg.gridSize * 0.5, height: cfg.gridSize * 0.5 }} />
+                    <span className="text-muted-foreground" style={{ fontSize: `${Math.max(cfg.gridSize * 0.15, 10)}px` }}>添加</span>
                   </button>
                 </div>
               </SortableContext>
@@ -770,8 +792,8 @@ export function QuicklaunchPage() {
             <div
               className="grid gap-2"
               style={{
-                gridAutoRows: `${gridSize}px`,
-                gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
+                gridAutoRows: `${cfg.gridSize}px`,
+                gridTemplateColumns: `repeat(auto-fill, ${cfg.gridSize}px)`,
               }}
             >
               {foldersWithItems.map((folder) => (
@@ -780,7 +802,7 @@ export function QuicklaunchPage() {
                     id={folder.id}
                     name={folder.name}
                     items={folder.items}
-                    gridSize={gridSize}
+                    gridSize={cfg.gridSize}
                     fileIcons={fileIcons}
                     selected={selectedIds.has(folder.id)}
                     onSelect={(id) => { setExpandedFolder(id); }}
@@ -801,10 +823,10 @@ export function QuicklaunchPage() {
                   <ItemCard
                     item={item}
                     viewMode="grid"
-                    gridSize={gridSize}
+                    gridSize={cfg.gridSize}
                     icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                    showExtension={showExtension}
-                    singleClickOpen={singleClickOpen}
+                    showExtension={cfg.showExtension}
+                    singleClickOpen={cfg.singleClickOpen}
                     selected={selectedIds.has(item.id)}
                     onSelect={(id, e) => handleItemSelect(id, e)}
                     onOpen={handleOpen}
@@ -816,16 +838,16 @@ export function QuicklaunchPage() {
               ))}
               <button
                 className="flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-muted-foreground/30 cursor-pointer transition-colors hover:bg-accent/50"
-                style={{ height: `${gridSize}px`, padding: `${gridSize * 0.1}px` }}
+                style={{ height: `${cfg.gridSize}px`, padding: `${cfg.gridSize * 0.1}px` }}
                 onClick={handleAddItem}
               >
-                <Plus className="text-muted-foreground" style={{ width: gridSize * 0.5, height: gridSize * 0.5 }} />
-                <span className="text-muted-foreground" style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}>添加</span>
+                <Plus className="text-muted-foreground" style={{ width: cfg.gridSize * 0.5, height: cfg.gridSize * 0.5 }} />
+                <span className="text-muted-foreground" style={{ fontSize: `${Math.max(cfg.gridSize * 0.15, 10)}px` }}>添加</span>
               </button>
             </div>
           )
         ) : (
-          sortBy === "manual" ? (
+          cfg.sortBy === "manual" ? (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={items.map((item) => String(item.id))} strategy={verticalListSortingStrategy}>
                 <div className="flex flex-col">
@@ -836,8 +858,8 @@ export function QuicklaunchPage() {
                           item={item}
                           viewMode="list"
                           icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                          showExtension={showExtension}
-                          singleClickOpen={singleClickOpen}
+                          showExtension={cfg.showExtension}
+                          singleClickOpen={cfg.singleClickOpen}
                           selected={selectedIds.has(item.id)}
                           onSelect={(id, e) => handleItemSelect(id, e)}
                           onOpen={handleOpen}
@@ -866,8 +888,8 @@ export function QuicklaunchPage() {
                     item={item}
                     viewMode="list"
                     icon={item.item_type === "url" ? null : fileIcons[item.path]}
-                    showExtension={showExtension}
-                    singleClickOpen={singleClickOpen}
+                    showExtension={cfg.showExtension}
+                    singleClickOpen={cfg.singleClickOpen}
                     selected={selectedIds.has(item.id)}
                     onSelect={(id, e) => handleItemSelect(id, e)}
                     onOpen={handleOpen}
