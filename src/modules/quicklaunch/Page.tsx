@@ -356,10 +356,7 @@ export function QuicklaunchPage() {
       const unlisten = getCurrentWebview().onDragDropEvent((event) => {
         if (event.payload.type === "drop") {
           const paths = event.payload.paths;
-          console.log("Dropped files:", paths);
-          // 去重：只处理唯一的路径
-          const uniquePaths = [...new Set(paths)];
-          for (const path of uniquePaths) {
+          for (const path of paths) {
             invoke("quicklaunch_add_from_path", { path }).catch((err) => {
               console.error("Failed to add dropped file:", err);
             });
