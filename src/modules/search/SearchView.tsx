@@ -1,7 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getConfig } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Drawer } from "@/components/ui/drawer";
 import { ContextMenu } from "@/components/ui/context-menu";
@@ -41,10 +40,10 @@ import {
 } from "@/components/ui/select";
 import {
   SearchSettings,
-  loadSearchSettings,
   SEARCH_DEFAULTS,
   type SearchSettingsData,
 } from "./SearchSettings";
+import { useModuleConfig } from "@/hooks/useModuleConfig";
 
 export interface SearchResultDto {
   name: string;
@@ -125,7 +124,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     matchPath: false,
     regex: false,
   });
-  const [cfg, setCfg] = useState<SearchSettingsData>(SEARCH_DEFAULTS);
+  // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
+  const { cfg, update: updateCfg } = useModuleConfig("search", SEARCH_DEFAULTS);
   const [showSettings, setShowSettings] = useState(false);
   const [optsPos, setOptsPos] = useState<{ x: number; y: number } | null>(null);
   const optsRef = useRef<HTMLDivElement | null>(null);
@@ -146,21 +146,9 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     }
   }, []);
 
-  const refreshSettings = useCallback(async () => {
-    try {
-      const c = await getConfig();
-      const s = loadSearchSettings(c);
-      setCfg(s);
-      setFilter((m) => (FILTERS.some((f) => f.id === m) ? m : "all"));
-    } catch (e) {
-      console.error("load search config failed", e);
-    }
-  }, []);
-
   useEffect(() => {
     refreshStatus();
-    refreshSettings();
-  }, [refreshStatus, refreshSettings]);
+  }, [refreshStatus]);
 
   useEffect(() => {
     window.addEventListener("focus", refreshStatus);
@@ -383,22 +371,12 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   };
 
   const setSort = (sortBy: SearchSettingsData["sortBy"], sortDesc: boolean) => {
-    const next = { ...cfg, sortBy, sortDesc };
-    setCfg(next);
-    invoke("search_save_settings", {
-      settings: {
-        sort_by: sortBy,
-        sort_desc: sortDesc,
-      },
-    }).catch(console.error);
+    updateCfg({ sortBy, sortDesc });
     doSearch(query, activeFilter.query, options);
   };
 
   const toggleView = () => {
-    const next: SearchSettingsData["viewMode"] = cfg.viewMode === "grid" ? "list" : "grid";
-    const newCfg = { ...cfg, viewMode: next };
-    setCfg(newCfg);
-    invoke("search_save_settings", { settings: { view_mode: next } }).catch(console.error);
+    updateCfg({ viewMode: cfg.viewMode === "grid" ? "list" : "grid" });
   };
 
   const toggleOption = (key: keyof SearchOptions) => {
@@ -606,7 +584,6 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         {!popup && (
           <button
             onClick={() => {
-              if (!showSettings) refreshSettings();
               setShowSettings((v) => !v);
             }}
             aria-label="搜索设置"
@@ -780,7 +757,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         onClose={() => setShowSettings(false)}
         title="搜索设置"
       >
-        <SearchSettings onRefresh={refreshSettings} initial={cfg} onSave={setCfg} />
+        <SearchSettings cfg={cfg} onUpdate={updateCfg} />
       </Drawer>
 
       <ContextMenu
