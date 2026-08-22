@@ -156,6 +156,25 @@ pub fn quicklaunch_open_item(
 }
 
 #[tauri::command]
+pub fn quicklaunch_open_item_as_admin(
+    item: Item,
+) -> CmdResult<()> {
+    match item.item_type {
+        ItemType::App => {
+            // 使用 PowerShell Start-Process -Verb RunAs 以管理员身份运行
+            std::process::Command::new("powershell")
+                .args(["-Command", &format!("Start-Process -FilePath '{}' -Verb RunAs", item.path)])
+                .spawn()
+                .map_err(|e| format!("以管理员身份运行失败: {e}"))?;
+        }
+        _ => {
+            return Err("只能以管理员身份运行应用程序".to_string());
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn save_quicklaunch_settings(
     app: AppHandle,
     settings: serde_json::Value,

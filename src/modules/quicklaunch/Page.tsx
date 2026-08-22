@@ -162,17 +162,22 @@ export function QuicklaunchPage() {
   const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      // 如果是手动排序且有缓存，使用缓存的顺序
-      if (sortBy === "manual" && manualOrderRef.current.length > 0) {
-        const filterOptions = {
-          item_type: filter === "all" ? null : filter,
-          search: search || null,
-          sort_by: "sort_order",
-          sort_desc: false,
-        };
-        const result = await invoke<QuicklaunchItem[]>("quicklaunch_list_items", {
-          filter: filterOptions,
-        });
+      const filterOptions = {
+        item_type: filter === "all" ? null : filter,
+        search: search || null,
+        sort_by: sortBy === "manual" ? "sort_order" : sortBy,
+        sort_desc: false,
+      };
+      const result = await invoke<QuicklaunchItem[]>("quicklaunch_list_items", {
+        filter: filterOptions,
+      });
+      
+      // 如果是手动排序模式
+      if (sortBy === "manual") {
+        // 如果缓存为空，从数据库的 sort_order 初始化缓存
+        if (manualOrderRef.current.length === 0) {
+          manualOrderRef.current = result.map((item) => item.id);
+        }
         // 按缓存顺序排序
         const ordered = [...result].sort((a, b) => {
           const aIdx = manualOrderRef.current.indexOf(a.id);
@@ -192,15 +197,7 @@ export function QuicklaunchPage() {
           }
         }
       } else {
-        const filterOptions = {
-          item_type: filter === "all" ? null : filter,
-          search: search || null,
-          sort_by: sortBy === "manual" ? "sort_order" : sortBy,
-          sort_desc: false,
-        };
-        const result = await invoke<QuicklaunchItem[]>("quicklaunch_list_items", {
-          filter: filterOptions,
-        });
+        // 非手动排序模式，直接使用数据库返回的顺序
         setItems(result);
         // 加载图标
         for (const item of result) {
@@ -424,13 +421,15 @@ export function QuicklaunchPage() {
     }
   };
 
-  const handleMoveToFolder = async (itemId: number, folderId: number) => {
+  const handleMoveToFolder = async (itemIds: number[], folderId: number) => {
     try {
-      await invoke("quicklaunch_update_item", { id: itemId, folderId });
+      for (const itemId of itemIds) {
+        await invoke("quicklaunch_update_item", { id: itemId, folderId });
+      }
       fetchItems();
       fetchFolders();
     } catch (e) {
-      console.error("Failed to move item to folder:", e);
+      console.error("Failed to move items to folder:", e);
     }
   };
 
@@ -483,7 +482,11 @@ export function QuicklaunchPage() {
                 });
               }
             }
-            setTimeout(() => fetchItems(), 500);
+            // 延迟清理去重集合，允许同一文件在不同拖入操作中被添加
+            setTimeout(() => {
+              fetchItems();
+              processedPathsRef.current.clear();
+            }, 1000);
           }
         }
       );
@@ -878,7 +881,16 @@ export function QuicklaunchPage() {
             {contextMenu.item?.item_type === "app" && (
               <ContextMenuItem
                 label="以管理员身份运行"
-                onClick={() => {/* TODO */}}
+                onClick={async () => {
+                  if (contextMenu.item) {
+                    try {
+                      await invoke("quicklaunch_open_item_as_admin", { item: contextMenu.item });
+                    } catch (e) {
+                      console.error("Failed to open as admin:", e);
+                    }
+                  }
+                  setContextMenu((prev) => ({ ...prev, visible: false }));
+                }}
               />
             )}
             <ContextMenuItem
@@ -905,9 +917,11 @@ export function QuicklaunchPage() {
                     key={folder.id}
                     label={folder.name}
                     onClick={() => {
-                      for (const item of getTargetItems()) {
-                        handleMoveToFolder(item.id, folder.id);
-                      }
+                      const targetItems = getTargetItems();
+                      handleMoveToFolder(
+                        targetItems.map((item) => item.id),
+                        folder.id
+                      );
                     }}
                   />
                 ))}
