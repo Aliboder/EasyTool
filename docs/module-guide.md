@@ -232,6 +232,8 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 
 参考模板：`emoji/config.ts` + `quicklaunch/Settings.tsx`。
 
+> ⚠️ **默认值双处同步**：`manifest.json` 的 `default_config`（首装时播种进 config.json）与 `config.ts` 的 `DEFAULTS`（运行时缺失字段兜底）职责不同，但**值必须保持一致**——新增或修改设置项默认值时，两处都要改。
+
 ### 3.2 内建行为（Hook 已处理，勿重复实现）
 
 - **键名双向映射**：JS camelCase ↔ config.json snake_case。曾因手写映射不一致导致 emoji 设置整页静默失败、quicklaunch 重启丢设置——此类 bug 已从机制上杜绝
