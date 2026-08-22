@@ -392,6 +392,33 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
     }
 }
 
+/// 仅复制图片表情到剪贴板（右键菜单用，不触发粘贴）
+#[tauri::command]
+pub fn copy_custom_emoji(app: AppHandle, state: State<'_, Db>, id: i64) -> R<()> {
+    let path = state
+        .get_custom(id)
+        .map_err(|e| e.to_string())?
+        .map(|(p, _)| p)
+        .ok_or("表情不存在")?;
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+    let rgba = img.to_rgba8();
+    let ok = clipboard::write_image_rgba(rgba.as_raw(), rgba.width(), rgba.height());
+    if ok {
+        if let Some(clip) = app.try_state::<crate::modules::clipboard::state::AppState>() {
+            clip.mark_self_write();
+            if let Some(sig) =
+                dedup::hash_image_rgba(rgba.as_raw(), rgba.width(), rgba.height())
+            {
+                clip.set_pending_ignore(sig);
+            }
+        }
+        Ok(())
+    } else {
+        Err("写入剪贴板失败".into())
+    }
+}
+
 // ---- 单元测试 ----
 
 #[cfg(test)]

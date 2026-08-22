@@ -393,16 +393,31 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
             <ContextMenuItem
               icon={<Copy className="size-3.5" />}
               label="复制表情"
-              onClick={() => {
-                // TODO: 复制自定义表情
+              onClick={async () => {
+                if (contextMenu.customId) {
+                  try {
+                    await invoke("copy_custom_emoji", { id: contextMenu.customId });
+                    toast("已复制到剪贴板");
+                  } catch (e) {
+                    toast(`复制失败：${e}`);
+                  }
+                }
                 setContextMenu((prev) => ({ ...prev, visible: false }));
               }}
             />
             <ContextMenuItem
               icon={<Star className="size-3.5" />}
               label="添加到收藏"
-              onClick={() => {
-                // TODO: 添加到收藏
+              onClick={async () => {
+                if (contextMenu.customId) {
+                  try {
+                    await invoke("toggle_favorite", { kind: "custom", key: String(contextMenu.customId), fav: true });
+                    toast("已添加到收藏");
+                    await refreshCustom();
+                  } catch (e) {
+                    toast(`收藏失败：${e}`);
+                  }
+                }
                 setContextMenu((prev) => ({ ...prev, visible: false }));
               }}
             />

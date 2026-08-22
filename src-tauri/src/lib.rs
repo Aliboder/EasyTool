@@ -773,6 +773,7 @@ pub fn run() {
             modules::emoji::commands::toggle_favorite,
             modules::emoji::commands::get_emoji_thumb,
             modules::emoji::commands::apply_emoji,
+            modules::emoji::commands::copy_custom_emoji,
             modules::quicklaunch::commands::quicklaunch_create_item,
             modules::quicklaunch::commands::quicklaunch_get_item,
             modules::quicklaunch::commands::quicklaunch_list_items,

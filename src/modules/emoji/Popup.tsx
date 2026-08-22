@@ -9,6 +9,9 @@ import { toast } from "@/lib/toast";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { EMOJI_DEFAULTS } from "./config";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
+import { ContextMenu } from "@/components/ui/context-menu";
+import { ContextMenuItem } from "@/components/ui/context-menu-item";
+import { Copy, Star } from "lucide-react";
 
 const TABS = [
   "favorite",
@@ -85,6 +88,25 @@ export function EmojiPopup() {
 
   // 键盘导航：↑↓ 移动高亮、Enter 应用、Esc 隐藏窗口
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    type: "emoji" | "custom";
+    id: string;
+  } | null>(null);
+
+  const copyEmoji = async (type: "emoji" | "custom", id: string) => {
+    try {
+      if (type === "emoji") {
+        await navigator.clipboard.writeText(id);
+      } else {
+        await invoke("copy_custom_emoji", { id: Number(id) });
+      }
+      toast("已复制到剪贴板");
+    } catch (e) {
+      toast(`复制失败：${e}`);
+    }
+  };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -186,6 +208,7 @@ export function EmojiPopup() {
     <div
       ref={entranceRef}
       onKeyDown={onKeyDown}
+      onContextMenu={(e) => e.preventDefault()}
       className="flex h-screen flex-col bg-background text-foreground animate-in fade-in-0 duration-150"
     >
       <div className="flex items-center gap-2 border-b p-2">
@@ -219,6 +242,10 @@ export function EmojiPopup() {
               key={item.type + item.id}
               title={item.label}
               onClick={() => pick(item.type, item.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenu({ x: e.clientX, y: e.clientY, type: item.type, id: item.id });
+              }}
               className={cn(
                 "flex items-center justify-center overflow-hidden rounded-md hover:bg-accent",
                 idx === activeIdx && "ring-2 ring-primary",
@@ -245,6 +272,39 @@ export function EmojiPopup() {
           </div>
         )}
       </div>
+
+      <ContextMenu
+        visible={menu != null}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        onClose={() => setMenu(null)}
+      >
+        <ContextMenuItem
+          icon={<Copy className="size-3.5" />}
+          label="复制表情"
+          onClick={async () => {
+            if (menu) await copyEmoji(menu.type, menu.id);
+            setMenu(null);
+          }}
+        />
+        {menu?.type === "custom" && (
+          <ContextMenuItem
+            icon={<Star className="size-3.5" />}
+            label="添加到收藏"
+            onClick={async () => {
+              if (menu) {
+                try {
+                  await invoke("toggle_favorite", { kind: "custom", key: menu.id, fav: true });
+                  toast("已添加到收藏");
+                } catch (e) {
+                  toast(`收藏失败：${e}`);
+                }
+              }
+              setMenu(null);
+            }}
+          />
+        )}
+      </ContextMenu>
     </div>
   );
 }
