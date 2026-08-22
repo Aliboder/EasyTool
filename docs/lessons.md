@@ -680,3 +680,62 @@
 
 **相关代码**：
 - `src/modules/emoji/Page.tsx` - 表情模块右键菜单实现
+
+---
+
+## 快速启动模块重构（v0.4.5）
+
+### 1. Settings 组件的 setTimeout 导致排序切换失效
+
+**问题**：在设置中切换排序方式后，排序没有生效。
+
+**根因**：Settings 组件中 `setTimeout(() => onRefresh?.(), 100)` 调用的是旧的 `fetchItems`（闭包捕获了旧的 `cfg.sortBy`），在 parent useEffect 正确获取数据后又用旧参数覆盖了结果。
+
+**解决方案**：移除 Settings 中冗余的 `setTimeout` 和 `onRefresh` prop。parent useEffect 已经在 `cfg` 变化时自动重新获取数据。
+
+**经验教训**：
+1. 当 state 通过 props 传给子组件时，子组件的闭包会捕获旧值
+2. 如果 parent 已经有 useEffect 监听 state 变化并重新获取数据，子组件不需要再调用 refresh
+
+**相关代码**：
+- `src/modules/quicklaunch/Settings.tsx`
+- `src/modules/quicklaunch/Page.tsx`
+
+### 2. 中文名称排序需要前端 localeCompare
+
+**问题**：按名称排序时，中文名称排序结果不符合拼音顺序。
+
+**根因**：SQLite 的 `ORDER BY name` 默认按 Unicode 码点排序，中文字符的码点不是按拼音顺序排列的。
+
+**解决方案**：在 `fetchItems` 的非手动排序分支中，对结果用 `localeCompare("zh-CN-u-co-pinyin")` 做前端拼音排序。
+
+**经验教训**：
+1. SQLite 不原生支持中文拼音排序，需要前端二次处理
+2. `localeCompare` 的 `"zh-CN-u-co-pinyin"` 参数可以按拼音排序中文
+3. 数据量小的模块（几十到几百条）前端排序无性能问题
+
+**相关代码**：
+- `src/modules/quicklaunch/Page.tsx` - fetchItems 函数
+
+### 3. 统一配置状态管理（对齐文件搜索模块）
+
+**问题**：快速启动模块有 7 个分散的 state（viewMode、sortBy、gridSize 等），导致配置管理混乱、切换排序时闪烁、loadConfig 重复调用等问题。
+
+**根因**：与文件搜索模块的设计不一致——文件搜索用单个 `cfg` 对象 + `setSort`/`toggleView` 函数，快速启动用分散 state + `onSettingsChange` 回调。
+
+**解决方案**：
+- 新增 `QuicklaunchConfig` 接口和 `QL_DEFAULTS` 默认值
+- 合并 5 个分散 state 为单个 `cfg` 状态
+- 新增 `updateConfig(patch)` 和 `toggleView()` 函数
+- `loadConfig` 直接解析到 `cfg`，不再分散设置
+- `fetchItems` 移除 `setLoading(true)` 闪烁
+- 非手动排序模式下跳过 DndContext/SortableItem
+
+**经验教训**：
+1. 同一项目的多个模块应保持一致的配置管理模式
+2. 单个 cfg 对象比多个分散 state 更容易维护
+3. 文件搜索模块是快速启动模块的良好参考实现
+
+**相关代码**：
+- `src/modules/quicklaunch/Page.tsx` - 主组件重构
+- `src/modules/quicklaunch/Settings.tsx` - 简化为接收 cfg + onUpdate

@@ -5,16 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>EasyTool — Windows 效率工具箱</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
   :root {
     --paper: #f7f7f4;
     --ink: #131313;
     --ink-2: #555550;
-    --ink-3: #8a8a84;
+    --ink-3: #70706a;
     --red: #e63329;
     --hairline: #d6d6d0;
-    --hairline-2: #b5b5ae;
+    --hairline-2: #a8a8a0;
     --code-bg: #131313;
     --code-ink: #e8e8e4;
+    --dot: rgba(19, 19, 19, 0.055);
   }
   [data-theme="dark"] {
     --paper: #0f0f0e;
@@ -26,33 +29,42 @@
     --hairline-2: #4a4a45;
     --code-bg: #1a1a18;
     --code-ink: #d8d8d2;
+    --dot: rgba(239, 239, 233, 0.05);
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html { scroll-behavior: smooth; }
+
   ::selection { background: var(--red); color: #fff; }
-  :focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--paper); }
+  ::-webkit-scrollbar-thumb { background: var(--hairline-2); border: 2px solid var(--paper); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--red); }
+  ::-webkit-scrollbar-corner { background: var(--paper); }
+  ::selection { background: var(--red); color: #fff; }
 
   body {
     background: var(--paper);
     color: var(--ink);
-    font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    font-family: "IBM Plex Sans", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
     line-height: 1.65;
     overflow-x: hidden;
     transition: background 0.3s ease, color 0.3s ease;
     -webkit-font-smoothing: antialiased;
+    caret-color: var(--red);
   }
 
-  .lat { font-family: "Bahnschrift", "Arial", "Helvetica Neue", sans-serif; }
-  .mono { font-family: "Cascadia Code", "Consolas", monospace; }
-  .serif { font-family: Georgia, "Times New Roman", serif; }
+  .lat { font-family: "Space Grotesk", "Bahnschrift", "Arial", sans-serif; }
+  .mono { font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace; }
 
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
 
   a { color: var(--ink); text-decoration: none; }
   a:hover { text-decoration: underline; }
 
-  /* ============ NAV ============ */
+  /* ============ NAV (masthead) ============ */
   #progress {
     position: fixed; top: 0; left: 0; z-index: 100;
     height: 2px; width: 0;
@@ -64,18 +76,19 @@
     background: var(--paper);
     border-bottom: 1px solid var(--hairline);
   }
-  .nav-inner {
-    display: flex; align-items: center; justify-content: space-between;
-    height: 58px;
-  }
-  .brand { display: flex; align-items: center; gap: 12px; font-weight: 700; letter-spacing: 0.5px; }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+  .brand { display: flex; align-items: center; gap: 11px; font-family: var(--lat); font-weight: 700; letter-spacing: 0.5px; }
   .brand .sq { width: 13px; height: 13px; background: var(--red); display: inline-block; }
-  .nav-links { display: flex; gap: 28px; }
-  .nav-links a {
-    font-size: 13.5px; color: var(--ink-2);
-    display: flex; align-items: baseline; gap: 7px;
+  .nav-links { display: flex; gap: 26px; }
+  .nav-links a { font-size: 13px; color: var(--ink-2); display: flex; align-items: baseline; gap: 7px; position: relative; }
+  .nav-links a b { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); font-weight: 500; }
+  .nav-links a::after {
+    content: ""; position: absolute; left: 0; bottom: -5px;
+    height: 2px; width: 100%; background: var(--red);
+    transform: scaleX(0); transform-origin: right;
+    transition: transform 0.25s ease;
   }
-  .nav-links a b { font-family: var(--lat); font-size: 11px; color: var(--ink-3); font-weight: 600; }
+  .nav-links a:hover::after, .nav-links a.active::after { transform: scaleX(1); transform-origin: left; }
   .nav-links a:hover { color: var(--ink); text-decoration: none; }
   .nav-links a.active { color: var(--ink); }
   .nav-links a.active b { color: var(--red); }
@@ -83,113 +96,175 @@
 
   .theme-btn {
     border: none; background: none; cursor: pointer;
-    font-family: var(--lat); font-size: 11.5px; letter-spacing: 1.5px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 1.5px;
     color: var(--ink-2); text-transform: uppercase;
-    display: flex; align-items: center; gap: 7px;
-    padding: 4px 0;
+    display: flex; align-items: center; gap: 7px; padding: 4px 0;
   }
   .theme-btn:hover { color: var(--ink); }
   .theme-btn .sq { width: 9px; height: 9px; border: 1.5px solid var(--ink-2); display: inline-block; }
   [data-theme="light"] .theme-btn .lbl-d { display: none; }
   [data-theme="dark"] .theme-btn .lbl-l { display: none; }
 
-  /* ============ HERO (cover) ============ */
-  .hero { padding: 100px 0 0; }
-  .hero .cover {
+  /* ============ HERO (poster cover) ============ */
+  .hero { padding: 44px 0 0; }
+  .poster {
     border: 2px solid var(--ink);
-    border-bottom: none;
-    padding: 64px 56px 0;
+    background-image: radial-gradient(var(--dot) 1px, transparent 1px);
+    background-size: 14px 14px;
     position: relative;
   }
-  .hero .cover-top {
-    display: flex; justify-content: space-between; align-items: baseline;
+  .poster .mast {
+    display: flex; justify-content: space-between; align-items: center;
     font-family: var(--mono); font-size: 11px; letter-spacing: 2px;
-    color: var(--ink-3); text-transform: uppercase;
-    padding-bottom: 22px;
+    color: var(--ink-2); text-transform: uppercase;
+    padding: 14px 20px;
     border-bottom: 1px solid var(--hairline);
   }
-  .hero .cover-top .ver b { color: var(--red); font-weight: 700; }
-  .hero h1 {
-    font-size: clamp(80px, 15vw, 176px);
-    font-weight: 800;
-    letter-spacing: -4px;
-    line-height: 0.88;
-    padding: 40px 0 8px;
+  .poster .mast .l { display: flex; align-items: center; gap: 9px; }
+  .poster .mast .sq { width: 9px; height: 9px; background: var(--red); display: inline-block; }
+  .poster .mast .r b { color: var(--red); font-weight: 700; }
+  .poster .mast .r2 { color: var(--ink-3); }
+
+  .poster-grid {
+    display: grid;
+    grid-template-columns: 1.75fr 1fr;
+    min-height: 520px;
+  }
+  .poster .word {
+    padding: 40px 36px 24px;
+    display: flex; flex-direction: column; justify-content: center;
+    border-right: 1px solid var(--hairline);
+    overflow: hidden;
+  }
+  .poster h1 {
+    font-family: var(--lat);
+    font-size: clamp(64px, 10.5vw, 96px);
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 0.95;
     text-transform: uppercase;
   }
-  .hero h1 .red { color: var(--red); }
-  .hero .subline {
-    display: flex; justify-content: space-between; align-items: flex-end;
-    gap: 40px;
-    border-top: 2px solid var(--ink);
-    padding: 26px 0 30px;
+  .poster h1 .row { display: block; }
+  .poster h1 .redblock {
+    display: inline-block; background: var(--red); color: #fff;
+    padding: 0 0.18em; margin-left: -0.02em;
+    letter-spacing: 0.01em;
   }
-  .hero .subline .cn {
-    font-size: clamp(22px, 3.4vw, 36px);
-    font-weight: 300; letter-spacing: 8px;
+  .poster .word .sub {
+    margin-top: 26px;
+    font-size: 13.5px; color: var(--ink-2);
+    max-width: 420px;
   }
-  .hero .subline .cn b { font-weight: 700; letter-spacing: 0; color: var(--red); }
-  .hero .subline .desc {
-    max-width: 380px; font-size: 13.5px; color: var(--ink-2);
-    text-align: right; border-right: 3px solid var(--red); padding-right: 16px;
-  }
-  .hero .stat-band {
-    display: grid; grid-template-columns: repeat(4, 1fr);
-    border: 2px solid var(--ink);
-    margin-top: -2px;
-  }
-  .hero .stat-band .st { padding: 24px 20px 20px; border-right: 1px solid var(--ink); }
-  .hero .stat-band .st:last-child { border-right: none; }
-  .hero .stat-band .st .n { font-family: var(--lat); font-size: 42px; font-weight: 700; letter-spacing: -1px; line-height: 1; }
-  .hero .stat-band .st .n .u { font-size: 19px; color: var(--red); }
-  .hero .stat-band .st .l { font-size: 11.5px; color: var(--ink-3); margin-top: 6px; letter-spacing: 1.5px; text-transform: uppercase; font-family: var(--mono); }
+  .poster .word .sub b { color: var(--ink); font-weight: 600; }
 
-  .hero .cta-row {
-    display: flex; gap: 14px; margin-top: 40px;
-    justify-content: center;
+  .poster .side {
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 34px 30px 30px;
   }
+  .poster .side .list { display: flex; flex-direction: column; }
+  .poster .side .li {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 13px;
+  }
+  .poster .side .li:first-child { border-top: 2px solid var(--ink); }
+  .poster .side .li .cn { color: var(--ink); font-weight: 500; }
+  .poster .side .li .k { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+  .poster .side .li .k b { color: var(--red); font-weight: 500; }
+  .poster .side .desc { margin-top: 20px; font-size: 13px; color: var(--ink-2); }
+  .poster .side .desc b { color: var(--ink); font-weight: 600; }
+  .poster .side .cta { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+
   .btn {
     display: inline-flex; align-items: center; gap: 10px;
-    padding: 14px 30px;
-    font-size: 14px; font-weight: 700; letter-spacing: 1px;
+    padding: 13px 26px;
+    font-size: 13.5px; font-weight: 600;
+    font-family: var(--lat);
     border: 2px solid var(--ink);
-    transition: all 0.15s;
+    transition: background 0.15s, color 0.15s, transform 0.15s;
+    position: relative; overflow: hidden;
   }
   .btn:hover { text-decoration: none; transform: translate(-2px, -2px); }
+  .btn:active { transform: translate(0, 0); }
   .btn-solid { background: var(--red); border-color: var(--red); color: #fff; }
   .btn-solid:hover { background: var(--ink); border-color: var(--ink); }
   .btn-outline:hover { background: var(--ink); color: var(--paper); }
+  .btn .ripple {
+    position: absolute; width: 8px; height: 8px;
+    background: var(--red);
+    transform: translate(-50%, -50%) scale(1);
+    pointer-events: none;
+    animation: ripple 0.55s ease-out forwards;
+  }
+  .btn-solid .ripple { background: #fff; }
+  .btn-outline:hover .ripple { background: var(--paper); }
+  @keyframes ripple {
+    0% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(16); }
+  }
+
+  .ticker {
+    border-top: 2px solid var(--ink);
+    background: var(--red);
+    color: #fff;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+  }
+  .ticker .tk { padding: 18px 20px 16px; border-right: 1px solid rgba(255,255,255,0.35); }
+  .ticker .tk:last-child { border-right: none; }
+  .ticker .tk .n {
+    font-family: var(--lat); font-size: 40px; font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    display: flex; align-items: baseline; gap: 3px;
+  }
+  .ticker .tk .n .u { font-size: 18px; }
+  .ticker .tk .l {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.5px;
+    text-transform: uppercase; margin-top: 7px; opacity: 0.75;
+  }
+  .flap { position: relative; display: inline-block; overflow: hidden; line-height: 1; }
+  .flap .wheel { display: flex; flex-direction: column; transition: transform 0.12s steps(6, end); will-change: transform; }
+  .flap .wheel span { line-height: 1; height: 1em; }
+  .flap::after {
+    content: ""; position: absolute; left: 0; right: 0; top: 50%;
+    height: 1px; background: rgba(255,255,255,0.35);
+  }
 
   /* ============ SECTION ============ */
-  section { padding: 100px 0; border-top: 1px solid var(--hairline); scroll-margin-top: 58px; }
-  .sec-head { display: flex; align-items: baseline; gap: 24px; margin-bottom: 60px; }
+  section { padding: 96px 0; border-top: 1px solid var(--hairline); scroll-margin-top: 58px; }
+  .sec-head { display: flex; align-items: baseline; gap: 26px; margin-bottom: 56px; }
   .sec-head .no {
-    font-family: var(--lat); font-size: 96px; font-weight: 800; letter-spacing: -4px;
-    line-height: 0.8; color: transparent;
-    -webkit-text-stroke: 1.5px var(--ink-3);
-    opacity: 0.5;
+    font-family: var(--lat); font-size: clamp(72px, 10vw, 128px); font-weight: 700;
+    letter-spacing: -0.04em; line-height: 0.8;
+    color: transparent; -webkit-text-stroke: 1.5px var(--ink-2);
+    user-select: none;
   }
-  .sec-head .titles { display: flex; flex-direction: column; gap: 2px; }
-  .sec-head h2 { font-size: clamp(30px, 4.6vw, 50px); font-weight: 800; letter-spacing: -1.5px; line-height: 1; }
+  .sec-head h2 {
+    font-family: var(--lat);
+    font-size: clamp(30px, 4.4vw, 46px); font-weight: 700; letter-spacing: -0.03em;
+    line-height: 1;
+  }
   .sec-head .en {
-    font-family: var(--lat); font-size: 12px; letter-spacing: 4px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 3px;
     color: var(--ink-3); text-transform: uppercase;
+    margin-left: auto; white-space: nowrap;
   }
-  .sec-sub { max-width: 640px; font-size: 14.5px; color: var(--ink-2); margin: -40px 0 48px; padding-left: 20px; border-left: 3px solid var(--red); }
+  .sec-sub { max-width: 620px; font-size: 14.5px; color: var(--ink-2); margin: -34px 0 46px; }
+  .sec-sub b { color: var(--ink); font-weight: 600; }
 
   /* ============ 01 FEATURES ============ */
   .feat-list { border-top: 2px solid var(--ink); }
   .feat-row {
-    display: grid; grid-template-columns: 70px 240px 1fr;
-    gap: 24px; align-items: start;
-    padding: 28px 8px;
+    display: grid; grid-template-columns: 64px 230px 1fr;
+    gap: 26px; align-items: start;
+    padding: 26px 8px;
     border-bottom: 1px solid var(--hairline);
     transition: background 0.15s;
   }
   .feat-row:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
-  .feat-row .f-no { font-family: var(--lat); font-size: 15px; font-weight: 700; color: var(--red); }
-  .feat-row h3 { font-size: 17px; font-weight: 750; letter-spacing: -0.3px; }
-  .feat-row .f-desc { font-size: 14px; color: var(--ink-2); max-width: 660px; }
+  .feat-row .f-no { font-family: var(--mono); font-size: 12px; color: var(--red); padding-top: 4px; }
+  .feat-row h3 { font-family: var(--lat); font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+  .feat-row .f-desc { font-size: 14px; color: var(--ink-2); max-width: 640px; }
   .feat-row .f-desc b { color: var(--ink); font-weight: 600; }
   .feat-row .f-spec {
     margin-top: 12px; display: inline-block;
@@ -197,48 +272,57 @@
     border: 1px solid var(--hairline); padding: 3px 10px;
   }
 
-  /* ============ 02 MODULES ============ */
+  /* ============ 02 MODULES (spec cards) ============ */
   .mod-grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 2px solid var(--ink); }
-  .mod { border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); padding: 36px 32px; transition: background 0.15s; position: relative; overflow: hidden; }
+  .mod {
+    border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+    padding: 34px 30px;
+    transition: background 0.15s;
+  }
   .mod:nth-child(2n) { border-right: none; }
   .mod:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
-  .mod .m-ghost {
-    position: absolute; right: -6px; top: -18px;
-    font-family: var(--lat); font-size: 120px; font-weight: 800;
-    color: transparent; -webkit-text-stroke: 1.5px var(--ink-3);
-    opacity: 0.22; line-height: 1; pointer-events: none;
+  .mod .m-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .mod .m-no { font-family: var(--mono); font-size: 11px; letter-spacing: 2px; color: var(--ink-3); text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
+  .mod .m-no svg { width: 14px; height: 14px; stroke: var(--red); stroke-width: 2; fill: none; }
+  .mod .cell {
+    width: 30px; height: 30px;
+    border: 2px solid var(--ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: var(--lat); font-weight: 700; font-size: 13px;
+    margin-right: 10px;
   }
-  .mod .m-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; position: relative; z-index: 1; }
-  .mod .m-no { font-family: var(--lat); font-size: 11.5px; font-weight: 700; letter-spacing: 2px; color: var(--red); text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
-  .mod .m-no svg { width: 15px; height: 15px; stroke: var(--red); stroke-width: 2; fill: none; }
+  .mod .cell.on { background: var(--red); border-color: var(--red); color: #fff; }
   .mod .m-key { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); border: 1px solid var(--hairline); padding: 3px 9px; }
-  .mod h3 { font-size: 26px; font-weight: 800; letter-spacing: -0.8px; position: relative; z-index: 1; }
-  .mod .m-desc { font-size: 13.5px; color: var(--ink-2); margin-top: 8px; position: relative; z-index: 1; }
-  .mod .m-formats { margin-top: 14px; display: flex; gap: 6px; flex-wrap: wrap; position: relative; z-index: 1; }
+  .mod h3 { font-family: var(--lat); font-size: 25px; font-weight: 700; letter-spacing: -0.02em; }
+  .mod .m-desc { font-size: 13.5px; color: var(--ink-2); margin-top: 8px; }
+  .mod .m-formats { margin-top: 14px; display: flex; gap: 6px; flex-wrap: wrap; }
   .mod .m-formats span {
     font-family: var(--mono); font-size: 11px; color: var(--ink-3);
     border: 1px solid var(--hairline); padding: 2px 8px;
   }
-  .mod ul { list-style: none; margin-top: 24px; border-top: 1px solid var(--hairline); position: relative; z-index: 1; }
-  .mod ul li {
-    display: flex; gap: 14px; align-items: baseline;
-    padding: 12px 0; border-bottom: 1px solid var(--hairline);
-    font-size: 13.5px; color: var(--ink-2);
+  .mod .specs { margin-top: 22px; border-top: 1px solid var(--hairline); }
+  .mod .specs .spec {
+    display: grid; grid-template-columns: 96px 1fr; gap: 12px;
+    padding: 9px 0; border-bottom: 1px solid var(--hairline);
+    font-size: 13px;
   }
-  .mod ul li::before { content: ""; width: 6px; height: 6px; background: var(--red); flex-shrink: 0; transform: translateY(-2px); }
-  .mod ul li code { font-family: var(--mono); font-size: 12px; color: var(--ink); background: var(--paper); padding: 1px 5px; }
+  .mod .specs .spec .k { font-family: var(--mono); font-size: 11px; color: var(--ink-3); padding-top: 2px; }
+  .mod .specs .spec .v { color: var(--ink-2); }
+  .mod .specs .spec .v b { color: var(--ink); font-weight: 600; }
+  .mod .m-status { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.5px; color: var(--ink-3); text-transform: uppercase; margin-top: 18px; }
+  .mod .m-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
 
   /* ============ 03 HOTKEYS ============ */
   .key-table { border-top: 2px solid var(--ink); }
   .key-row {
-    display: grid; grid-template-columns: 60px 250px 1fr;
+    display: grid; grid-template-columns: 56px 240px 1fr;
     gap: 24px; align-items: baseline;
-    padding: 17px 8px;
+    padding: 16px 8px;
     border-bottom: 1px solid var(--hairline);
     transition: background 0.15s;
   }
   .key-row:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
-  .key-row .k-no { font-family: var(--lat); font-size: 13px; font-weight: 700; color: var(--ink-3); }
+  .key-row .k-no { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
   .key-row .k-keys { display: flex; gap: 5px; flex-wrap: wrap; }
   .key-row .k-keys kbd {
     font-family: var(--mono); font-size: 12px;
@@ -251,28 +335,20 @@
   .key-row .k-desc b { color: var(--ink); font-weight: 600; }
 
   /* ============ 04 ARCHITECTURE ============ */
-  .arch-visual {
-    border: 2px solid var(--ink);
-    padding: 40px;
-    background: color-mix(in srgb, var(--red) 2.5%, transparent);
-  }
+  .arch-visual { border: 2px solid var(--ink); padding: 40px; background: color-mix(in srgb, var(--red) 2.5%, transparent); }
   .arch-layers { display: flex; flex-direction: column; gap: 18px; }
   .arch-layer { display: grid; grid-template-columns: 170px 1fr; gap: 20px; align-items: stretch; }
   .arch-layer .l-label {
     display: flex; flex-direction: column; justify-content: center;
     border: 2px solid var(--ink); padding: 14px 18px;
-    font-family: var(--lat); font-weight: 800; font-size: 15px; letter-spacing: 1px; text-transform: uppercase;
+    font-family: var(--lat); font-weight: 700; font-size: 15px; letter-spacing: 1px; text-transform: uppercase;
   }
-  .arch-layer .l-label .l-en { font-size: 10px; letter-spacing: 3px; color: var(--ink-3); font-weight: 600; margin-top: 3px; }
+  .arch-layer .l-label .l-en { font-family: var(--mono); font-size: 10px; letter-spacing: 2.5px; color: var(--ink-3); font-weight: 400; margin-top: 3px; }
   .arch-layer.l-shell .l-label { background: var(--ink); color: var(--paper); }
   .arch-layer.l-shell .l-label .l-en { color: var(--ink-3); }
   .arch-layer.l-reg .l-label { background: var(--red); color: #fff; }
   .arch-layer.l-reg .l-label .l-en { color: rgba(255,255,255,0.6); }
-  .arch-layer.l-mod .l-label { background: var(--paper); }
-  .arch-layer .l-body {
-    display: grid; gap: 10px;
-    grid-template-columns: repeat(4, 1fr);
-  }
+  .arch-layer .l-body { display: grid; gap: 10px; grid-template-columns: repeat(4, 1fr); }
   .arch-layer.l-shell .l-body { grid-template-columns: repeat(3, 1fr); }
   .arch-layer.l-reg .l-body { grid-template-columns: repeat(3, 1fr); }
   .arch-box {
@@ -280,10 +356,10 @@
     padding: 12px 14px;
     font-size: 12.5px; background: var(--paper);
     display: flex; flex-direction: column; gap: 3px;
-    transition: all 0.15s;
+    transition: border-color 0.15s, transform 0.15s;
   }
   .arch-box:hover { border-color: var(--red); transform: translateY(-2px); }
-  .arch-box .ab-t { font-weight: 700; font-size: 13px; }
+  .arch-box .ab-t { font-weight: 600; font-size: 13px; }
   .arch-box .ab-d { font-size: 11px; color: var(--ink-3); font-family: var(--mono); line-height: 1.5; }
   .arch-box.red { border-color: var(--red); }
   .arch-box.red .ab-t { color: var(--red); }
@@ -306,21 +382,22 @@
   .arch-flow .arr { color: var(--ink-3); }
 
   .arch-note {
-    margin-top: 30px; padding: 22px 26px;
-    border-left: 4px solid var(--red);
+    margin-top: 30px; padding: 20px 24px;
+    border-left: 1px solid var(--red);
     background: color-mix(in srgb, var(--red) 5%, transparent);
     font-size: 14px; color: var(--ink-2);
   }
   .arch-note b { color: var(--ink); }
-  .arch-note code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); border-bottom: 1px solid var(--hairline-2); padding: 0 2px; }
+  .arch-note code { font-family: var(--mono); font-size: 12.5px; color: var(--ink); padding: 0 2px; }
 
   .principle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 56px; border-top: 2px solid var(--ink); }
-  .principle { padding: 30px 28px; border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .principle { padding: 28px 26px; border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
   .principle:nth-child(2n) { border-right: none; }
-  .principle .p-no { font-family: var(--lat); font-size: 12px; font-weight: 700; letter-spacing: 2px; color: var(--red); text-transform: uppercase; }
-  .principle h3 { font-size: 18px; font-weight: 750; margin-top: 10px; letter-spacing: -0.3px; }
+  .principle .p-no { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 2px; color: var(--red); text-transform: uppercase; }
+  .principle h3 { font-family: var(--lat); font-size: 18px; font-weight: 700; margin-top: 10px; letter-spacing: -0.01em; }
   .principle .p-desc { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; }
   .principle .p-desc b { color: var(--ink); font-weight: 600; }
+  .principle .p-desc code { font-family: var(--mono); font-size: 12px; color: var(--ink); border-bottom: 1px solid var(--hairline-2); padding: 0 1px; }
   .principle pre.p-code {
     margin-top: 14px;
     background: var(--code-bg); color: var(--code-ink);
@@ -333,9 +410,9 @@
   /* ============ 05 DATA & SECURITY ============ */
   .data-table { border-top: 2px solid var(--ink); }
   .data-row {
-    display: grid; grid-template-columns: 220px 1fr;
+    display: grid; grid-template-columns: 210px 1fr;
     gap: 24px; align-items: baseline;
-    padding: 20px 8px;
+    padding: 19px 8px;
     border-bottom: 1px solid var(--hairline);
     transition: background 0.15s;
   }
@@ -350,7 +427,7 @@
 
   /* ============ 06 STACK ============ */
   .stack-table { border-top: 2px solid var(--ink); }
-  .stack-row { display: grid; grid-template-columns: 220px 1fr; gap: 24px; padding: 22px 8px; border-bottom: 1px solid var(--hairline); }
+  .stack-row { display: grid; grid-template-columns: 210px 1fr; gap: 24px; padding: 21px 8px; border-bottom: 1px solid var(--hairline); }
   .stack-row .s-cat { font-family: var(--mono); font-size: 12px; letter-spacing: 2px; color: var(--ink-3); text-transform: uppercase; padding-top: 4px; }
   .stack-row .s-items { display: flex; flex-wrap: wrap; gap: 9px; }
   .stack-row .s-items span {
@@ -362,7 +439,7 @@
 
   .note-block {
     margin-top: 40px; padding: 20px 24px;
-    border-left: 4px solid var(--red);
+    border-left: 1px solid var(--red);
     background: color-mix(in srgb, var(--red) 5%, transparent);
     font-size: 13.5px; color: var(--ink-2);
     max-width: 780px;
@@ -372,7 +449,7 @@
 
   /* ============ 07 INSTALL ============ */
   .install-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; }
-  .inst h3 { font-size: 18px; font-weight: 750; margin-bottom: 6px; display: flex; align-items: center; gap: 12px; }
+  .inst h3 { font-family: var(--lat); font-size: 18px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 12px; }
   .inst h3 .tag {
     font-family: var(--mono); font-size: 10.5px; letter-spacing: 1px;
     color: var(--red); border: 1.5px solid var(--red); padding: 1px 8px; text-transform: uppercase;
@@ -394,37 +471,55 @@
   }
   pre.code .copy:hover { color: #fff; border-color: #ff4b3e; background: #ff4b3e; }
   pre.code .copy.done { color: #fff; border-color: #4caf50; background: #4caf50; }
+  pre.code .caret {
+    display: inline-block; width: 8px; height: 15px;
+    background: var(--red); vertical-align: middle; margin-left: 2px;
+    animation: blink 0.7s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  pre.code.typing .copy { display: none !important; }
   .inst .reqs { margin-top: 16px; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: var(--ink-3); }
   .inst .reqs span { display: flex; gap: 10px; align-items: baseline; }
   .inst .reqs .sq { width: 6px; height: 6px; background: var(--red); flex-shrink: 0; transform: translateY(-2px); }
 
   /* ============ 08 CHANGELOG ============ */
-  .key-table { border-top: 2px solid var(--ink); }
-  .key-row { display: grid; grid-template-columns: 70px 1fr; gap: 24px; padding: 17px 8px; border-bottom: 1px solid var(--hairline); transition: background 0.15s; }
-  .key-row:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
-  .key-row .k-no { font-family: var(--lat); font-size: 16px; font-weight: 800; color: var(--red); }
-  .key-row .k-desc { font-size: 13.5px; color: var(--ink-2); }
-  .key-row .k-desc b { color: var(--ink); font-weight: 600; }
+  .chg-row {
+    display: grid; grid-template-columns: 70px 1fr; gap: 24px;
+    padding: 17px 8px;
+    border-bottom: 1px solid var(--hairline);
+    transition: background 0.15s;
+    align-items: baseline;
+  }
+  .chg-row:hover { background: color-mix(in srgb, var(--red) 5%, transparent); }
+  .chg-row .v { font-family: var(--lat); font-size: 16px; font-weight: 700; color: var(--red); font-variant-numeric: tabular-nums; }
+  .chg-row .d { font-size: 13.5px; color: var(--ink-2); }
+  .chg-row .d b { color: var(--ink); font-weight: 600; }
 
-  /* ============ 09 FAQ ============ */
+  /* ============ 09 FAQ (crease fold) ============ */
   .faq-list { border-top: 2px solid var(--ink); }
   .faq-item { border-bottom: 1px solid var(--hairline); }
-  .faq-item details { padding: 22px 8px; }
+  .faq-item details { padding: 20px 8px; }
   .faq-item summary {
     display: flex; gap: 14px; align-items: baseline;
-    font-size: 15.5px; font-weight: 700;
+    font-size: 15.5px; font-weight: 600;
     cursor: pointer; list-style: none;
     transition: color 0.15s;
   }
   .faq-item summary::-webkit-details-marker { display: none; }
   .faq-item summary:hover { color: var(--red); }
-  .faq-item summary .q-no { font-family: var(--lat); font-size: 13px; color: var(--red); font-weight: 800; }
+  .faq-item summary .q-no { font-family: var(--mono); font-size: 12px; color: var(--red); }
   .faq-item summary .mark {
-    margin-left: auto; font-family: var(--mono); font-size: 14px;
-    color: var(--ink-3); transition: transform 0.2s;
+    margin-left: auto; font-family: var(--mono); font-size: 13px;
+    color: var(--ink-3); transition: transform 0.25s ease;
   }
   .faq-item details[open] summary .mark { transform: rotate(45deg); color: var(--red); }
-  .faq-item .a { margin: 12px 0 0 34px; font-size: 13.5px; color: var(--ink-2); max-width: 720px; }
+  .faq-item .a-wrap {
+    overflow: hidden;
+    clip-path: inset(0 0 100% 0);
+    transition: clip-path 0.35s ease-out;
+  }
+  .faq-item details[open] .a-wrap { clip-path: inset(0 0 0 0); }
+  .faq-item .a { margin: 12px 0 4px 32px; font-size: 13.5px; color: var(--ink-2); max-width: 720px; }
   .faq-item .a code {
     font-family: var(--mono); font-size: 12.5px; color: var(--ink);
     background: var(--paper); border: 1px solid var(--hairline); padding: 1px 6px;
@@ -435,52 +530,108 @@
   .docs-grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 2px solid var(--ink); }
   .doc {
     display: grid; grid-template-columns: 44px 1fr;
-    gap: 14px; padding: 24px 22px;
+    gap: 14px; padding: 22px 20px;
     border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
     transition: background 0.15s;
   }
   .doc:nth-child(2n) { border-right: none; }
   .doc:hover { background: color-mix(in srgb, var(--red) 5%, transparent); text-decoration: none; }
-  .doc .d-no { font-family: var(--lat); font-size: 13px; font-weight: 800; color: var(--red); padding-top: 3px; }
-  .doc h3 { font-size: 15.5px; font-weight: 700; }
+  .doc .d-no { font-family: var(--mono); font-size: 12px; color: var(--red); padding-top: 3px; }
+  .doc h3 { font-family: var(--lat); font-size: 15px; font-weight: 700; }
   .doc p { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
   .doc .path { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 8px; display: block; }
 
-  /* ============ FOOTER ============ */
-  footer { border-top: 2px solid var(--ink); padding: 44px 0; }
-  .foot { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 30px; font-size: 12.5px; color: var(--ink-3); }
-  .foot .f-brand { font-weight: 800; color: var(--ink); font-size: 15px; display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; }
+  /* ============ FOOTER / COLOPHON ============ */
+  footer { border-top: 2px solid var(--ink); padding: 44px 0 36px; }
+  .foot { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 30px; font-size: 12.5px; color: var(--ink-3); }
+  .foot .f-brand { font-family: var(--lat); font-weight: 700; color: var(--ink); font-size: 15px; display: flex; align-items: center; gap: 10px; letter-spacing: 0.5px; }
   .foot .f-brand .sq { width: 12px; height: 12px; background: var(--red); display: inline-block; }
   .foot .f-brand .tagline { font-size: 11px; color: var(--ink-3); font-weight: 400; }
   .foot .f-col { display: flex; flex-direction: column; gap: 5px; }
   .foot .f-col .h { font-family: var(--mono); font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-2); margin-bottom: 6px; }
   .foot a:hover { color: var(--ink); }
+  .colophon {
+    margin-top: 36px; padding-top: 16px;
+    border-top: 1px solid var(--hairline);
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 1px;
+    color: var(--ink-3); text-transform: uppercase;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+  .colophon .sq { width: 6px; height: 6px; background: var(--red); display: inline-block; margin-right: 6px; }
 
-  /* ============ REVEAL ============ */
-  .reveal { opacity: 0; transform: translateY(16px); transition: opacity 0.6s ease, transform 0.6s ease; }
+  /* ============ REVEAL (sparse, big blocks only) ============ */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.6s ease, transform 0.6s ease; }
   .reveal.in { opacity: 1; transform: none; }
-  .reveal.d1 { transition-delay: 0.06s; }
-  .reveal.d2 { transition-delay: 0.12s; }
-  .reveal.d3 { transition-delay: 0.18s; }
+  .reveal.d1 { transition-delay: 0.08s; }
+  .reveal.d2 { transition-delay: 0.16s; }
+
+  /* poster word entrance (one authored moment) */
+  .poster h1 .row { transform: translateY(110%); clip-path: inset(0 0 0 0); animation: pressIn 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+  .poster h1 .row:nth-child(1) { animation-delay: 0.05s; }
+  .poster h1 .row:nth-child(2) { animation-delay: 0.18s; }
+  @keyframes pressIn {
+    0% { transform: translateY(110%); }
+    100% { transform: translateY(0); }
+  }
+  .poster .side, .poster .mast { opacity: 0; animation: fadeIn 0.5s ease forwards; animation-delay: 0.35s; }
+  @keyframes fadeIn { to { opacity: 1; } }
+
+  /* ============ INTERACTIONS ============ */
+  .key-row.flash {
+    background: color-mix(in srgb, var(--red) 14%, transparent);
+    animation: flashPulse 0.9s ease;
+  }
+  .key-row.flash kbd { border-color: var(--red); color: var(--red); transform: translateY(1.5px); border-bottom-width: 1px; }
+  @keyframes flashPulse {
+    0% { background: color-mix(in srgb, var(--red) 30%, transparent); }
+    100% { background: color-mix(in srgb, var(--red) 0%, transparent); }
+  }
+
+  .toast-wrap {
+    position: fixed; right: 20px; bottom: 20px; z-index: 200;
+    display: flex; flex-direction: column-reverse; gap: 8px;
+    align-items: flex-end;
+  }
+  .toast {
+    background: var(--red); color: #fff;
+    font-size: 13px; font-weight: 600;
+    padding: 11px 18px;
+    display: flex; align-items: center; gap: 10px;
+    border: 2px solid var(--ink);
+    animation: toastIn 0.25s ease-out;
+  }
+  .toast .t-key { font-family: var(--mono); font-size: 11.5px; font-weight: 400; border: 1px solid rgba(255,255,255,0.55); padding: 2px 7px; }
+  .toast.bye { animation: toastOut 0.3s ease-in forwards; }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  @keyframes toastOut { to { opacity: 0; transform: translateY(8px); } }
+
+  .brand .sq { transition: transform 0.4s ease, background 0.3s; }
+  .brand.boom .sq { transform: rotate(360deg) scale(1.4); background: var(--ink); }
+  body.boom { animation: pageBoom 0.6s ease; }
+  @keyframes pageBoom {
+    0% { filter: invert(1) hue-rotate(180deg); }
+    100% { filter: none; }
+  }
 
   /* ============ RESPONSIVE ============ */
   @media (max-width: 900px) {
-    .hero .cover { padding: 40px 24px 0; }
-    .hero .subline { flex-direction: column; align-items: flex-start; gap: 18px; }
-    .hero .subline .desc { text-align: left; border-right: none; border-left: 3px solid var(--red); padding-left: 14px; padding-right: 0; }
-    .hero .stat-band { grid-template-columns: repeat(2, 1fr); }
-    .hero .stat-band .st:nth-child(2) { border-right: none; }
-    .hero .stat-band .st:nth-child(1), .hero .stat-band .st:nth-child(2) { border-bottom: 1px solid var(--ink); }
+    .poster-grid { grid-template-columns: 1fr; }
+    .poster .word { border-right: none; border-bottom: 1px solid var(--hairline); min-height: auto; }
+    .poster h1 { font-size: clamp(56px, 17vw, 96px); }
+    .ticker { grid-template-columns: repeat(2, 1fr); }
+    .ticker .tk:nth-child(2) { border-right: none; }
+    .ticker .tk:nth-child(1), .ticker .tk:nth-child(2) { border-bottom: 1px solid rgba(255,255,255,0.35); }
     .mod-grid, .docs-grid, .principle-grid { grid-template-columns: 1fr; }
     .mod, .doc, .principle { border-right: none; }
     .install-grid { grid-template-columns: 1fr; gap: 36px; }
     .stack-row, .data-row { grid-template-columns: 1fr; gap: 10px; }
-    .feat-row { grid-template-columns: 50px 1fr; }
+    .feat-row { grid-template-columns: 44px 1fr; }
     .feat-row .f-desc { grid-column: 2; }
-    .key-row { grid-template-columns: 50px 1fr; gap: 10px 14px; }
+    .key-row { grid-template-columns: 44px 1fr; gap: 10px 14px; }
     .key-row .k-no { grid-column: 1; }
     .key-row .k-keys { grid-column: 2; }
     .key-row .k-desc { grid-column: 2; }
+    .chg-row { grid-template-columns: 56px 1fr; }
     .arch-layer { grid-template-columns: 1fr; }
     .arch-layer .l-body { grid-template-columns: repeat(2, 1fr); }
     .arch-data { grid-template-columns: repeat(2, 1fr); }
@@ -490,23 +641,34 @@
     section { padding: 70px 0; }
   }
   @media (max-width: 560px) {
-    .hero .stat-band { grid-template-columns: 1fr; }
-    .hero .stat-band .st { border-right: none; border-bottom: 1px solid var(--ink); }
-    .hero .stat-band .st:last-child { border-bottom: none; }
+    .ticker { grid-template-columns: 1fr; }
+    .ticker .tk { border-right: none; border-bottom: 1px solid rgba(255,255,255,0.35); }
+    .ticker .tk:last-child { border-bottom: none; }
     .arch-layer .l-body, .arch-data { grid-template-columns: 1fr; }
+    .sec-head { flex-wrap: wrap; gap: 14px; }
+    .sec-head .en { margin-left: 0; width: 100%; }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    * { transition-duration: 0.01ms !important; }
+    *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
     html { scroll-behavior: auto; }
   }
 </style>
 </head>
 <body>
+<!--
+THESIS: 把 EasyTool 当一张瑞士国际主义海报集排版。拒绝类别默认：hero+特性+CTA 模板、kicker、同尺寸图标卡片栅格、散射动效。
+OWN-WORLD: 纸白/墨黑/信号红三色 + 4 级印刷灰阶；Space Grotesk 海报字 + JetBrains Mono 数据/度量 + IBM Plex Sans 正文；2px 印刷线框、14px 半色调网点背景、方形活字格（活动态实心红）；红色只用于活信息。
+STORY: 访客第一眼看到一张海报封面：巨型 EASYTOOL（TOOL 红块反白压印入场），右侧 mono 规格清单，底部红色信息条内统计数字机械翻转；向下是 10 章印刷目录，每章超大描边编号；模块是工厂批次规格卡；最后以 colophon 版记收尾。
+FIRST VIEWPORT: 全宽海报：刊头行（▮EASYTOOL · vol.0.4.4 · 2026.08），左侧巨型 EASYTOOL 两行（EASY 墨 / TOOL 红底反白），右侧竖排 mono 模块清单（剪贴板/额度/表情/秒搜 + 热键）+ 描述 + 下载 CTA，底部红色 ticker 统计条（split-flap 翻转数字：04/36+/1900+/<1s）。
+FORM: 瑞士国际主义海报世界（方向合同 seed 837e5421，grounded list 第 3 位被骰子指派；用户确认）。接受三条捐赠：陶瓷世界-配方规格卡纪律、维也纳工坊-方形活字格纪律、Miura 折纸-折痕展开纪律。
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
 
 <div id="progress"></div>
+<div class="toast-wrap" id="toastWrap"></div>
 
-<!-- ============ NAV ============ -->
+<!-- ============ NAV (masthead) ============ -->
 <header class="nav" id="top">
   <div class="wrap nav-inner">
     <div class="brand"><span class="sq"></span>EASYTOOL</div>
@@ -528,29 +690,56 @@
   </div>
 </header>
 
-<!-- ============ HERO ============ -->
-<section class="hero" style="border-top:none; padding-bottom: 70px;">
+<!-- ============ HERO (poster cover) ============ -->
+<section class="hero" style="border-top:none; padding-bottom: 56px;">
   <div class="wrap">
-    <div class="cover">
-      <div class="cover-top">
-        <span>Windows 效率工具箱</span>
-        <span class="ver">vol. <b>0.4.4</b> · 2026.08</span>
+    <div class="poster">
+      <div class="mast">
+        <span class="l"><span class="sq"></span>Windows 效率工具箱</span>
+        <span class="r">vol. <b>0.4.4</b> <span class="r2">· 2026.08</span></span>
       </div>
-      <h1>Easy<span class="red">Tool</span></h1>
-      <div class="subline">
-        <span class="cn">剪贴板 · 额度 · 表情 · 秒搜</span>
-        <span class="desc">单应用 + 模块注册表架构，Rust + React 驱动。四个独立模块，本地优先，密钥只进系统钥匙串。</span>
+      <div class="poster-grid">
+        <div class="word">
+          <h1>
+            <span class="row">Easy</span>
+            <span class="row"><span class="redblock">Tool</span></span>
+          </h1>
+          <p class="sub">单应用 + 模块注册表架构。<b>Rust + React</b> 驱动，本地优先——数据留在本机，密钥只进系统钥匙串。</p>
+        </div>
+        <div class="side">
+          <div class="list">
+            <div class="li"><span class="cn">剪贴板</span><span class="k"><b>Ctrl+Shift+V</b></span></div>
+            <div class="li"><span class="cn">额度监控</span><span class="k">后台轮询</span></div>
+            <div class="li"><span class="cn">表情面板</span><span class="k"><b>Ctrl+Shift+J</b></span></div>
+            <div class="li"><span class="cn">文件秒搜</span><span class="k"><b>Ctrl+Shift+F</b></span></div>
+          </div>
+          <div>
+            <p class="desc">按 <b>Ctrl+Shift+E</b> 呼出主面板，弹窗跟随鼠标，即呼即用。Windows 10/11 · x64 · MIT。</p>
+            <div class="cta">
+              <a class="btn btn-solid" href="https://github.com/Aliboder/EasyTool/releases" target="_blank" rel="noopener">下载 v0.4.4</a>
+              <a class="btn btn-outline" href="https://github.com/Aliboder/EasyTool" target="_blank" rel="noopener">GitHub ↗</a>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="stat-band">
-      <div class="st"><div class="n">04</div><div class="l">功能模块</div></div>
-      <div class="st"><div class="n">36<span class="u">+</span></div><div class="l">后端单元测试</div></div>
-      <div class="st"><div class="n">1900<span class="u">+</span></div><div class="l">内置表情符号</div></div>
-      <div class="st"><div class="n">&lt;1<span class="u">s</span></div><div class="l">全盘搜索响应</div></div>
-    </div>
-    <div class="cta-row">
-      <a class="btn btn-solid" href="https://github.com/Aliboder/EasyTool/releases" target="_blank" rel="noopener">下载 v0.4.4</a>
-      <a class="btn btn-outline" href="https://github.com/Aliboder/EasyTool" target="_blank" rel="noopener">GitHub ↗</a>
+      <div class="ticker">
+        <div class="tk">
+          <div class="n"><span class="flap" data-digits="04"></span></div>
+          <div class="l">功能模块</div>
+        </div>
+        <div class="tk">
+          <div class="n"><span class="flap" data-digits="36"></span><span class="u">+</span></div>
+          <div class="l">后端单元测试</div>
+        </div>
+        <div class="tk">
+          <div class="n"><span class="flap" data-digits="1900"></span><span class="u">+</span></div>
+          <div class="l">内置表情符号</div>
+        </div>
+        <div class="tk">
+          <div class="n"><span class="flap" data-digits="1"></span><span class="u">s</span></div>
+          <div class="l">全盘搜索响应</div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -558,55 +747,53 @@
 <!-- ============ 01 FEATURES ============ -->
 <section id="features">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">01</span>
-      <div class="titles">
-        <h2>特性</h2>
-        <span class="en">Features</span>
-      </div>
+      <h2>特性</h2>
+      <span class="en">Features</span>
     </div>
-    <p class="sec-sub">不是一堆互不相干的小工具，而是一个可扩展的轻量框架。</p>
+    <p class="sec-sub reveal">不是一堆互不相干的小工具，而是一个可扩展的轻量框架。</p>
 
     <div class="feat-list">
-      <div class="feat-row reveal">
-        <div class="f-no">01</div>
+      <div class="feat-row">
+        <div class="f-no">F1</div>
         <h3>模块注册表架构</h3>
         <div>
           <p class="f-desc">每个功能是独立模块，在设置页可独立启停、排序、配置。扩展新模块只需新增目录 + manifest 清单，不影响其他模块。</p>
           <span class="f-spec">manifest.json · default_config</span>
         </div>
       </div>
-      <div class="feat-row reveal d1">
-        <div class="f-no">02</div>
+      <div class="feat-row">
+        <div class="f-no">F2</div>
         <h3>全局热键</h3>
         <div>
           <p class="f-desc">统一模式下一个热键唤起主面板；也可为各模块配置独立热键。录制器支持 Ctrl / Shift / Alt / Super 组合，热键以<b>对象比对</b>注册，无重复冲突。</p>
           <span class="f-spec">Ctrl+Shift+E</span>
         </div>
       </div>
-      <div class="feat-row reveal">
-        <div class="f-no">03</div>
+      <div class="feat-row">
+        <div class="f-no">F3</div>
         <h3>跟随鼠标弹窗</h3>
         <div>
           <p class="f-desc">剪贴板与搜索弹窗出现在光标旁，失焦自动隐藏。弹窗<b>延迟创建</b>——首次呼出才建窗，不影响应用启动速度。</p>
         </div>
       </div>
-      <div class="feat-row reveal d1">
-        <div class="f-no">04</div>
+      <div class="feat-row">
+        <div class="f-no">F4</div>
         <h3>托盘驻留</h3>
         <div>
           <p class="f-desc">关闭主窗口即收进系统托盘，后台持续监听剪贴板、轮询额度，随时再呼出。</p>
         </div>
       </div>
-      <div class="feat-row reveal">
-        <div class="f-no">05</div>
+      <div class="feat-row">
+        <div class="f-no">F5</div>
         <h3>旧数据迁移</h3>
         <div>
           <p class="f-desc">旧版 PasteBoard 剪贴板历史（按 hash 导入）、QuotaMonitor 余额记录（按时间合并去重），启动时自动导入，<b>幂等执行</b>。</p>
         </div>
       </div>
-      <div class="feat-row reveal d1">
-        <div class="f-no">06</div>
+      <div class="feat-row">
+        <div class="f-no">F6</div>
         <h3>本地优先</h3>
         <div>
           <p class="f-desc">历史数据存本地 SQLite（WAL），密钥写入系统钥匙串、每账户独立槽位，不经过任何第三方服务器。</p>
@@ -616,26 +803,20 @@
   </div>
 </section>
 
-<!-- ============ 02 MODULES ============ -->
+<!-- ============ 02 MODULES (spec cards) ============ -->
 <section id="modules">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">02</span>
-      <div class="titles">
-        <h2>模块</h2>
-        <span class="en">Modules</span>
-      </div>
+      <h2>模块</h2>
+      <span class="en">Modules</span>
     </div>
-    <p class="sec-sub">每个模块独立启停、互不拖累，可单独配置热键与行为。</p>
+    <p class="sec-sub reveal">每个模块独立启停、互不拖累，可单独配置热键与行为。规格来自出厂配置。</p>
 
     <div class="mod-grid">
-      <div class="mod reveal">
-        <div class="m-ghost">01</div>
+      <div class="mod">
         <div class="m-top">
-          <span class="m-no">
-            <svg viewBox="0 0 24 24" stroke-linecap="square"><rect x="5" y="4" width="14" height="17"/><path d="M9 4V2h6v2"/><path d="M9 10h6M9 14h6"/></svg>
-            Mod 01 / Clipboard
-          </span>
+          <span class="m-no"><span class="cell on">01</span>Clipboard</span>
           <span class="m-key">Ctrl+Shift+V</span>
         </div>
         <h3>剪贴板</h3>
@@ -643,21 +824,18 @@
         <div class="m-formats">
           <span>文本</span><span>富文本 HTML</span><span>图片 DIB→PNG</span><span>文件 HDROP</span>
         </div>
-        <ul>
-          <li>事件驱动监听（WM_CLIPBOARDUPDATE）+ 500ms 轮询兜底，双保险不丢记录</li>
-          <li>按内容指纹比对防误记：表情写入登记指纹，监听比对一致则跳过；自带 2s 时间窗口自写守卫，事件与轮询双路径都生效</li>
-          <li>固定条目 + 拖拽排序持久化；图片自动生成 256px 缩略图</li>
-          <li>网格可配置：单元格 80px、2 行文本预览、时间戳显隐、最短文本长度过滤</li>
-          <li>记录类型可分别开关（文本 / 图片 / 文件）；历史上限默认 500 条</li>
-        </ul>
+        <div class="specs">
+          <div class="spec"><span class="k">监听</span><span class="v"><b>WM_CLIPBOARDUPDATE</b> + 500ms 轮询兜底，双保险不丢记录；指纹比对防误记，2s 时间窗口自写守卫</span></div>
+          <div class="spec"><span class="k">去重</span><span class="v">内容指纹比对，表情写入登记指纹自动跳过；自己的粘贴不记录</span></div>
+          <div class="spec"><span class="k">固定排序</span><span class="v">拖拽排序持久化 <b>pin_order</b>；图片自动生成 256px 缩略图</span></div>
+          <div class="spec"><span class="k">网格</span><span class="v">单元格 80px · 2 行文本预览 · 时间戳显隐 · 最短文本长度过滤</span></div>
+          <div class="spec"><span class="k">容量</span><span class="v">文本 / 图片 / 文件记录可分别开关，历史上限默认 <b>500</b> 条</span></div>
+        </div>
+        <span class="m-status"><span class="dot"></span>enabled by default</span>
       </div>
-      <div class="mod reveal d1">
-        <div class="m-ghost">02</div>
+      <div class="mod">
         <div class="m-top">
-          <span class="m-no">
-            <svg viewBox="0 0 24 24" stroke-linecap="square"><rect x="3" y="6" width="18" height="13"/><path d="M3 10h18M7 15h5"/></svg>
-            Mod 02 / Quota
-          </span>
+          <span class="m-no"><span class="cell on">02</span>Quota</span>
           <span class="m-key">后台轮询</span>
         </div>
         <h3>额度监控</h3>
@@ -665,21 +843,18 @@
         <div class="m-formats">
           <span>DeepSeek /user/balance</span><span>OpenCode Go /zen/go/v1/usage</span>
         </div>
-        <ul>
-          <li>多账户独立密钥，keyring 每账户独立槽位，绝不回退旧槽位</li>
-          <li>预警 / 告警双阈值（默认 10），轮询间隔可配置（默认 30s，下限 5s）</li>
-          <li>消费历史曲线（保留最近 5000 条）与用量周期追踪：滚动 / 每周 / 每月</li>
-          <li>消费突增提醒（每天最多一次）；账户首次状态记录静默，不打扰</li>
-          <li>后台线程逐账户查询，单账户失败隔离，不影响其他账户</li>
-        </ul>
+        <div class="specs">
+          <div class="spec"><span class="k">账户</span><span class="v">多账户独立密钥，keyring 每账户独立槽位，绝不回退旧槽位</span></div>
+          <div class="spec"><span class="k">阈值</span><span class="v">预警 / 告警双阈值（默认 <b>10</b>）；轮询间隔可配置（默认 30s，下限 5s）</span></div>
+          <div class="spec"><span class="k">历史</span><span class="v">消费曲线保留最近 <b>5000</b> 条；用量周期：滚动 / 每周 / 每月</span></div>
+          <div class="spec"><span class="k">提醒</span><span class="v">消费突增提醒（每天最多一次）；账户首次状态记录静默，不打扰</span></div>
+          <div class="spec"><span class="k">隔离</span><span class="v">后台线程逐账户查询，单账户失败隔离，不影响其他账户</span></div>
+        </div>
+        <span class="m-status"><span class="dot"></span>enabled by default</span>
       </div>
-      <div class="mod reveal">
-        <div class="m-ghost">03</div>
+      <div class="mod">
         <div class="m-top">
-          <span class="m-no">
-            <svg viewBox="0 0 24 24" stroke-linecap="square"><circle cx="12" cy="12" r="9"/><path d="M8 14c1.2 1.3 2.5 2 4 2s2.8-.7 4-2M8.5 9h.01M15.5 9h.01"/></svg>
-            Mod 03 / Emoji
-          </span>
+          <span class="m-no"><span class="cell on">03</span>Emoji</span>
           <span class="m-key">Ctrl+Shift+J</span>
         </div>
         <h3>表情</h3>
@@ -687,21 +862,18 @@
         <div class="m-formats">
           <span>20 个分类</span><span>中/英关键词</span><span>导入 png · jpg · gif · webp</span>
         </div>
-        <ul>
-          <li>分类：收藏 / 最近 / 表情 / 爱心 / 手势 / 人物 / 动物 / 植物 / 食物 / 运动 / 交通 / 科技 / 符号 / 旗帜等</li>
-          <li>支持导入本地图片表情，自定义分组管理</li>
-          <li>系统字体渲染优先：canvas 像素检测字体是否支持，不支持的字符自动回退 Twemoji 图片，结果缓存到本地复用</li>
-          <li>文本表情 SendInput 直接输入（不写剪贴板），图片表情经剪贴板直发；收藏 Tab 置顶且默认打开</li>
-          <li>增量渲染（每批 240 个）+ 分片检测，1900+ 表情滚动不卡顿</li>
-        </ul>
+        <div class="specs">
+          <div class="spec"><span class="k">分类</span><span class="v">收藏 / 最近 / 表情 / 爱心 / 手势 / 人物 / 动物 / 植物 / 食物 / 运动 / 交通 / 科技 / 符号 / 旗帜等</span></div>
+          <div class="spec"><span class="k">导入</span><span class="v">本地图片表情，自定义分组管理</span></div>
+          <div class="spec"><span class="k">渲染</span><span class="v">系统字体优先，canvas 像素检测；不支持的字符自动回退 <b>Twemoji</b> 图片，结果缓存本地复用</span></div>
+          <div class="spec"><span class="k">输入</span><span class="v">文本表情 <b>SendInput</b> 直接输入（不写剪贴板）；图片表情经剪贴板直发</span></div>
+          <div class="spec"><span class="k">性能</span><span class="v">增量渲染（每批 240 个）+ 分片检测；收藏 Tab 置顶默认打开</span></div>
+        </div>
+        <span class="m-status"><span class="dot"></span>enabled by default</span>
       </div>
-      <div class="mod reveal d1">
-        <div class="m-ghost">04</div>
+      <div class="mod">
         <div class="m-top">
-          <span class="m-no">
-            <svg viewBox="0 0 24 24" stroke-linecap="square"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/><path d="M8 11h6M11 8v6"/></svg>
-            Mod 04 / Search
-          </span>
+          <span class="m-no"><span class="cell on">04</span>Search</span>
           <span class="m-key">Ctrl+Shift+F</span>
         </div>
         <h3>文件搜索</h3>
@@ -709,13 +881,14 @@
         <div class="m-formats">
           <span>ext:pdf</span><span>folder:D:\</span><span>*.mp4</span>
         </div>
-        <ul>
-          <li>依赖 Everything（免费，voidtools.com），Everything64.dll 随应用打包（MIT）</li>
-          <li>支持 Everything 查询语法：扩展名 / 路径 / 通配符 / 正则匹配</li>
-          <li>列表 / 网格双视图；结果列与排序可自定义（名称 / 路径 / 大小 / 修改时间）</li>
-          <li>文件图标与图片缩略图；右键复制路径 / 复制文件，联动剪贴板历史</li>
-          <li>键盘导航：方向键选择，Enter 打开，Ctrl+Enter 打开所在位置</li>
-        </ul>
+        <div class="specs">
+          <div class="spec"><span class="k">依赖</span><span class="v">Everything（免费，voidtools.com）；Everything64.dll 随应用打包（MIT）</span></div>
+          <div class="spec"><span class="k">语法</span><span class="v">扩展名 / 路径 / 通配符 / 正则匹配，Everything 查询语法直通</span></div>
+          <div class="spec"><span class="k">视图</span><span class="v">列表 / 网格双视图；结果列与排序自定义（名称 / 路径 / 大小 / 修改时间）</span></div>
+          <div class="spec"><span class="k">联动</span><span class="v">文件图标与图片缩略图；右键复制路径 / 复制文件，联动剪贴板历史</span></div>
+          <div class="spec"><span class="k">键盘</span><span class="v">方向键选择 · Enter 打开 · Ctrl+Enter 打开所在位置</span></div>
+        </div>
+        <span class="m-status"><span class="dot"></span>enabled by default</span>
       </div>
     </div>
   </div>
@@ -724,52 +897,50 @@
 <!-- ============ 03 HOTKEYS ============ -->
 <section id="hotkeys">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">03</span>
-      <div class="titles">
-        <h2>快捷键</h2>
-        <span class="en">Hotkeys</span>
-      </div>
+      <h2>快捷键</h2>
+      <span class="en">Hotkeys</span>
     </div>
-    <p class="sec-sub">统一模式：一个热键呼出主面板；独立模式：各模块各自的热键。所有热键可在设置中重新录制。</p>
+    <p class="sec-sub reveal">统一模式：一个热键呼出主面板；独立模式：各模块各自的热键。所有热键可在设置中重新录制。在页面上按下试试——会触发演示反馈。</p>
 
     <div class="key-table">
-      <div class="key-row reveal">
+      <div class="key-row">
         <div class="k-no">01</div>
         <div class="k-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>E</kbd></div>
         <div class="k-desc"><b>呼出主面板</b>（默认统一热键）· 面板模式点击外部自动关闭</div>
       </div>
-      <div class="key-row reveal d1">
+      <div class="key-row">
         <div class="k-no">02</div>
         <div class="k-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>V</kbd></div>
         <div class="k-desc"><b>剪贴板弹窗</b>（独立模式）· 跟随鼠标弹出</div>
       </div>
-      <div class="key-row reveal">
+      <div class="key-row">
         <div class="k-no">03</div>
         <div class="k-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd></div>
         <div class="k-desc"><b>表情弹窗</b>（独立模式）· 跟随鼠标弹出</div>
       </div>
-      <div class="key-row reveal d1">
+      <div class="key-row">
         <div class="k-no">04</div>
         <div class="k-keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>F</kbd></div>
         <div class="k-desc"><b>搜索弹窗</b>（独立模式）· 跟随鼠标弹出</div>
       </div>
-      <div class="key-row reveal">
+      <div class="key-row">
         <div class="k-no">05</div>
         <div class="k-keys"><kbd>Enter</kbd></div>
         <div class="k-desc"><b>确认</b>· 粘贴剪贴板条目 / 打开搜索结果</div>
       </div>
-      <div class="key-row reveal d1">
+      <div class="key-row">
         <div class="k-no">06</div>
         <div class="k-keys"><kbd>Ctrl</kbd><kbd>Enter</kbd></div>
         <div class="k-desc"><b>打开所在位置</b>· 搜索结果中直接打开文件所在文件夹</div>
       </div>
-      <div class="key-row reveal">
+      <div class="key-row">
         <div class="k-no">07</div>
         <div class="k-keys"><kbd>↑</kbd><kbd>↓</kbd></div>
         <div class="k-desc"><b>上下选择</b>· 键盘导航结果列表</div>
       </div>
-      <div class="key-row reveal d1">
+      <div class="key-row">
         <div class="k-no">08</div>
         <div class="k-keys"><kbd>Esc</kbd></div>
         <div class="k-desc"><b>隐藏弹窗</b>· 弹窗失焦也会自动隐藏</div>
@@ -781,14 +952,12 @@
 <!-- ============ 04 ARCHITECTURE ============ -->
 <section id="architecture">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">04</span>
-      <div class="titles">
-        <h2>架构</h2>
-        <span class="en">Architecture</span>
-      </div>
+      <h2>架构</h2>
+      <span class="en">Architecture</span>
     </div>
-    <p class="sec-sub">三层结构：壳负责窗口与热键，注册表负责模块生命周期，模块自己管自己的数据。</p>
+    <p class="sec-sub reveal">三层结构：壳负责窗口与热键，注册表负责模块生命周期，模块自己管自己的数据。</p>
 
     <div class="arch-visual reveal">
       <div class="arch-layers">
@@ -834,42 +1003,42 @@
     </div>
 
     <div class="principle-grid">
-      <div class="principle reveal">
+      <div class="principle">
         <div class="p-no">P1 / Windows</div>
         <h3>窗口体系</h3>
         <p class="p-desc"><b>main</b> 主窗口：面板模式（点外部关闭、置顶、跳过任务栏、可选跟随鼠标）；<b>clipboard_popup / search_popup</b> 跟随鼠标、失焦自动隐藏。<b>全部延迟创建</b>——首次呼出才建窗，避免启动闪现。</p>
         <pre class="p-code">popup 首次呼出 → 创建窗口
 → 跟随鼠标定位 → 失焦 hide</pre>
       </div>
-      <div class="principle reveal d1">
+      <div class="principle">
         <div class="p-no">P2 / Hotkey</div>
         <h3>热键注册</h3>
         <p class="p-desc"><b>unified_hotkey=true</b>（默认）：只注册主窗口热键，模块独立热键全部禁用；关闭则反之（主窗口改由托盘呼出）。匹配必须用对象比较，字符串格式不匹配。</p>
         <pre class="p-code">Shortcut::from_str(&amp;cfg)
   .map(|s| s == *shortcut)</pre>
       </div>
-      <div class="principle reveal">
+      <div class="principle">
         <div class="p-no">P3 / Clipboard</div>
         <h3>监听链路</h3>
         <p class="p-desc">事件驱动（WM_CLIPBOARDUPDATE）+ 500ms 轮询兜底双路径；按内容 hash 去重，表情写入登记指纹防误记；2s 时间窗口自写守卫，不记录自己的粘贴。</p>
         <pre class="p-code">event / poll → 指纹比对
 → 跳过自写 → 写库 → emit</pre>
       </div>
-      <div class="principle reveal d1">
+      <div class="principle">
         <div class="p-no">P4 / Quota</div>
         <h3>额度轮询</h3>
-        <p class="p-desc">后台线程 <b>poll_loop</b> 按 refresh_interval_sec（≥5s）逐账户查询：DeepSeek <span class="hl">GET /user/balance</span>；OpenCode Go <span class="hl">GET /zen/go/v1/usage</span>。更新状态 → 告警 → 写历史 → emit。</p>
+        <p class="p-desc">后台线程 <b>poll_loop</b> 按 refresh_interval_sec（≥5s）逐账户查询：DeepSeek <code>GET /user/balance</code>；OpenCode Go <code>GET /zen/go/v1/usage</code>。更新状态 → 告警 → 写历史 → emit。</p>
         <pre class="p-code">poll_loop → fetch_once
 → 逐账户更新 → 告警 → emit</pre>
       </div>
-      <div class="principle reveal">
+      <div class="principle">
         <div class="p-no">P5 / Emoji</div>
         <h3>智能渲染</h3>
         <p class="p-desc">系统字体优先：canvas 像素检测（不透明/彩色像素统计）判断字符是否被支持，不支持的自动回退 Twemoji SVG，结果持久化 localStorage 跨启动复用；共享 canvas + 每帧分片队列不阻塞主线程。</p>
         <pre class="p-code">字符 → 检测 → 缓存
 → 支持? 字符 : twemoji/xx.svg</pre>
       </div>
-      <div class="principle reveal d1">
+      <div class="principle">
         <div class="p-no">P6 / Frontend</div>
         <h3>模块保活</h3>
         <p class="p-desc">主窗口模块切换用 <b>keep-alive 显隐</b>（不卸载重建），修复切页卡顿；模块页面与独立弹窗共享同一套组件，双向入口。</p>
@@ -887,33 +1056,31 @@
 <!-- ============ 05 DATA & SECURITY ============ -->
 <section id="data">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">05</span>
-      <div class="titles">
-        <h2>数据与安全</h2>
-        <span class="en">Data &amp; Security</span>
-      </div>
+      <h2>数据与安全</h2>
+      <span class="en">Data &amp; Security</span>
     </div>
-    <p class="sec-sub">全部数据与密钥都留在本机，应用不依赖任何第三方服务器。</p>
+    <p class="sec-sub reveal">全部数据与密钥都留在本机，应用不依赖任何第三方服务器。</p>
 
     <div class="data-table">
-      <div class="data-row reveal">
+      <div class="data-row">
         <div class="d-cat">Config</div>
         <div class="d-desc"><code>%APPDATA%\com.aliboder.easytool\config.json</code> — 应用配置、模块启停与排序、热键、主题</div>
       </div>
-      <div class="data-row reveal d1">
+      <div class="data-row">
         <div class="d-cat">Clipboard</div>
         <div class="d-desc"><code>clipboard.db</code> — SQLite（WAL 模式），含固定排序 <code>pin_order</code>；图片存 <code>images/</code>，缩略图存 <code>thumbs/</code></div>
       </div>
-      <div class="data-row reveal">
+      <div class="data-row">
         <div class="d-cat">Quota</div>
         <div class="d-desc"><code>balance_history_&lt;account&gt;.json</code> — 各账户余额历史（旧版）；新版并入 SQLite，保留最近 5000 条</div>
       </div>
-      <div class="data-row reveal d1">
+      <div class="data-row">
         <div class="d-cat">Secrets</div>
         <div class="d-desc"><b>keyring</b>（系统钥匙串）— service <code>com.aliboder.easytool</code>，每账户独立槽位：<code>deepseek</code> / <code>opencode-go</code> / <code>quota-&lt;id&gt;</code></div>
       </div>
-      <div class="data-row reveal">
+      <div class="data-row">
         <div class="d-cat">Migration</div>
         <div class="d-desc">旧版 <b>PasteBoard</b> 剪贴板历史按 hash 导入；旧版 <b>QuotaMonitor</b> 余额记录按时间合并去重；启动时自动执行一次，幂等</div>
       </div>
@@ -924,17 +1091,15 @@
 <!-- ============ 06 STACK ============ -->
 <section id="stack">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">06</span>
-      <div class="titles">
-        <h2>技术</h2>
-        <span class="en">Stack</span>
-      </div>
+      <h2>技术</h2>
+      <span class="en">Stack</span>
     </div>
-    <p class="sec-sub">桌面壳 Tauri + 前端 React + 后端 Rust，兼顾体积、性能与开发效率。</p>
+    <p class="sec-sub reveal">桌面壳 Tauri + 前端 React + 后端 Rust，兼顾体积、性能与开发效率。</p>
 
     <div class="stack-table">
-      <div class="stack-row reveal">
+      <div class="stack-row">
         <div class="s-cat">Desktop Shell</div>
         <div class="s-items">
           <span>Tauri 2</span><span>Rust</span><span>NSIS</span>
@@ -942,7 +1107,7 @@
           <span>reqwest</span><span>chrono</span>
         </div>
       </div>
-      <div class="stack-row reveal d1">
+      <div class="stack-row">
         <div class="s-cat">Frontend</div>
         <div class="s-items">
           <span>React 19</span><span>TypeScript</span>
@@ -951,7 +1116,7 @@
           <span>Vite (MPA)</span>
         </div>
       </div>
-      <div class="stack-row reveal">
+      <div class="stack-row">
         <div class="s-cat">Windows</div>
         <div class="s-items">
           <span>托盘 + 全局热键</span><span>WM_CLIPBOARDUPDATE</span>
@@ -969,30 +1134,28 @@
 <!-- ============ 07 INSTALL ============ -->
 <section id="install">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">07</span>
-      <div class="titles">
-        <h2>安装</h2>
-        <span class="en">Installation</span>
-      </div>
+      <h2>安装</h2>
+      <span class="en">Installation</span>
     </div>
-    <p class="sec-sub">Windows 10 / 11。安装包为 NSIS 格式，安装为当前用户，无需管理员权限。</p>
+    <p class="sec-sub reveal">Windows 10 / 11。安装包为 NSIS 格式，安装为当前用户，无需管理员权限。</p>
 
     <div class="install-grid">
-      <div class="inst reveal">
+      <div class="inst">
         <h3>winget <span class="tag">推荐</span></h3>
         <p>Windows 包管理器一键安装，自动处理升级。</p>
-        <pre class="code"><button class="copy" data-copy="winget install Aliboder.EasyTool">Copy</button><span class="hl">$</span> winget install Aliboder.EasyTool
+        <pre class="code" data-type="winget install Aliboder.EasyTool"><button class="copy" data-copy="winget install Aliboder.EasyTool">Copy</button><span class="hl">$</span> winget install Aliboder.EasyTool
 <span class="cm"># 发布到 winget 仓库后可用</span></pre>
         <div class="reqs">
           <span><span class="sq"></span>需要 Windows 10 1709+ 或 Windows 11</span>
           <span><span class="sq"></span>WebView2 运行时（系统自带）</span>
         </div>
       </div>
-      <div class="inst reveal d1">
+      <div class="inst">
         <h3>GitHub Releases</h3>
         <p>从 Releases 页下载安装包，双击安装。</p>
-        <pre class="code"><button class="copy" data-copy="start https://github.com/Aliboder/EasyTool/releases">Copy</button><span class="hl">$</span> start https://github.com/Aliboder/EasyTool/releases
+        <pre class="code" data-type="start https://github.com/Aliboder/EasyTool/releases"><button class="copy" data-copy="start https://github.com/Aliboder/EasyTool/releases">Copy</button><span class="hl">$</span> start https://github.com/Aliboder/EasyTool/releases
 <span class="cm"># EasyTool_0.4.4_x64-setup.exe</span></pre>
         <div class="reqs">
           <span><span class="sq"></span>文件：EasyTool_0.4.4_x64-setup.exe</span>
@@ -1006,80 +1169,76 @@
 <!-- ============ 08 CHANGELOG ============ -->
 <section id="changelog">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">08</span>
-      <div class="titles">
-        <h2>更新记录</h2>
-        <span class="en">Changelog</span>
-      </div>
+      <h2>更新记录</h2>
+      <span class="en">Changelog</span>
     </div>
-    <p class="sec-sub">v0.4.x 系列全部于 2026-08-20 发布。完整记录见 GitHub Releases。</p>
+    <p class="sec-sub reveal">v0.4.x 系列全部于 2026-08-20 发布。完整记录见 GitHub Releases。</p>
 
     <div class="key-table">
-      <div class="key-row reveal">
-        <div class="k-no">0.4.4</div>
-        <div class="k-desc"><b>表情交互重构</b>· 文本表情 SendInput 直接输入（不写剪贴板）、图片表情直发；收藏 Tab 置顶默认打开；剪贴板自写守卫 300ms → 2s</div>
+      <div class="chg-row">
+        <div class="v">0.4.4</div>
+        <div class="d"><b>表情交互重构</b>· 文本表情 SendInput 直接输入（不写剪贴板）、图片表情直发；收藏 Tab 置顶默认打开；剪贴板自写守卫 300ms → 2s</div>
       </div>
-      <div class="key-row reveal d1">
-        <div class="k-no">0.4.3</div>
-        <div class="k-desc"><b>窗口修复</b>· 拖动标题栏窗口首次消失；启动闪现默认尺寸、尺寸恢复不准；呼出时 focus 风暴导致冻结</div>
+      <div class="chg-row">
+        <div class="v">0.4.3</div>
+        <div class="d"><b>窗口修复</b>· 拖动标题栏窗口首次消失；启动闪现默认尺寸、尺寸恢复不准；呼出时 focus 风暴导致冻结</div>
       </div>
-      <div class="key-row reveal">
-        <div class="k-no">0.4.2</div>
-        <div class="k-desc"><b>表情性能</b>· 切回模块改窗口 focus 刷新（不重载）；共享 canvas 分片检测 + localStorage 防抖，修复切回卡顿 200ms+</div>
+      <div class="chg-row">
+        <div class="v">0.4.2</div>
+        <div class="d"><b>表情性能</b>· 切回模块改窗口 focus 刷新（不重载）；共享 canvas 分片检测 + localStorage 防抖，修复切回卡顿 200ms+</div>
       </div>
-      <div class="key-row reveal d1">
-        <div class="k-no">0.4.1</div>
-        <div class="k-desc"><b>全量代码审查修复</b>· quota 锁外网络请求、非统一模式主热键、剪贴板图片编码锁外化、搜索防抖、热键 unregister_all 与解析缓存</div>
+      <div class="chg-row">
+        <div class="v">0.4.1</div>
+        <div class="d"><b>全量代码审查修复</b>· quota 锁外网络请求、非统一模式主热键、剪贴板图片编码锁外化、搜索防抖、热键 unregister_all 与解析缓存</div>
       </div>
-      <div class="key-row reveal">
-        <div class="k-no">0.4.0</div>
-        <div class="k-desc"><b>新增文件搜索模块</b>· Everything 全文搜索（弹窗 + 模块页双入口）；模块显示顺序持久化；设置页 UI 重构；Everything 自动启动（-startup 后台托盘）</div>
+      <div class="chg-row">
+        <div class="v">0.4.0</div>
+        <div class="d"><b>新增文件搜索模块</b>· Everything 全文搜索（弹窗 + 模块页双入口）；模块显示顺序持久化；设置页 UI 重构；Everything 自动启动（-startup 后台托盘）</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============ 09 FAQ ============ -->
+<!-- ============ 09 FAQ (crease fold) ============ -->
 <section id="faq" style="padding-top:0">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">09</span>
-      <div class="titles">
-        <h2>常见问题</h2>
-        <span class="en">FAQ</span>
-      </div>
+      <h2>常见问题</h2>
+      <span class="en">FAQ</span>
     </div>
 
     <div class="faq-list">
-      <div class="faq-item reveal">
+      <div class="faq-item">
         <details>
           <summary><span class="q-no">Q1</span>文件搜索为什么需要安装 Everything？<span class="mark">+</span></summary>
-          <div class="a">文件搜索模块基于 Everything 的索引引擎实现全盘秒搜，Everything 是免费的（voidtools.com，MIT 许可）。应用检测到未运行时会在搜索弹窗提示，并尝试自动启动。</div>
+          <div class="a-wrap"><div class="a">文件搜索模块基于 Everything 的索引引擎实现全盘秒搜，Everything 是免费的（voidtools.com，MIT 许可）。应用检测到未运行时会在搜索弹窗提示，并尝试自动启动。</div></div>
         </details>
       </div>
-      <div class="faq-item reveal d1">
+      <div class="faq-item">
         <details>
           <summary><span class="q-no">Q2</span>我的剪贴板历史和 API 密钥存在哪里？<span class="mark">+</span></summary>
-          <div class="a">历史数据全部在本机 <code>%APPDATA%\com.aliboder.easytool</code>（SQLite + 图片文件）。密钥只写入系统钥匙串（keyring），每个账户独立槽位，任何情况下都不以明文落盘、不上传任何服务器。</div>
+          <div class="a-wrap"><div class="a">历史数据全部在本机 <code>%APPDATA%\com.aliboder.easytool</code>（SQLite + 图片文件）。密钥只写入系统钥匙串（keyring），每个账户独立槽位，任何情况下都不以明文落盘、不上传任何服务器。</div></div>
         </details>
       </div>
-      <div class="faq-item reveal">
+      <div class="faq-item">
         <details>
           <summary><span class="q-no">Q3</span>我原来在用 PasteBoard / QuotaMonitor，能迁移吗？<span class="mark">+</span></summary>
-          <div class="a">能。启动时自动检测并导入：剪贴板历史按内容 hash 去重导入，额度记录按时间合并去重，全程幂等，重复启动不会产生重复数据。</div>
+          <div class="a-wrap"><div class="a">能。启动时自动检测并导入：剪贴板历史按内容 hash 去重导入，额度记录按时间合并去重，全程幂等，重复启动不会产生重复数据。</div></div>
         </details>
       </div>
-      <div class="faq-item reveal d1">
+      <div class="faq-item">
         <details>
           <summary><span class="q-no">Q4</span>关闭主窗口后程序还在吗？<span class="mark">+</span></summary>
-          <div class="a">在。关闭主窗口只是收进系统托盘，后台继续监听剪贴板、轮询额度。托盘图标右键可完全退出。</div>
+          <div class="a-wrap"><div class="a">在。关闭主窗口只是收进系统托盘，后台继续监听剪贴板、轮询额度。托盘图标右键可完全退出。</div></div>
         </details>
       </div>
-      <div class="faq-item reveal">
+      <div class="faq-item">
         <details>
           <summary><span class="q-no">Q5</span>热键被其他软件占用了怎么办？<span class="mark">+</span></summary>
-          <div class="a">设置页可以重新录制任意热键，录制器支持 Ctrl / Shift / Alt / Super（Windows 键）组合。也可以关闭统一热键模式，改为各模块独立热键，甚至全部关闭，只用托盘呼出。</div>
+          <div class="a-wrap"><div class="a">设置页可以重新录制任意热键，录制器支持 Ctrl / Shift / Alt / Super（Windows 键）组合。也可以关闭统一热键模式，改为各模块独立热键，甚至全部关闭，只用托盘呼出。</div></div>
         </details>
       </div>
     </div>
@@ -1089,17 +1248,15 @@
 <!-- ============ 10 DOCS ============ -->
 <section id="docs" style="padding-top:0">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
       <span class="no">10</span>
-      <div class="titles">
-        <h2>文档</h2>
-        <span class="en">Docs</span>
-      </div>
+      <h2>文档</h2>
+      <span class="en">Docs</span>
     </div>
-    <p class="sec-sub">文档随仓库维护，全部中文。</p>
+    <p class="sec-sub reveal">文档随仓库维护，全部中文。</p>
 
     <div class="docs-grid">
-      <a class="doc reveal" href="https://github.com/Aliboder/EasyTool/blob/main/docs/module-guide.md" target="_blank" rel="noopener">
+      <a class="doc" href="https://github.com/Aliboder/EasyTool/blob/main/docs/module-guide.md" target="_blank" rel="noopener">
         <span class="d-no">01</span>
         <div>
           <h3>新增模块指南</h3>
@@ -1107,7 +1264,7 @@
           <span class="path">docs/module-guide.md</span>
         </div>
       </a>
-      <a class="doc reveal d1" href="https://github.com/Aliboder/EasyTool/blob/main/docs/lessons.md" target="_blank" rel="noopener">
+      <a class="doc" href="https://github.com/Aliboder/EasyTool/blob/main/docs/lessons.md" target="_blank" rel="noopener">
         <span class="d-no">02</span>
         <div>
           <h3>踩坑经验速查</h3>
@@ -1115,7 +1272,7 @@
           <span class="path">docs/lessons.md</span>
         </div>
       </a>
-      <a class="doc reveal" href="https://github.com/Aliboder/EasyTool/tree/main/docs/superpowers/specs" target="_blank" rel="noopener">
+      <a class="doc" href="https://github.com/Aliboder/EasyTool/tree/main/docs/superpowers/specs" target="_blank" rel="noopener">
         <span class="d-no">03</span>
         <div>
           <h3>设计文档</h3>
@@ -1123,7 +1280,7 @@
           <span class="path">docs/superpowers/specs/</span>
         </div>
       </a>
-      <a class="doc reveal d1" href="https://github.com/Aliboder/EasyTool/releases" target="_blank" rel="noopener">
+      <a class="doc" href="https://github.com/Aliboder/EasyTool/releases" target="_blank" rel="noopener">
         <span class="d-no">04</span>
         <div>
           <h3>更新日志</h3>
@@ -1135,25 +1292,29 @@
   </div>
 </section>
 
-<!-- ============ FOOTER ============ -->
+<!-- ============ FOOTER / COLOPHON ============ -->
 <footer>
-  <div class="wrap foot">
-    <div class="f-brand"><span class="sq"></span>EASYTOOL <span class="tagline">Windows 效率工具箱</span></div>
-    <div class="f-col">
-      <span class="h">Links</span>
-      <a href="https://github.com/Aliboder/EasyTool" target="_blank" rel="noopener">GitHub 仓库</a>
-      <a href="https://github.com/Aliboder/EasyTool/releases" target="_blank" rel="noopener">Releases / 更新日志</a>
-      <a href="#faq">常见问题</a>
+  <div class="wrap">
+    <div class="foot">
+      <div class="f-brand"><span class="sq"></span>EASYTOOL <span class="tagline">Windows 效率工具箱</span></div>
+      <div class="f-col">
+        <span class="h">Links</span>
+        <a href="https://github.com/Aliboder/EasyTool" target="_blank" rel="noopener">GitHub 仓库</a>
+        <a href="https://github.com/Aliboder/EasyTool/releases" target="_blank" rel="noopener">Releases / 更新日志</a>
+        <a href="#faq">常见问题</a>
+      </div>
+      <div class="f-col">
+        <span class="h">Info</span>
+        <span>v0.4.4 · MIT License</span>
+        <span>Windows 10 / 11 · x64</span>
+        <span>Rust + React · Tauri 2</span>
+      </div>
     </div>
-    <div class="f-col">
-      <span class="h">Info</span>
-      <span>v0.4.4 · MIT License</span>
-      <span>Windows 10 / 11 · x64</span>
-      <span>Rust + React · Tauri 2</span>
-    </div>
-    <div class="f-col">
-      <span class="h">Top</span>
-      <a href="#top" id="backTop">回到顶部 ↑</a>
+    <div class="colophon">
+      <span><span class="sq"></span>EasyTool — 瑞士国际主义海报集 · 版式 01-10</span>
+      <span>Space Grotesk · JetBrains Mono · IBM Plex Sans</span>
+      <span>纸白 #F7F7F4 · 墨黑 #131313 · 信号红 #E63329</span>
+      <span><a href="#top" id="backTop">回到顶部 ↑</a></span>
     </div>
   </div>
 </footer>
@@ -1174,7 +1335,7 @@
     });
   })();
 
-  // ---- restrained reveal ----
+  // ---- sparse reveal (big blocks only) ----
   (function () {
     var els = document.querySelectorAll(".reveal");
     if (!("IntersectionObserver" in window)) {
@@ -1185,8 +1346,57 @@
       entries.forEach(function (en) {
         if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
       });
-    }, { threshold: 0.1 });
+    }, { threshold: 0.15 });
     els.forEach(function (el) { io.observe(el); });
+  })();
+
+  // ---- split-flap ticker ----
+  (function () {
+    var flaps = document.querySelectorAll(".flap[data-digits]");
+    if (!flaps.length) return;
+    flaps.forEach(function (f) {
+      var digits = f.getAttribute("data-digits").split("");
+      var wheel = document.createElement("span");
+      wheel.className = "wheel";
+      var cells = [];
+      digits.forEach(function (d) {
+        var c = document.createElement("span");
+        c.textContent = d;
+        wheel.appendChild(c);
+        cells.push(c);
+      });
+      f.appendChild(wheel);
+      f._cells = cells;
+      f._idx = 0;
+    });
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        io.unobserve(en.target);
+        en.target.querySelectorAll(".flap").forEach(function (f) { run(f); });
+      });
+    }, { threshold: 0.4 });
+    io.observe(document.querySelector(".ticker"));
+
+    function run(f) {
+      var cells = f._cells;
+      var step = 0;
+      var total = Math.max(cells.length * 8, 24);
+      (function tick() {
+        if (step < total) {
+          var i = Math.floor((step / total) * cells.length);
+          i = Math.min(i, cells.length - 1);
+          if (i > f._idx) { f._idx = i; }
+          var off = -f._idx * 1.0;
+          f.querySelector(".wheel").style.transform = "translateY(" + (off * 1.0) + "em)";
+          step++;
+          setTimeout(tick, 46);
+        } else {
+          var off = -(cells.length - 1);
+          f.querySelector(".wheel").style.transform = "translateY(" + off + "em)";
+        }
+      })();
+    }
   })();
 
   // ---- reading progress ----
@@ -1201,7 +1411,7 @@
     onScroll();
   })();
 
-  // ---- scrollspy: highlight active nav ----
+  // ---- scrollspy ----
   (function () {
     var links = document.querySelectorAll(".nav-links a");
     var map = {};
@@ -1224,36 +1434,150 @@
     ids.forEach(function (id) { io.observe(map[id].sec); });
   })();
 
-  // ---- copy buttons ----
-  (function () {
-    document.querySelectorAll("pre.code .copy").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var text = btn.getAttribute("data-copy") || "";
-        var done = function () {
-          btn.textContent = "Copied";
-          btn.classList.add("done");
-          setTimeout(function () {
-            btn.textContent = "Copy";
-            btn.classList.remove("done");
-          }, 1500);
-        };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(done).catch(function () {
-            fallbackCopy(text); done();
-          });
-        } else { fallbackCopy(text); done(); }
-      });
-    });
-    function fallbackCopy(text) {
-      var ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand("copy"); } catch (e) {}
-      document.body.removeChild(ta);
+  // ---- copy (delegated) ----
+  function fallbackCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("pre.code .copy");
+    if (!btn) return;
+    var text = btn.getAttribute("data-copy") || "";
+    var done = function () {
+      btn.textContent = "Copied";
+      btn.classList.add("done");
+      setTimeout(function () {
+        btn.textContent = "Copy";
+        btn.classList.remove("done");
+      }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text); done(); });
+    } else { fallbackCopy(text); done(); }
+  });
+
+  // ---- button ripple ----
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".btn");
+    if (!btn) return;
+    var r = btn.getBoundingClientRect();
+    var rip = document.createElement("span");
+    rip.className = "ripple";
+    rip.style.left = (e.clientX - r.left) + "px";
+    rip.style.top = (e.clientY - r.top) + "px";
+    btn.appendChild(rip);
+    setTimeout(function () { rip.remove(); }, 600);
+  });
+
+  // ---- toast ----
+  function toast(msg, key) {
+    var wrap = document.getElementById("toastWrap");
+    var t = document.createElement("div");
+    t.className = "toast";
+    if (key) {
+      var k = document.createElement("span");
+      k.className = "t-key";
+      k.textContent = key;
+      t.appendChild(k);
     }
+    var s = document.createElement("span");
+    s.textContent = msg;
+    t.appendChild(s);
+    wrap.appendChild(t);
+    setTimeout(function () {
+      t.classList.add("bye");
+      setTimeout(function () { t.remove(); }, 320);
+    }, 1800);
+  }
+
+  // ---- live hotkey demo ----
+  (function () {
+    var DEMO = {
+      E: { idx: 0, name: "主面板", key: "Ctrl+Shift+E" },
+      V: { idx: 1, name: "剪贴板弹窗", key: "Ctrl+Shift+V" },
+      J: { idx: 2, name: "表情弹窗", key: "Ctrl+Shift+J" },
+      F: { idx: 3, name: "搜索弹窗", key: "Ctrl+Shift+F" }
+    };
+    document.addEventListener("keydown", function (e) {
+      if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey) return;
+      var d = DEMO[e.key.toUpperCase()];
+      if (!d) return;
+      e.preventDefault();
+      var rows = document.querySelectorAll("#hotkeys .key-row");
+      var row = rows[d.idx];
+      if (row) {
+        row.classList.remove("flash");
+        void row.offsetWidth;
+        row.classList.add("flash");
+      }
+      toast("呼出 " + d.name + "（演示）", d.key);
+    });
+  })();
+
+  // ---- typewriter ----
+  (function () {
+    document.querySelectorAll("pre.code[data-type]").forEach(function (pre) {
+      var original = pre.innerHTML;
+      var text = pre.getAttribute("data-type");
+      var started = false;
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting && !started) {
+            started = true;
+            io.disconnect();
+            typeIt();
+          }
+        });
+      }, { threshold: 0.3 });
+      io.observe(pre);
+      function typeIt() {
+        pre.classList.add("typing");
+        pre.textContent = "";
+        var caret = document.createElement("span");
+        caret.className = "caret";
+        pre.appendChild(caret);
+        var i = 0;
+        (function step() {
+          if (i < text.length) {
+            pre.insertBefore(document.createTextNode(text.charAt(i)), caret);
+            i++;
+            setTimeout(step, 50 + Math.random() * 65);
+          } else {
+            pre.removeChild(caret);
+            pre.innerHTML = original;
+            pre.classList.remove("typing");
+          }
+        })();
+      }
+    });
+  })();
+
+  // ---- logo easter egg: 5 clicks ----
+  (function () {
+    var brand = document.querySelector(".brand");
+    if (!brand) return;
+    var count = 0, timer = null;
+    brand.addEventListener("click", function () {
+      count++;
+      clearTimeout(timer);
+      timer = setTimeout(function () { count = 0; }, 1500);
+      if (count >= 5) {
+        count = 0;
+        brand.classList.add("boom");
+        document.body.classList.add("boom");
+        toast("EasyTool 致敬每一位效率玩家", "彩蛋");
+        setTimeout(function () {
+          brand.classList.remove("boom");
+          document.body.classList.remove("boom");
+        }, 900);
+      }
+    });
   })();
 </script>
 
