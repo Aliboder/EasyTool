@@ -226,8 +226,16 @@ export function QuicklaunchPage() {
           if (item.item_type !== "url") loadFileIcon(item.path);
         }
       } else {
-        setItems(result);
-        for (const item of result) {
+        // 非手动排序：前端用 localeCompare 做中文拼音排序
+        const sorted = [...result].sort((a, b) => {
+          if (cfg.sortBy === "name") {
+            return a.name.localeCompare(b.name, "zh-CN-u-co-pinyin");
+          }
+          // created_at: 字符串时间比较（ISO 格式，直接比较即可）
+          return a.created_at.localeCompare(b.created_at);
+        });
+        setItems(sorted);
+        for (const item of sorted) {
           if (item.item_type !== "url") loadFileIcon(item.path);
         }
       }
