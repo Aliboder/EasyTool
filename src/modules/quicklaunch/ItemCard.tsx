@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { gridIconSize, gridFontScale } from "@/lib/grid";
 import { File, Folder, Globe, AppWindow } from "lucide-react";
 import { useState } from "react";
 
@@ -101,7 +102,7 @@ export function ItemCard({
   };
 
   if (viewMode === "grid") {
-    const iconSize = Math.max(gridSize * 0.5, 24);
+    const iconSize = gridIconSize(gridSize);
     return (
       <div
         className={cn(
@@ -135,13 +136,13 @@ export function ItemCard({
             onBlur={handleRename}
             onKeyDown={handleKeyDown}
             className="w-full min-w-0 text-center bg-transparent border border-primary outline-none truncate"
-            style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}
+            style={{ fontSize: `${gridFontScale(gridSize)}px` }}
             autoFocus
           />
         ) : (
           <span
             className="w-full min-w-0 truncate text-center leading-tight"
-            style={{ fontSize: `${Math.max(gridSize * 0.15, 10)}px` }}
+            style={{ fontSize: `${gridFontScale(gridSize)}px` }}
             title={item.name}
           >
             {getDisplayName(item.name, showExtension)}

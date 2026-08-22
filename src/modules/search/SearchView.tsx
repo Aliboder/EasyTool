@@ -45,6 +45,7 @@ import {
 } from "./SearchSettings";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { toast } from "@/lib/toast";
+import { gridColumns, gridVerticalTarget } from "@/lib/grid";
 
 export interface SearchResultDto {
   name: string;
@@ -115,6 +116,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; item: SearchResultDto } | null>(null);
   const [icons, setIcons] = useState<Record<string, string>>({});
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
@@ -355,12 +357,21 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (showSettings) return;
     const idx = results.findIndex((r) => r.full_path === selected);
+    const isGrid = cfg.viewMode === "grid";
+    const cols =
+      isGrid && gridRef.current ? gridColumns(gridRef.current) : 1;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (results.length) setSelected(results[Math.min(idx + 1, results.length - 1)].full_path);
+      if (results.length)
+        setSelected(
+          results[gridVerticalTarget(idx, 1, results.length, cols)].full_path,
+        );
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      if (results.length) setSelected(results[Math.max(idx - 1, 0)].full_path);
+      if (results.length)
+        setSelected(
+          results[gridVerticalTarget(idx, -1, results.length, cols)].full_path,
+        );
     } else if (e.key === "Enter" && selected != null) {
       e.preventDefault();
       const item = results.find((r) => r.full_path === selected);
@@ -533,8 +544,12 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       )
     ) : cfg.viewMode === "grid" ? (
       <div
-        className="flex flex-wrap content-start gap-2 p-2"
-        style={{ gridAutoRows: "auto" }}
+        ref={gridRef}
+        className="grid gap-2 p-2"
+        style={{
+          gridAutoRows: `${cfg.gridSize}px`,
+          gridTemplateColumns: `repeat(auto-fill, ${cfg.gridSize}px)`,
+        }}
       >
         {results.map((r) => (
           <div key={r.full_path}>{gridNode(r)}</div>

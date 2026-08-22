@@ -9,6 +9,7 @@ import { toast } from "@/lib/toast";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { EMOJI_DEFAULTS } from "./config";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
+import { gridColumns, gridVerticalTarget } from "@/lib/grid";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { Copy, Star } from "lucide-react";
@@ -67,6 +68,7 @@ export function EmojiPopup() {
   const [q, setQ] = useState("");
   const [visible, setVisible] = useState(BATCH);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const listLenRef = useRef(0);
   const lastLoadRef = useRef(0);
 
@@ -114,12 +116,11 @@ export function EmojiPopup() {
       return;
     }
     if (!shown.length) return;
-    if (e.key === "ArrowDown") {
+    const dir = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    if (dir !== 0) {
       e.preventDefault();
-      setActiveIdx((i) => (i == null ? 0 : (i + 1) % shown.length));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActiveIdx((i) => (i == null ? shown.length - 1 : (i - 1 + shown.length) % shown.length));
+      const cols = gridRef.current ? gridColumns(gridRef.current) : 1;
+      setActiveIdx((i) => gridVerticalTarget(i ?? -1, dir, shown.length, cols));
     } else if (e.key === "Enter" && activeIdx != null && activeIdx < shown.length) {
       e.preventDefault();
       const it = shown[activeIdx];
@@ -236,7 +237,7 @@ export function EmojiPopup() {
         ))}
       </div>
       <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-2">
-        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.emojiGridSize}px)` }}>
+        <div ref={gridRef} className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.emojiGridSize}px)` }}>
           {shown.map((item, idx) => (
             <button
               key={item.type + item.id}

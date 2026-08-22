@@ -35,6 +35,7 @@ import { usePrompt } from "@/components/ui/prompt-dialog";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 import { toast } from "@/lib/toast";
+import { gridColumns, gridIconSize, gridFontScale, gridVerticalTarget } from "@/lib/grid";
 import { cn } from "@/lib/utils";
 
 // ==================== 配置类型（对齐文件搜索模块） ====================
@@ -132,6 +133,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
   const [expandedFolder, setExpandedFolder] = useState<number | null>(null);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const entranceRef = useWindowEntrance(popup, ["animate-in", "fade-in-0"]);
 
   // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
@@ -304,7 +306,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
     }
   };
 
-  // 键盘导航：↑↓ 移动高亮、Enter 打开、Delete 删除、Esc 关弹层/隐藏窗口
+  // 键盘导航：↑↓ 移动高亮（网格模式按列数跳行）、Enter 打开、Delete 删除、Esc 关弹层/隐藏窗口
   const [kbIdx, setKbIdx] = useState<number | null>(null);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -314,12 +316,14 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
       return;
     }
     if (!items.length) return;
-    if (e.key === "ArrowDown") {
+    const dir = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    if (dir !== 0) {
       e.preventDefault();
-      setKbIdx((i) => (i == null ? 0 : Math.min(i + 1, items.length - 1)));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setKbIdx((i) => (i == null ? items.length - 1 : Math.max(i - 1, 0)));
+      const cols =
+        cfg.viewMode === "grid" && gridRef.current
+          ? gridColumns(gridRef.current)
+          : 1;
+      setKbIdx((i) => gridVerticalTarget(i ?? -1, dir, items.length, cols));
     } else if (e.key === "Enter" && kbIdx != null && kbIdx < items.length) {
       e.preventDefault();
       handleOpen(items[kbIdx]);
@@ -724,6 +728,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={items.map((item) => String(item.id))} strategy={rectSortingStrategy}>
                 <div
+                  ref={gridRef}
                   className="grid gap-2"
                   style={{
                     gridAutoRows: `${cfg.gridSize}px`,
@@ -791,14 +796,15 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                     }}
                     onClick={handleAddItem}
                   >
-                    <Plus className="text-muted-foreground" style={{ width: cfg.gridSize * 0.5, height: cfg.gridSize * 0.5 }} />
-                    <span className="text-muted-foreground" style={{ fontSize: `${Math.max(cfg.gridSize * 0.15, 10)}px` }}>添加</span>
+                    <Plus className="text-muted-foreground" style={{ width: gridIconSize(cfg.gridSize), height: gridIconSize(cfg.gridSize) }} />
+                    <span className="text-muted-foreground" style={{ fontSize: `${gridFontScale(cfg.gridSize)}px` }}>添加</span>
                   </button>
                 </div>
               </SortableContext>
             </DndContext>
           ) : (
             <div
+              ref={gridRef}
               className="grid gap-2"
               style={{
                 gridAutoRows: `${cfg.gridSize}px`,
@@ -850,8 +856,8 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                 style={{ height: `${cfg.gridSize}px`, padding: `${cfg.gridSize * 0.1}px` }}
                 onClick={handleAddItem}
               >
-                <Plus className="text-muted-foreground" style={{ width: cfg.gridSize * 0.5, height: cfg.gridSize * 0.5 }} />
-                <span className="text-muted-foreground" style={{ fontSize: `${Math.max(cfg.gridSize * 0.15, 10)}px` }}>添加</span>
+                <Plus className="text-muted-foreground" style={{ width: gridIconSize(cfg.gridSize), height: gridIconSize(cfg.gridSize) }} />
+                <span className="text-muted-foreground" style={{ fontSize: `${gridFontScale(cfg.gridSize)}px` }}>添加</span>
               </button>
             </div>
           )

@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { gridColumns, gridIconSize } from "@/lib/grid";
 import { CLIPBOARD_DEFAULTS } from "./config";
 import { Drawer } from "@/components/ui/drawer";
 import { Search, Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile } from "lucide-react";
@@ -342,12 +343,8 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const { ref: fileScrollRef } = useHorizontalWheel<HTMLDivElement>();
   const gridRef = useRef<HTMLDivElement | null>(null);
   const gridStep = () => {
-    const el = gridRef.current;
-    const cell = el?.querySelector<HTMLElement>("[data-cell]");
-    if (!el || !cell) return 1;
-    const total = cell.offsetWidth + 8;
-    if (total <= 0) return 1;
-    return Math.max(1, Math.floor(el.clientWidth / total));
+    if (!gridRef.current) return 1;
+    return gridColumns(gridRef.current, "[data-cell]");
   };
 
   const cellBtn = (
@@ -410,7 +407,8 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           {fileIcons[path] ? (
             <img
               src={`data:image/png;base64,${fileIcons[path]}`}
-              className="size-6 shrink-0 object-contain"
+              className="shrink-0 object-contain"
+              style={{ width: gridIconSize(cellSize), height: gridIconSize(cellSize) }}
               alt=""
             />
           ) : (
@@ -443,6 +441,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const fileCell = (item: ItemDto, index: number) => {
     const path = item.preview;
     if (path) fileIconOf(path);
+    const iconPx = gridIconSize(cellSize);
     return cellBtn(
       item,
       index,
@@ -452,11 +451,15 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           {fileIcons[path] ? (
             <img
               src={`data:image/png;base64,${fileIcons[path]}`}
-              className="size-8 object-contain"
+              className="object-contain"
+              style={{ width: iconPx, height: iconPx }}
               alt=""
             />
           ) : (
-            <div className="flex size-8 items-center justify-center rounded bg-muted text-[9px] text-muted-foreground">
+            <div
+              className="flex items-center justify-center rounded bg-muted text-[9px] text-muted-foreground"
+              style={{ width: iconPx, height: iconPx }}
+            >
               文件
             </div>
           )}

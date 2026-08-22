@@ -232,8 +232,6 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 
 参考模板：`emoji/config.ts` + `quicklaunch/Settings.tsx`。
 
-> ⚠️ **默认值双处同步**：`manifest.json` 的 `default_config`（首装时播种进 config.json）与 `config.ts` 的 `DEFAULTS`（运行时缺失字段兜底）职责不同，但**值必须保持一致**——新增或修改设置项默认值时，两处都要改。
-
 ### 3.2 内建行为（Hook 已处理，勿重复实现）
 
 - **键名双向映射**：JS camelCase ↔ config.json snake_case。曾因手写映射不一致导致 emoji 设置整页静默失败、quicklaunch 重启丢设置——此类 bug 已从机制上杜绝
@@ -243,14 +241,16 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 
 ### 3.3 控件提交时机
 
-- **Slider 直接 `onValueChange` → `onUpdate`**：Hook 内置落盘防抖（400ms 合并），界面边拉边生效，无需草稿值：
+- **Slider 一律 `onValueCommit` 落盘**；拖动中的流畅显示用本地草稿值：
 
 ```tsx
-<Slider value={[cfg.gridSize]} onValueChange={([v]) => onUpdate({ gridSize: v })} />
-<span>{cfg.gridSize}px</span>
+const [draft, setDraft] = useState(cfg.gridSize);
+useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
+<Slider value={[draft]} onValueChange={([v]) => setDraft(v)}
+        onValueCommit={([v]) => onUpdate({ gridSize: v })} />
 ```
 
-- Switch / 按钮组 / Select：即时生效（同样经 Hook 防抖合并，无感知）
+- Switch / 按钮组 / Select：即时生效
 
 ### 3.4 例外规则（何时允许专用命令）
 
@@ -269,7 +269,18 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 - **时间序列数据**（余额历史/消费历史）：quota 按账户分文件 `balance_history_<account_id>.json`（`{"records":[{time,balance}]}`，ISO 时间），用 `history::daily_series_all` 聚合完整每日序列
 - **条目顺序持久化**：数据库加排序列（如剪贴板 `items.pin_order`，NULL=未排过序排最后），查询 `ORDER BY col IS NULL, col ASC`，新增 `set_xxx_order(ids)` 命令保存
 
-## 5. 关键坑（新增模块时必须遵守）
+## 5. 网格实现标准（v0.4.6 起统一）
+
+涉及格子网格的模块（quicklaunch/search/emoji/clipboard）一律遵守：
+
+1. **容器**：真 CSS Grid，`className="grid gap-2"` + `style={{ gridTemplateColumns: repeat(auto-fill, Npx), gridAutoRows: Npx }}`（N=配置的格子尺寸）。**不要用 flex-wrap 模拟网格**
+2. **内容缩放公式**：从 `src/lib/grid.ts` 引用 `gridIconSize(cell)`（图标 50%）与 `gridFontScale(cell)`（字号 15%），禁止手写魔法数字。例外：emoji 字形即内容，用 70% 比例
+3. **键盘 ↑↓ 跨行步进**：必须用 `gridColumns(el)` 实测列数（勿手写 ±1 或硬编码 gap）；列表视图保持线性 ±1
+4. **gap 统一 8px**（`gap-2`）；密集表情格可用 `gap-1`
+5. **数据量策略不强制统一**（search 分页 / emoji 批渲染 / clipboard 上限拉取 / quicklaunch 全量），按各自数据规模选择
+6. 剪贴板的横向胶卷条（`grid-flow-col grid-rows-1`）是刻意的横向流设计，不属于本规范约束范围
+
+## 6. 关键坑（新增模块时必须遵守）
 
 1. **不要用 PowerShell 的 `Get-Content`/`Set-Content` 改写源码**（会把 UTF-8 写成 GBK）。改文件一律用编辑器工具
 2. **std Mutex 不可重入**：持 `ConfigState` 或任何 Mutex 锁期间，**绝不调用会再次取锁的函数**（如 `module_config`、`fetch_once` 这类内部取锁的）。先收进块作用域释放锁，再把网络/耗时操作放 `spawn_blocking`
@@ -292,7 +303,7 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 19. **SQLite 建索引必须在列添加之后**：索引引用的列若在版本迁移中才添加（如 `pin_order`），索引创建要放在迁移之后，否则新库建表直接失败
 20. **Tauri v2 invoke 参数 JS 侧必须 camelCase**：Rust 参数 `follow_mouse` ↔ JS 键名 `followMouse`。用 snake_case 键名调用会反序列化失败且**静默无报错**（emoji 曾因此所有设置存不上）。配置读写走 useModuleConfig 可天然避开；手写 invoke 其他命令时务必注意
 
-## 6. 完成清单
+## 7. 完成清单
 
 新增模块后逐项自检：
 
@@ -310,7 +321,7 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 - [ ] 手动验收清单已给用户（启动命令 + 验证点）
 - [ ] `codegraph init` 重建索引后提交
 
-## 7. 参考实现
+## 8. 参考实现
 
 新增模块时对照这些现成模块：
 
