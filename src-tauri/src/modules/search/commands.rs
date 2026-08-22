@@ -189,22 +189,6 @@ pub fn search_copy_file(app: AppHandle, path: String) -> CmdResult<()> {
     Ok(())
 }
 
-/// 保存搜索模块设置（合并进 modules.search）
-#[tauri::command]
-pub fn search_save_settings(app: AppHandle, settings: serde_json::Value) -> CmdResult<()> {
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(m) = cfg.modules.get_mut("search") {
-        if let Some(obj) = settings.as_object() {
-            for (k, v) in obj {
-                m[k] = v.clone();
-            }
-        }
-    }
-    crate::config::save_config(&app, &cfg).map_err(CommandError::from)?;
-    Ok(())
-}
-
 /// 保存弹窗固定位置（物理像素坐标）
 #[tauri::command]
 pub fn search_save_fixed_pos(app: AppHandle, x: i32, y: i32) -> CmdResult<()> {

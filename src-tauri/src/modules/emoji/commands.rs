@@ -392,36 +392,6 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
     }
 }
 
-/// 保存模块配置（热键/点击行为/网格大小）
-#[tauri::command]
-pub fn save_emoji_settings(
-    app: AppHandle,
-    hotkey: String,
-    click_action: String,
-    follow_mouse: bool,
-    emoji_grid_size: Option<f64>,
-    custom_grid_size: Option<f64>,
-) -> R<()> {
-    let cfg = {
-        let state = app.state::<crate::config::ConfigState>();
-        let mut cfg = state.0.lock().unwrap();
-        let m = cfg.modules.entry("emoji".into()).or_default();
-        m["hotkey"] = serde_json::json!(hotkey);
-        m["click_action"] = serde_json::json!(click_action);
-        m["follow_mouse"] = serde_json::json!(follow_mouse);
-        if let Some(v) = emoji_grid_size {
-            m["emoji_grid_size"] = serde_json::json!(v);
-        }
-        if let Some(v) = custom_grid_size {
-            m["custom_grid_size"] = serde_json::json!(v);
-        }
-        cfg.clone()
-    };
-    crate::config::save_config(&app, &cfg).map_err(|e| e.to_string())?;
-    crate::reapply_hotkeys(&app);
-    Ok(())
-}
-
 // ---- 单元测试 ----
 
 #[cfg(test)]

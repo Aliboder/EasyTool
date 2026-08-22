@@ -227,21 +227,6 @@ pub fn save_popup_size(app: AppHandle, width: u32, height: u32) -> CmdResult<()>
     crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
 }
 
-/// 通用剪贴板设置项写入（合并进 modules.clipboard，前端传 {key: value} 部分更新）
-#[tauri::command]
-pub fn save_clipboard_settings(app: AppHandle, settings: serde_json::Value) -> CmdResult<()> {
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(m) = cfg.modules.get_mut("clipboard") {
-        if let Some(obj) = settings.as_object() {
-            for (k, v) in obj {
-                m[k] = v.clone();
-            }
-        }
-    }
-    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
-}
-
 /// 设置全局呼出热键（立即生效并持久化）
 #[tauri::command]
 pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {

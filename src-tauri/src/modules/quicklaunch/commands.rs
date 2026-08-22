@@ -175,23 +175,6 @@ pub fn quicklaunch_open_item_as_admin(
 }
 
 #[tauri::command]
-pub fn save_quicklaunch_settings(
-    app: AppHandle,
-    settings: serde_json::Value,
-) -> CmdResult<()> {
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(m) = cfg.modules.get_mut("quicklaunch") {
-        if let Some(obj) = settings.as_object() {
-            for (k, v) in obj {
-                m[k] = v.clone();
-            }
-        }
-    }
-    crate::config::save_config(&app, &cfg).map_err(|e| format!("保存配置失败: {e}"))
-}
-
-#[tauri::command]
 pub fn quicklaunch_add_from_path(
     state: State<'_, Mutex<QuicklaunchState>>,
     path: String,
