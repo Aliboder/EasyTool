@@ -137,7 +137,7 @@ export function FolderOverlay({
       <div
         ref={overlayRef}
         className={cn(
-          "absolute rounded-3xl bg-background/95 backdrop-blur-2xl p-8 shadow-2xl shadow-primary/10 border border-white/10",
+          "absolute rounded-3xl bg-background/95 backdrop-blur-2xl p-5 shadow-2xl shadow-primary/10 border border-white/10",
           "animate-in zoom-in-95 fade-in-0 duration-300",
           !anchorPosition && "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         )}
@@ -150,13 +150,13 @@ export function FolderOverlay({
         {/* 关闭按钮 */}
         <button
           onClick={onClose}
-          className="absolute right-4 top-4 rounded-full p-2 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          className="absolute right-3 top-3 rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
 
         {/* 分组标题 */}
-        <div className="text-center mb-6">
+        <div className="text-center mb-3">
           {isEditing ? (
             <div className="inline-block">
               <input
@@ -165,14 +165,14 @@ export function FolderOverlay({
                 onChange={(e) => setEditName(e.target.value)}
                 onBlur={handleRenameSubmit}
                 onKeyDown={handleKeyDown}
-                className="text-xl font-bold text-center bg-transparent border-b-2 border-primary outline-none"
+                className="text-lg font-semibold text-center bg-transparent border-b-2 border-primary outline-none"
                 style={{ width: `${Math.max(editName.length * 1.2, 4)}ch` }}
                 autoFocus
               />
             </div>
           ) : (
             <h3
-              className="text-xl font-bold cursor-pointer hover:text-primary transition-colors inline-block"
+              className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors inline-block"
               onClick={() => {
                 setEditName(folderName);
                 setIsEditing(true);
@@ -182,7 +182,7 @@ export function FolderOverlay({
               {folderName}
             </h3>
           )}
-          <p className="text-sm text-muted-foreground mt-2">
+          <p className="text-xs text-muted-foreground mt-1">
             {items.length} 个项目
           </p>
         </div>
@@ -215,9 +215,9 @@ export function FolderOverlay({
         </div>
 
         {/* 底部提示 */}
-        <div className="mt-6 pt-4 border-t border-border/50">
-          <p className="text-center text-xs text-muted-foreground">
-            点击空白处或按 <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono">ESC</kbd> 关闭
+        <div className="mt-3 pt-2 border-t border-border/50">
+          <p className="text-center text-[10px] text-muted-foreground">
+            点击空白处或按 <kbd className="px-1 py-0.5 rounded bg-muted text-[9px] font-mono">ESC</kbd> 关闭
           </p>
         </div>
       </div>
