@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Slider } from "@/components/ui/slider";import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Slider } from "@/components/ui/slider";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
-import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { toast } from "@/lib/toast";
 import type { ClipboardConfig } from "./config";
 import {
@@ -68,6 +68,8 @@ export function ClipSettings({
   maxItems,
   hotkey,
   followMouse,
+  cfg,
+  onUpdate,
   onMaxItems,
   onHotkey,
   onFollowMouse,
@@ -75,6 +77,8 @@ export function ClipSettings({
   maxItems: number;
   hotkey: string;
   followMouse: boolean;
+  cfg: ClipboardConfig;
+  onUpdate: (patch: Partial<ClipboardConfig>) => void;
   onMaxItems: () => void;
   onHotkey: () => void;
   onFollowMouse: () => void;
@@ -85,16 +89,9 @@ export function ClipSettings({
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [pendingLimit, setPendingLimit] = useState<number | null>(null);
 
-  // 监听规则/弹窗显示等纯配置走共享 Hook（camelCase patch 自动落盘）
-  const { cfg: adv, update: saveAdv } = useModuleConfig("clipboard", {
-    recordText: true,
-    recordImage: true,
-    recordFiles: true,
-    minTextLen: 0,
-    cellSize: 80,
-    textLines: 2,
-    showTimestamps: true,
-  } as ClipboardConfig);
+  // 纯配置（监听规则/弹窗显示）由父组件 Clippage 的共享 Hook 持有，此处受控
+  const adv = cfg;
+  const saveAdv = onUpdate;
 
   // 格子尺寸滑块：拖动草稿值，松手落盘
   const [cellDraft, setCellDraft] = useState(adv.cellSize);

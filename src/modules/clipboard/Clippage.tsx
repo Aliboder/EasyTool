@@ -119,7 +119,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const [fileThumbs, setFileThumbs] = useState<Record<string, string>>({});
   const [showSettings, setShowSettings] = useState(false);
   // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
-  const { cfg: clipCfg, reload: refreshClipCfg } = useModuleConfig("clipboard", CLIPBOARD_DEFAULTS);
+  const { cfg: clipCfg, update: updateClipCfg, reload: refreshClipCfg } = useModuleConfig("clipboard", CLIPBOARD_DEFAULTS);
   const debounce = useRef<number | null>(null);
   const [preview, setPreview] = useState<{ src: string; name: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -918,6 +918,8 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           maxItems={clipCfg.maxItems}
           hotkey={clipCfg.hotkey}
           followMouse={clipCfg.followMouse}
+          cfg={clipCfg}
+          onUpdate={updateClipCfg}
           onMaxItems={refreshClipCfg}
           onHotkey={refreshClipCfg}
           onFollowMouse={refreshClipCfg}
