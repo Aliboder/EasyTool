@@ -35,6 +35,7 @@ import { usePrompt } from "@/components/ui/prompt-dialog";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 import { toast } from "@/lib/toast";
+import { useFileIcons } from "@/hooks/useFileIcons";
 import { gridColumns, gridIconSize, gridFontScale, gridVerticalTarget } from "@/lib/grid";
 import { cn } from "@/lib/utils";
 
@@ -129,7 +130,6 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
     type: "panel",
   });
   const [folders, setFolders] = useState<{ id: number; name: string }[]>([]);
-  const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
   const [expandedFolder, setExpandedFolder] = useState<number | null>(null);
   const { prompt, PromptDialog } = usePrompt();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,21 +149,8 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
     updateConfig({ viewMode: cfg.viewMode === "grid" ? "list" : "grid" });
   }, [updateConfig, cfg.viewMode]);
 
-  // 按需加载文件图标（与剪贴板模块一致）
-  const loadFileIcon = useCallback(async (path: string) => {
-    setFileIcons((prev) => {
-      if (prev[path]) return prev;
-      // 异步加载图标，更新状态
-      invoke<string | null>("quicklaunch_get_file_icon", { path })
-        .then((icon) => {
-          if (icon) {
-            setFileIcons((prev2) => ({ ...prev2, [path]: icon }));
-          }
-        })
-        .catch((e) => console.error("Failed to load file icon:", e));
-      return prev;
-    });
-  }, []);
+  // 按需加载文件图标（共享缓存 Hook）
+  const { icons: fileIcons, loadIcon: loadFileIcon } = useFileIcons();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),

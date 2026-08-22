@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { usePopupGeometry } from "@/hooks/usePopupGeometry";
+import { useFileIcons } from "@/hooks/useFileIcons";
 import { CLIPBOARD_DEFAULTS } from "./config";
 import { Drawer } from "@/components/ui/drawer";
 import { Search, Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile } from "lucide-react";
@@ -115,8 +117,8 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; item: ItemDto } | null>(null);
   const [thumbs, setThumbs] = useState<Record<number, string>>({});
-  const [fileIcons, setFileIcons] = useState<Record<string, string>>({});
-  const [fileThumbs, setFileThumbs] = useState<Record<string, string>>({});
+  // 文件图标/缩略图缓存（共享 Hook）
+  const { icons: fileIcons, thumbs: fileThumbs, loadIcon: fileIconOf, loadThumb: fileThumbOf } = useFileIcons();
   const [showSettings, setShowSettings] = useState(false);
   // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
   const { cfg: clipCfg, update: updateClipCfg, reload: refreshClipCfg } = useModuleConfig("clipboard", CLIPBOARD_DEFAULTS);
@@ -136,7 +138,6 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       setSelected((cur) => (list.some((i) => i.id === cur) ? cur : (list[0]?.id ?? null)));
       // 预载缩略图（图片条目 + 图片类文件）
       const t: Record<number, string> = {};
-      const ft: Record<string, string> = {};
       const pending: Promise<void>[] = [];
       for (const it of list) {
         if (it.kind === "image" && !thumbs[it.id]) {
@@ -145,17 +146,12 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
               if (b) t[it.id] = b;
             }),
           );
-        } else if (it.kind === "files" && isImageItem(it) && !fileThumbs[it.preview]) {
-          pending.push(
-            invoke<string | null>("get_file_thumb", { path: it.preview }).then((b) => {
-              if (b) ft[it.preview] = b;
-            }),
-          );
+        } else if (it.kind === "files" && isImageItem(it)) {
+          pending.push(fileThumbOf(it.preview));
         }
       }
       await Promise.all(pending);
       if (Object.keys(t).length) setThumbs((prev) => ({ ...prev, ...t }));
-      if (Object.keys(ft).length) setFileThumbs((prev) => ({ ...prev, ...ft }));
     } catch (e) {
       console.error("load history failed", e);
     }
@@ -172,41 +168,11 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
     };
   }, [load]);
 
-  // 固定位置模式下：拖动弹窗后防抖保存位置（仅弹窗窗口）
-  useEffect(() => {
-    if (!popup || clipCfg.followMouse !== false) return;
-    const win = getCurrentWindow();
-    let t: number | null = null;
-    const un = win.onMoved(({ payload }) => {
-      if (t) window.clearTimeout(t);
-      t = window.setTimeout(() => {
-        invoke("save_fixed_pos", { x: payload.x, y: payload.y }).catch(console.error);
-      }, 400);
-    });
-    return () => {
-      un.then((fn) => fn());
-      if (t) window.clearTimeout(t);
-    };
-  }, [popup, clipCfg?.followMouse]);
-
-  // 记住弹窗尺寸（仅弹窗窗口，防抖保存）
-  useEffect(() => {
-    if (!popup) return;
-    const win = getCurrentWindow();
-    let t: number | null = null;
-    const un = win.onResized(({ payload }) => {
-      if (t) window.clearTimeout(t);
-      t = window.setTimeout(() => {
-        invoke("save_popup_size", { width: payload.width, height: payload.height }).catch(
-          console.error,
-        );
-      }, 400);
-    });
-    return () => {
-      un.then((fn) => fn());
-      if (t) window.clearTimeout(t);
-    };
-  }, [popup]);
+  // 弹窗位置/尺寸记忆（固定位置模式下才记录移动；共享 Hook 内置防抖）
+  usePopupGeometry("clipboard", {
+    trackSize: popup,
+    trackPos: popup && clipCfg.followMouse === false,
+  });
 
   const onSearchChange = (v: string) => {
     if (debounce.current) window.clearTimeout(debounce.current);
@@ -274,18 +240,6 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
     } catch (e) {
       toast(String(e));
     }
-  };
-
-  const fileIconOf = async (path: string) => {
-    if (fileIcons[path]) return;
-    const b = await invoke<string | null>("get_file_icon", { path });
-    if (b) setFileIcons((prev) => ({ ...prev, [path]: b }));
-  };
-
-  const fileThumbOf = async (path: string) => {
-    if (fileThumbs[path]) return;
-    const b = await invoke<string | null>("get_file_thumb", { path });
-    if (b) setFileThumbs((prev) => ({ ...prev, [path]: b }));
   };
 
   const composite = filter === "all" || filter === "pinned";

@@ -210,15 +210,6 @@ pub fn quicklaunch_add_from_path(
 }
 
 #[tauri::command]
-pub async fn quicklaunch_get_file_icon(path: String) -> CmdResult<Option<String>> {
-    tauri::async_runtime::spawn_blocking(move || {
-        Ok(crate::modules::clipboard::file_icons::file_icon_png(&path))
-    })
-    .await
-    .map_err(|e| format!("获取图标失败: {e}"))?
-}
-
-#[tauri::command]
 pub fn quicklaunch_create_folder_with_items(
     state: State<'_, Mutex<QuicklaunchState>>,
     name: String,

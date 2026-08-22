@@ -44,6 +44,8 @@ import {
   type SearchSettingsData,
 } from "./SearchSettings";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { usePopupGeometry } from "@/hooks/usePopupGeometry";
+import { useFileIcons } from "@/hooks/useFileIcons";
 import { toast } from "@/lib/toast";
 import { gridColumns, gridVerticalTarget } from "@/lib/grid";
 
@@ -116,9 +118,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; item: SearchResultDto } | null>(null);
-  const [icons, setIcons] = useState<Record<string, string>>({});
-  const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState("all");
   const [options, setOptions] = useState<SearchOptions>({
     matchCase: false,
@@ -128,6 +129,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   });
   // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
   const { cfg, update: updateCfg } = useModuleConfig("search", SEARCH_DEFAULTS);
+  // 文件图标/缩略图按路径缓存（共享 Hook）
+  const { icons, thumbs, loadIcon, loadThumb } = useFileIcons();
   const [showSettings, setShowSettings] = useState(false);
   const [optsPos, setOptsPos] = useState<{ x: number; y: number } | null>(null);
   const optsRef = useRef<HTMLDivElement | null>(null);
@@ -219,29 +222,17 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
 
   const preloadVisuals = useCallback(
     async (items: SearchResultDto[]) => {
-      const ic: Record<string, string> = {};
-      const th: Record<string, string> = {};
       const pending: Promise<void>[] = [];
       for (const r of items) {
-        if (isImagePath(r.name) && cfg.columns.thumbnail && !thumbs[r.full_path]) {
-          pending.push(
-            invoke<string | null>("get_file_thumb", { path: r.full_path }).then((b) => {
-              if (b) th[r.full_path] = b;
-            }),
-          );
-        } else if (!icons[r.full_path]) {
-          pending.push(
-            invoke<string | null>("get_file_icon", { path: r.full_path }).then((b) => {
-              if (b) ic[r.full_path] = b;
-            }),
-          );
+        if (isImagePath(r.name) && cfg.columns.thumbnail) {
+          pending.push(loadThumb(r.full_path));
+        } else {
+          pending.push(loadIcon(r.full_path));
         }
       }
       await Promise.all(pending);
-      if (Object.keys(ic).length) setIcons((prev) => ({ ...prev, ...ic }));
-      if (Object.keys(th).length) setThumbs((prev) => ({ ...prev, ...th }));
     },
-    [cfg.columns.thumbnail, thumbs, icons],
+    [cfg.columns.thumbnail, loadIcon, loadThumb],
   );
 
   const doSearch = useCallback(
@@ -301,24 +292,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilter, options]);
 
-  // 记住弹窗尺寸（仅弹窗窗口）
-  useEffect(() => {
-    if (!popup) return;
-    const win = getCurrentWindow();
-    let t: number | null = null;
-    const un = win.onResized(({ payload }) => {
-      if (t) window.clearTimeout(t);
-      t = window.setTimeout(() => {
-        invoke("search_save_popup_size", { width: payload.width, height: payload.height }).catch(
-          console.error,
-        );
-      }, 400);
-    });
-    return () => {
-      un.then((fn) => fn());
-      if (t) window.clearTimeout(t);
-    };
-  }, [popup]);
+  // 弹窗尺寸记忆（共享 Hook 内置防抖）
+  usePopupGeometry("search", { trackSize: popup });
 
   // 搜索选项菜单关闭逻辑（点击外部关闭）
   useEffect(() => {
@@ -356,12 +331,16 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (showSettings) return;
     const idx = results.findIndex((r) => r.full_path === selected);
+    const isGrid = cfg.viewMode === "grid";
+    const cols = isGrid && gridRef.current ? gridColumns(gridRef.current) : 1;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (results.length) setSelected(results[Math.min(idx + 1, results.length - 1)].full_path);
+      if (results.length)
+        setSelected(results[gridVerticalTarget(idx, 1, results.length, cols)].full_path);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      if (results.length) setSelected(results[Math.max(idx - 1, 0)].full_path);
+      if (results.length)
+        setSelected(results[gridVerticalTarget(idx, -1, results.length, cols)].full_path);
     } else if (e.key === "Enter" && selected != null) {
       e.preventDefault();
       const item = results.find((r) => r.full_path === selected);
@@ -534,8 +513,12 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       )
     ) : cfg.viewMode === "grid" ? (
       <div
-        className="flex flex-wrap content-start gap-2 p-2"
-        style={{ gridAutoRows: "auto" }}
+        ref={gridRef}
+        className="grid gap-2 p-2"
+        style={{
+          gridAutoRows: `${cfg.gridSize}px`,
+          gridTemplateColumns: `repeat(auto-fill, ${cfg.gridSize}px)`,
+        }}
       >
         {results.map((r) => (
           <div key={r.full_path}>{gridNode(r)}</div>
