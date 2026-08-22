@@ -137,7 +137,7 @@ export function FolderOverlay({
       <div
         ref={overlayRef}
         className={cn(
-          "absolute rounded-3xl bg-background/95 backdrop-blur-2xl p-5 shadow-2xl shadow-primary/10 border border-white/10",
+          "absolute rounded-2xl bg-background/95 backdrop-blur-2xl px-4 py-3 shadow-2xl shadow-primary/10 border border-white/10",
           "animate-in zoom-in-95 fade-in-0 duration-300",
           !anchorPosition && "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         )}
@@ -150,29 +150,27 @@ export function FolderOverlay({
         {/* 关闭按钮 */}
         <button
           onClick={onClose}
-          className="absolute right-3 top-3 rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          className="absolute right-2 top-2 rounded-full p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
         >
-          <X className="h-4 w-4" />
+          <X className="h-3.5 w-3.5" />
         </button>
 
-        {/* 分组标题 */}
-        <div className="text-center mb-3">
+        {/* 顶部信息标题区 */}
+        <div className="flex items-center justify-center gap-2 py-0.5">
           {isEditing ? (
-            <div className="inline-block">
-              <input
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                onBlur={handleRenameSubmit}
-                onKeyDown={handleKeyDown}
-                className="text-lg font-semibold text-center bg-transparent border-b-2 border-primary outline-none"
-                style={{ width: `${Math.max(editName.length * 1.2, 4)}ch` }}
-                autoFocus
-              />
-            </div>
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onBlur={handleRenameSubmit}
+              onKeyDown={handleKeyDown}
+              className="text-sm font-semibold text-center bg-transparent border-b border-primary outline-none"
+              style={{ width: `${Math.max(editName.length * 0.8, 4)}ch` }}
+              autoFocus
+            />
           ) : (
-            <h3
-              className="text-lg font-semibold cursor-pointer hover:text-primary transition-colors inline-block"
+            <span
+              className="text-sm font-semibold cursor-pointer hover:text-primary transition-colors"
               onClick={() => {
                 setEditName(folderName);
                 setIsEditing(true);
@@ -180,19 +178,19 @@ export function FolderOverlay({
               title="点击编辑名称"
             >
               {folderName}
-            </h3>
+            </span>
           )}
-          <p className="text-xs text-muted-foreground mt-1">
-            {items.length} 个项目
-          </p>
+          <span className="text-[10px] text-muted-foreground">
+            ({items.length})
+          </span>
         </div>
 
         {/* 分隔线 */}
         <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent mb-6" />
 
-        {/* 子项目网格 */}
+        {/* 中部图标陈列区 */}
         <div
-          className="grid gap-3 justify-center"
+          className="grid gap-2 justify-center py-2"
           style={{
             gridTemplateColumns: `repeat(${cols}, ${expandedGridSize}px)`,
           }}
@@ -214,10 +212,10 @@ export function FolderOverlay({
           ))}
         </div>
 
-        {/* 底部提示 */}
-        <div className="mt-3 pt-2 border-t border-border/50">
-          <p className="text-center text-[10px] text-muted-foreground">
-            点击空白处或按 <kbd className="px-1 py-0.5 rounded bg-muted text-[9px] font-mono">ESC</kbd> 关闭
+        {/* 底部提示区 */}
+        <div className="mt-1 pt-1 border-t border-border/30">
+          <p className="text-center text-[9px] text-muted-foreground/60">
+            点击空白处或 <kbd className="px-0.5 py-px rounded bg-muted/50 text-[8px] font-mono">ESC</kbd> 关闭
           </p>
         </div>
       </div>
