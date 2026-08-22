@@ -64,11 +64,16 @@ export function EmojiPopup() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const listLenRef = useRef(0);
   const lastLoadRef = useRef(0);
+  const [emojiGridSize, setEmojiGridSize] = useState(40);
 
   useEffect(() => {
     loadCatalog()
       .then(setCat)
       .catch(console.error);
+    getConfig().then((cfg) => {
+      const m = cfg.modules.emoji ?? {};
+      if (m.emoji_grid_size != null) setEmojiGridSize(m.emoji_grid_size as number);
+    });
   }, []);
 
   // 切换分类/搜索时：重置渲染批次（列表容器用 key 强制重建，滚动位置自然归零）
@@ -181,7 +186,7 @@ export function EmojiPopup() {
         ))}
       </div>
       <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-2">
-        <div className="grid grid-cols-[repeat(auto-fill,40px)] gap-1">
+        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiGridSize}px)` }}>
           {shown.map((item) => (
             <button
               key={item.type + item.id}
