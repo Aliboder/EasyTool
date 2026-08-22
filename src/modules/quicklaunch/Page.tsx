@@ -159,8 +159,8 @@ export function QuicklaunchPage() {
   // 手动排序缓存（用于排序记忆功能）
   const manualOrderRef = useRef<number[]>([]);
 
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
+  const fetchItems = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const filterOptions = {
         item_type: filter === "all" ? null : filter,
@@ -209,7 +209,7 @@ export function QuicklaunchPage() {
     } catch (e) {
       console.error("Failed to fetch items:", e);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [filter, search, sortBy]);
 
@@ -643,7 +643,7 @@ export function QuicklaunchPage() {
 
       <Drawer open={showSettings} onClose={() => { setShowSettings(false); loadConfig(); }} title="快速启动设置">
         <QuicklaunchSettings
-          onRefresh={fetchItems}
+          onRefresh={() => fetchItems(false)}
           onSettingsChange={(s) => {
             setGridSize(s.grid_size);
             setViewMode(s.view_mode);
