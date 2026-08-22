@@ -11,7 +11,6 @@ use chrono::Local;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::config::ConfigState;
 use api::GoQuota;
 use db::{now_ms, GoSnapshot, QuotaDb};
 
@@ -76,21 +75,9 @@ pub struct QuotaState {
     pub last_fetch: Option<Instant>,
 }
 
-/// 读 quota 模块配置对象
-pub fn module_config(app: &AppHandle) -> serde_json::Value {
-    app.state::<ConfigState>()
-        .0
-        .lock()
-        .unwrap()
-        .modules
-        .get("quota")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}))
-}
-
 /// 读取账户列表配置
 pub fn account_configs(app: &AppHandle) -> Vec<AccountConfig> {
-    let cfg = module_config(app);
+    let cfg = crate::config::module_cfg(app, "quota");
     cfg.get("accounts")
         .and_then(|v| v.as_array())
         .map(|arr| {
@@ -150,9 +137,7 @@ pub fn migrate_account_keyrefs(app: &AppHandle) {
     if updates.is_empty() {
         return;
     }
-    let binding = app.state::<ConfigState>();
-    let mut cfg = binding.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut("quota") {
+    let _ = crate::config::update_module(app, "quota", |v| {
         if let Some(accounts) = v.get_mut("accounts").and_then(|a| a.as_array_mut()) {
             for (id, new_ref) in &updates {
                 if let Some(a) = accounts
@@ -163,8 +148,8 @@ pub fn migrate_account_keyrefs(app: &AppHandle) {
                 }
             }
         }
-    }
-    let _ = crate::config::save_config(app, &cfg);
+        Ok(())
+    });
 }
 
 fn keyring_entry(user: &str) -> Result<keyring::Entry, String> {
@@ -227,7 +212,7 @@ fn sync_accounts(st_accounts: &mut Vec<AccountStatus>, configs: &[AccountConfig]
 /// 网络请求（可能耗时数秒）在 QuotaState 锁外执行，锁内只做状态更新与快速 DB 写入，
 /// 避免长时间持有状态锁导致前端 get_status / save_settings 被阻塞。
 pub fn fetch_once(app: &AppHandle) {
-    let cfg = module_config(app);
+    let cfg = crate::config::module_cfg(app, "quota");
     let threshold = cfg_f64(&cfg, "warn_threshold", 10.0);
     let critical = cfg_f64(&cfg, "critical_threshold", threshold / 2.0);
     let notify_low = cfg_bool(&cfg, "notify_low", true);
@@ -436,7 +421,7 @@ fn poll_loop(app: AppHandle) {
         }
 
         let interval = {
-            let cfg = module_config(&app);
+            let cfg = crate::config::module_cfg(&app, "quota");
             cfg_f64(&cfg, "refresh_interval_sec", 30.0).max(5.0) as u64
         };
         let due = {

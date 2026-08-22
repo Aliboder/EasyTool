@@ -205,12 +205,11 @@ pub fn search_set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
         .register(hotkey.as_str())
         .map_err(|e| CommandError::from(format!("快捷键无效或已被其他程序占用：{e}")))?;
     // 新键验证成功后写入 config
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut("search") {
+    crate::config::update_module(&app, "search", |v| {
         v["hotkey"] = serde_json::json!(hotkey);
-    }
-    crate::config::save_config(&app, &cfg).map_err(CommandError::from)?;
+        Ok(())
+    })
+    .map_err(CommandError::from)?;
     // 整体重注册：unregister_all 后按新 config 注册所有启用模块热键，避免其它模块热键丢失
     crate::reapply_hotkeys(&app);
     log::info!("search hotkey changed to {hotkey}");

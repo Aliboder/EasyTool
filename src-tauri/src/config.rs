@@ -75,6 +75,35 @@ pub fn save_config(app: &AppHandle, cfg: &AppConfig) -> Result<(), String> {
     fs::write(&path, json).map_err(|e| e.to_string())
 }
 
+/// 读模块配置对象（缺失返回空对象）
+pub fn module_cfg(app: &AppHandle, id: &str) -> serde_json::Value {
+    app.state::<ConfigState>()
+        .0
+        .lock()
+        .unwrap()
+        .modules
+        .get(id)
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+/// 更新模块配置并落盘：f 内改字段，返回 Err 则中断不写盘。
+/// 锁在函数返回时释放——调用方随后 spawn 的后台任务可安全再取锁
+pub fn update_module(
+    app: &AppHandle,
+    id: &str,
+    f: impl FnOnce(&mut serde_json::Value) -> Result<(), String>,
+) -> Result<(), String> {
+    let state = app.state::<ConfigState>();
+    let mut cfg = state.0.lock().unwrap();
+    let v = cfg
+        .modules
+        .get_mut(id)
+        .ok_or_else(|| format!("模块 {id} 未初始化"))?;
+    f(v)?;
+    save_config(app, &cfg)
+}
+
 #[tauri::command]
 pub fn get_config(state: State<ConfigState>) -> AppConfig {
     state.0.lock().unwrap().clone()

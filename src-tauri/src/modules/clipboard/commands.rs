@@ -19,6 +19,12 @@ impl From<rusqlite::Error> for CommandError {
     }
 }
 
+impl From<String> for CommandError {
+    fn from(message: String) -> Self {
+        CommandError { message }
+    }
+}
+
 impl From<super::db::DbError> for CommandError {
     fn from(e: super::db::DbError) -> Self {
         CommandError {
@@ -186,23 +192,21 @@ pub fn set_max_items(
 ) -> CmdResult<()> {
     let max = max_items.clamp(1, 100000) as u64;
     state.max_items.store(max, Ordering::SeqCst);
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut("clipboard") {
+    crate::config::update_module(&app, "clipboard", |v| {
         v["max_items"] = serde_json::json!(max);
-    }
-    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
+        Ok(())
+    })
+    .map_err(CommandError::from)
 }
 
 /// 设置剪贴板弹窗位置模式：跟随鼠标 / 固定位置
 #[tauri::command]
 pub fn set_follow_mouse(app: AppHandle, follow: bool) -> CmdResult<()> {
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
-    if let Some(v) = cfg.modules.get_mut("clipboard") {
+    crate::config::update_module(&app, "clipboard", |v| {
         v["follow_mouse"] = serde_json::json!(follow);
-    }
-    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })
+        Ok(())
+    })
+    .map_err(CommandError::from)
 }
 
 /// 设置全局呼出热键（立即生效并持久化）

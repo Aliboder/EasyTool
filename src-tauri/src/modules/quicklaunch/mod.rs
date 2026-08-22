@@ -40,18 +40,6 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 读模块配置对象
-pub fn module_config(app: &tauri::AppHandle) -> serde_json::Value {
-    app.state::<crate::config::ConfigState>()
-        .0
-        .lock()
-        .unwrap()
-        .modules
-        .get("quicklaunch")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}))
-}
-
 pub const POPUP_WINDOW_LABEL: &str = "quicklaunch_popup";
 
 /// 计算弹出窗位置：跟随鼠标（横向居中于光标、纵向在光标下方），
@@ -127,7 +115,7 @@ pub fn on_hotkey(app: &tauri::AppHandle) {
     };
     if let Ok(hwnd) = win.hwnd() {
         // 位置模式：跟随鼠标（默认）或记住的固定位置
-        let cfg = module_config(app);
+        let cfg = crate::config::module_cfg(app, "quicklaunch");
         let follow_mouse = cfg
             .get("follow_mouse")
             .and_then(|v| v.as_bool())

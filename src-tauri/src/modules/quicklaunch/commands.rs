@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, State};
+use tauri::State;
 use std::sync::Mutex;
 use super::{QuicklaunchState, types::*};
 

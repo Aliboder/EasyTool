@@ -192,7 +192,7 @@ fn process_clipboard_change() {
 /// 读取剪贴板并入库；返回 (条目, 是否新增)。重复内容仅刷新时间（changed=false）
 fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item, bool)>, DbError> {
     // 记录规则：按类型过滤 + 忽略短文本
-    let cfg = super::module_config(app);
+    let cfg = crate::config::module_cfg(app, "clipboard");
     let record_files = cfg.get("record_files").and_then(|v| v.as_bool()).unwrap_or(true);
     let record_image = cfg.get("record_image").and_then(|v| v.as_bool()).unwrap_or(true);
     let record_text = cfg.get("record_text").and_then(|v| v.as_bool()).unwrap_or(true);

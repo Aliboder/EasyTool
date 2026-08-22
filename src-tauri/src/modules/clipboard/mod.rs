@@ -23,20 +23,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 pub const POPUP_WINDOW_LABEL: &str = "clipboard_popup";
 
-/// 从 config 读剪贴板模块配置对象
-pub fn module_config(app: &tauri::AppHandle) -> serde_json::Value {
-    app.state::<ConfigState>()
-        .0
-        .lock()
-        .unwrap()
-        .modules
-        .get("clipboard")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}))
-}
-
 pub fn max_items(app: &tauri::AppHandle) -> u64 {
-    module_config(app)
+    crate::config::module_cfg(app, "clipboard")
         .get("max_items")
         .and_then(|v| v.as_u64())
         .unwrap_or(500)
@@ -213,7 +201,7 @@ pub fn on_hotkey(app: &tauri::AppHandle) {
     };
     if let Ok(hwnd) = win.hwnd() {
         // 位置模式：跟随鼠标（默认）或记住的固定位置
-        let cfg = module_config(app);
+        let cfg = crate::config::module_cfg(app, "clipboard");
         let follow_mouse = cfg
             .get("follow_mouse")
             .and_then(|v| v.as_bool())

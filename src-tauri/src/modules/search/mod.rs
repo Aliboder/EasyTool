@@ -18,18 +18,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 pub const POPUP_WINDOW_LABEL: &str = "search_popup";
 
-/// 从 config 读 search 模块配置对象
-pub fn module_config(app: &tauri::AppHandle) -> serde_json::Value {
-    app.state::<ConfigState>()
-        .0
-        .lock()
-        .unwrap()
-        .modules
-        .get("search")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}))
-}
-
 /// 计算弹出窗位置：跟随鼠标（横向居中于光标、纵向在光标下方），
 /// 全部使用 Win32 物理坐标（与 Tauri 的 DPI 换算无关），
 /// 并钳制在光标所在显示器的工作区内，窄屏时防护
@@ -123,7 +111,7 @@ pub fn on_hotkey(app: &tauri::AppHandle) {
     };
     if let Ok(hwnd) = win.hwnd() {
         // 位置模式：跟随鼠标（默认）或记住的固定位置
-        let cfg = module_config(app);
+        let cfg = crate::config::module_cfg(app, "search");
         let follow_mouse = cfg
             .get("follow_mouse")
             .and_then(|v| v.as_bool())

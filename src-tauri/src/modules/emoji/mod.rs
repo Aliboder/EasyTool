@@ -4,24 +4,12 @@ pub mod data;
 pub mod db;
 pub mod paste;
 
-use crate::config::ConfigState;
 use tauri::Manager;
 use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
 };
 
 pub const POPUP_WINDOW_LABEL: &str = "emoji_popup";
-
-pub fn module_config(app: &tauri::AppHandle) -> serde_json::Value {
-    app.state::<ConfigState>()
-        .0
-        .lock()
-        .unwrap()
-        .modules
-        .get("emoji")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}))
-}
 
 pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     let data_dir = app.path().app_data_dir()?;
@@ -42,7 +30,7 @@ pub fn on_hotkey(app: &tauri::AppHandle) {
         return;
     };
     if let Ok(hwnd) = win.hwnd() {
-        let cfg = module_config(app);
+        let cfg = crate::config::module_cfg(app, "emoji");
         let follow_mouse = cfg
             .get("follow_mouse")
             .and_then(|v| v.as_bool())

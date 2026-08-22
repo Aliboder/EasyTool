@@ -327,7 +327,7 @@ pub fn get_emoji_thumb(state: State<'_, Db>, id: i64) -> R<Option<String>> {
 /// 应用表情：记录使用 → 按配置粘贴到唤起前窗口或复制到剪贴板
 #[tauri::command]
 pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: String) -> R<()> {
-    let click_action = super::module_config(&app)
+    let click_action = crate::config::module_cfg(&app, "emoji")
         .get("click_action")
         .and_then(|v| v.as_str())
         .unwrap_or("paste")

@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager, State};
 
 use super::api::GoQuota;
 use super::db::QuotaDb;
-use super::{account_configs, find_account, history, module_config, AccountConfig, AccountKind, QuotaState};
+use super::{account_configs, find_account, history, AccountConfig, AccountKind, QuotaState};
 
 #[derive(Debug, Serialize)]
 pub struct GoQuotaPayload {
@@ -87,7 +87,7 @@ pub struct QuotaSettings {
 /// 读设置（来自 config）
 #[tauri::command]
 pub fn get_settings(app: AppHandle) -> QuotaSettings {
-    let cfg = module_config(&app);
+    let cfg = crate::config::module_cfg(&app, "quota");
     let get = |key: &str, default: f64| cfg.get(key).and_then(|v| v.as_f64()).unwrap_or(default);
     let getb = |key: &str, default: bool| {
         cfg.get(key).and_then(|v| v.as_bool()).unwrap_or(default)
@@ -115,20 +115,16 @@ pub fn get_settings(app: AppHandle) -> QuotaSettings {
 /// 保存设置（写入 config）
 #[tauri::command]
 pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), String> {
-    {
-        let state = app.state::<crate::config::ConfigState>();
-        let mut cfg = state.0.lock().unwrap();
-        if let Some(v) = cfg.modules.get_mut("quota") {
-            v["refresh_interval_sec"] = serde_json::json!(settings.refresh_interval_sec);
-            v["warn_threshold"] = serde_json::json!(settings.warn_threshold);
-            v["critical_threshold"] = serde_json::json!(settings.critical_threshold);
-            v["notify_low"] = serde_json::json!(settings.notify_low);
-            v["notify_surge"] = serde_json::json!(settings.notify_surge);
-        }
-        crate::config::save_config(&app, &cfg)?;
-    } // ConfigState 锁在此释放，避免 fetch_once 二次加锁死锁
+    crate::config::update_module(&app, "quota", |v| {
+        v["refresh_interval_sec"] = serde_json::json!(settings.refresh_interval_sec);
+        v["warn_threshold"] = serde_json::json!(settings.warn_threshold);
+        v["critical_threshold"] = serde_json::json!(settings.critical_threshold);
+        v["notify_low"] = serde_json::json!(settings.notify_low);
+        v["notify_surge"] = serde_json::json!(settings.notify_surge);
+        Ok(())
+    })?;
 
-    // 立即按新阈值在后台评估一次告警状态
+    // 立即按新阈值在后台评估一次告警状态（锁已随 update_module 返回释放）
     if let Some(st_guard) = app.try_state::<Mutex<QuotaState>>() {
         let st = st_guard.lock().unwrap();
         if st.accounts.iter().any(|a| a.balance.is_some()) {
@@ -142,34 +138,6 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
                 settings.warn_threshold
             );
         }
-    }
-    Ok(())
-}
-
-/// 面板卡片顺序（拖拽排序记忆；前端已不再使用，待 lib.rs 一并清理）
-#[tauri::command]
-pub fn get_panel_order(app: AppHandle) -> Vec<String> {
-    let cfg = module_config(&app);
-    cfg.get("panel_order")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| x.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_else(|| vec!["stats".into(), "chart".into(), "go".into()])
-}
-
-/// 保存面板卡片顺序
-#[tauri::command]
-pub fn save_panel_order(app: AppHandle, order: Vec<String>) -> Result<(), String> {
-    {
-        let state = app.state::<crate::config::ConfigState>();
-        let mut cfg = state.0.lock().unwrap();
-        if let Some(v) = cfg.modules.get_mut("quota") {
-            v["panel_order"] = serde_json::json!(order);
-        }
-        crate::config::save_config(&app, &cfg)?;
     }
     Ok(())
 }
@@ -207,20 +175,14 @@ pub fn add_account(app: AppHandle, kind: String, name: String) -> Result<Account
         key_ref,
     };
 
-    {
-        let state = app.state::<crate::config::ConfigState>();
-        let mut cfg = state.0.lock().unwrap();
-        if let Some(v) = cfg.modules.get_mut("quota") {
-            let accounts = v
-                .get_mut("accounts")
-                .and_then(|a| a.as_array_mut())
-                .ok_or_else(|| "配置中无账户列表".to_string())?;
-            accounts.push(serde_json::to_value(&account).map_err(|e| e.to_string())?);
-        } else {
-            return Err("quota 模块未初始化".into());
-        }
-        crate::config::save_config(&app, &cfg)?;
-    }
+    crate::config::update_module(&app, "quota", |v| {
+        let accounts = v
+            .get_mut("accounts")
+            .and_then(|a| a.as_array_mut())
+            .ok_or_else(|| "配置中无账户列表".to_string())?;
+        accounts.push(serde_json::to_value(&account).map_err(|e| e.to_string())?);
+        Ok(())
+    })?;
 
     // 立即在后台执行一次查询（新账户首次拉取）
     let app2 = app.clone();
@@ -231,16 +193,12 @@ pub fn add_account(app: AppHandle, kind: String, name: String) -> Result<Account
 /// 删除账户
 #[tauri::command]
 pub fn remove_account(app: AppHandle, id: String) -> Result<(), String> {
-    {
-        let state = app.state::<crate::config::ConfigState>();
-        let mut cfg = state.0.lock().unwrap();
-        if let Some(v) = cfg.modules.get_mut("quota") {
-            if let Some(accounts) = v.get_mut("accounts").and_then(|a| a.as_array_mut()) {
-                accounts.retain(|a| a.get("id").and_then(|i| i.as_str()) != Some(id.as_str()));
-            }
+    crate::config::update_module(&app, "quota", |v| {
+        if let Some(accounts) = v.get_mut("accounts").and_then(|a| a.as_array_mut()) {
+            accounts.retain(|a| a.get("id").and_then(|i| i.as_str()) != Some(id.as_str()));
         }
-        crate::config::save_config(&app, &cfg)?;
-    }
+        Ok(())
+    })?;
 
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || super::fetch_once(&app2));
@@ -250,21 +208,17 @@ pub fn remove_account(app: AppHandle, id: String) -> Result<(), String> {
 /// 重命名账户
 #[tauri::command]
 pub fn rename_account(app: AppHandle, id: String, name: String) -> Result<(), String> {
-    {
-        let state = app.state::<crate::config::ConfigState>();
-        let mut cfg = state.0.lock().unwrap();
-        if let Some(v) = cfg.modules.get_mut("quota") {
-            if let Some(accounts) = v.get_mut("accounts").and_then(|a| a.as_array_mut()) {
-                if let Some(acc) = accounts
-                    .iter_mut()
-                    .find(|a| a.get("id").and_then(|i| i.as_str()) == Some(id.as_str()))
-                {
-                    acc["name"] = serde_json::json!(name);
-                }
+    crate::config::update_module(&app, "quota", |v| {
+        if let Some(accounts) = v.get_mut("accounts").and_then(|a| a.as_array_mut()) {
+            if let Some(acc) = accounts
+                .iter_mut()
+                .find(|a| a.get("id").and_then(|i| i.as_str()) == Some(id.as_str()))
+            {
+                acc["name"] = serde_json::json!(name);
             }
         }
-        crate::config::save_config(&app, &cfg)?;
-    }
+        Ok(())
+    })?;
 
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || super::fetch_once(&app2));
