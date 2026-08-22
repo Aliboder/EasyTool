@@ -44,6 +44,7 @@ import {
   type SearchSettingsData,
 } from "./SearchSettings";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { toast } from "@/lib/toast";
 
 export interface SearchResultDto {
   name: string;
@@ -341,11 +342,13 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
 
   const doCopyPath = async (item: SearchResultDto) => {
     await invoke("search_copy_path", { path: item.full_path });
+    toast("已复制路径");
     setMenu(null);
   };
 
   const doCopyFile = async (item: SearchResultDto) => {
     await invoke("search_copy_file", { path: item.full_path });
+    toast("已复制文件");
     setMenu(null);
   };
 

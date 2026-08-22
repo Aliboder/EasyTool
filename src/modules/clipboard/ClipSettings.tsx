@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { toast } from "@/lib/toast";
 import type { ClipboardConfig } from "./config";
 import {
   Dialog,
@@ -142,14 +143,14 @@ export function ClipSettings({
     const n = await invoke<number>("clear_history");
     setConfirmClear(false);
     setStats(await invoke<StatsDto>("get_stats"));
-    alert(`已清除 ${n} 条记录（固定条目保留）`);
+    toast(`已清除 ${n} 条记录（固定条目保留）`);
   };
 
   const clearAllHistory = async () => {
     const n = await invoke<number>("clear_all_history");
     setConfirmClearAll(false);
     setStats(await invoke<StatsDto>("get_stats"));
-    alert(`已清空全部 ${n} 条记录（含固定条目）`);
+    toast(`已清空全部 ${n} 条记录（含固定条目）`);
   };
 
   return (

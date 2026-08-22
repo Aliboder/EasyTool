@@ -34,6 +34,7 @@ import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 // ==================== 配置类型（对齐文件搜索模块） ====================
@@ -278,6 +279,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
     try {
       await invoke("quicklaunch_open_item", { item });
     } catch (e) {
+      toast(`打开失败：${e}`);
       console.error("Failed to open item:", e);
     }
   };
@@ -287,6 +289,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
       await invoke("quicklaunch_delete_item", { id });
       fetchItems();
     } catch (e) {
+      toast(`删除失败：${e}`);
       console.error("Failed to delete item:", e);
     }
   };
@@ -296,6 +299,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
       await invoke("quicklaunch_update_item", { id, name });
       fetchItems();
     } catch (e) {
+      toast(`重命名失败：${e}`);
       console.error("Failed to rename item:", e);
     }
   };
@@ -427,6 +431,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         try {
           await invoke("quicklaunch_add_from_path", { path });
         } catch (e) {
+          toast(`添加失败：${e}`);
           console.error("Failed to create item:", e);
         }
       }
@@ -441,6 +446,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         await invoke("quicklaunch_create_folder", { name: name.trim() });
         fetchFolders();
       } catch (e) {
+        toast(`新建分组失败：${e}`);
         console.error("Failed to create folder:", e);
       }
     }
@@ -454,6 +460,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
       fetchItems();
       fetchFolders();
     } catch (e) {
+      toast(`移动失败：${e}`);
       console.error("Failed to move items to folder:", e);
     }
   };
@@ -464,6 +471,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
       await invoke("quicklaunch_update_folder", { id: expandedFolder, name });
       fetchFolders();
     } catch (e) {
+      toast(`重命名分组失败：${e}`);
       console.error("Failed to rename folder:", e);
     }
   };
@@ -474,8 +482,11 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
       if (text && (text.startsWith("C:\\") || text.startsWith("D:\\") || text.startsWith("http"))) {
         await invoke("quicklaunch_add_from_path", { path: text });
         fetchItems();
+      } else {
+        toast("剪贴板内容不是文件路径或链接");
       }
     } catch (e) {
+      toast(`粘贴失败：${e}`);
       console.error("Failed to paste path:", e);
     }
   };
@@ -593,6 +604,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         for (const item of targetItems) {
           await invoke("search_copy_path", { path: item.path });
         }
+        toast(targetItems.length > 1 ? `已复制 ${targetItems.length} 条路径` : "已复制路径");
         break;
       case "rename":
         if (targetItems.length === 1) {
@@ -957,6 +969,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                         await invoke("quicklaunch_update_folder", { id: contextMenu.folderId, name: newName });
                         fetchFolders();
                       } catch (e) {
+                        toast(`重命名分组失败：${e}`);
                         console.error("Failed to rename folder:", e);
                       }
                     }
@@ -975,6 +988,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                     fetchFolders();
                     fetchItems();
                   } catch (e) {
+                    toast(`删除分组失败：${e}`);
                     console.error("Failed to delete folder:", e);
                   }
                 }
@@ -997,6 +1011,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                     try {
                       await invoke("quicklaunch_open_item_as_admin", { item: contextMenu.item });
                     } catch (e) {
+                      toast(`以管理员身份运行失败：${e}`);
                       console.error("Failed to open as admin:", e);
                     }
                   }
