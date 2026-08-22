@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getConfig } from "@/lib/api";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadCatalog, type Catalog } from "./api";
 import { SmartEmoji } from "./SmartEmoji";
 import { toast } from "@/lib/toast";
+import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { EMOJI_DEFAULTS } from "./config";
 
 const TABS = [
   "favorite",
@@ -64,16 +65,14 @@ export function EmojiPopup() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const listLenRef = useRef(0);
   const lastLoadRef = useRef(0);
-  const [emojiGridSize, setEmojiGridSize] = useState(40);
+
+  // 统一配置（共享 Hook：focus 重读保证与主窗设置同步）
+  const { cfg: emojiCfg } = useModuleConfig("emoji", EMOJI_DEFAULTS);
 
   useEffect(() => {
     loadCatalog()
       .then(setCat)
       .catch(console.error);
-    getConfig().then((cfg) => {
-      const m = cfg.modules.emoji ?? {};
-      if (m.emoji_grid_size != null) setEmojiGridSize(m.emoji_grid_size as number);
-    });
   }, []);
 
   // 切换分类/搜索时：重置渲染批次（列表容器用 key 强制重建，滚动位置自然归零）
@@ -154,9 +153,7 @@ export function EmojiPopup() {
       toast(String(e));
       return;
     }
-    const cfg = await getConfig().catch(() => null);
-    const action = cfg?.modules?.emoji?.click_action as string | undefined;
-    if (action !== "copy") getCurrentWindow().hide();
+    if (emojiCfg.clickAction !== "copy") getCurrentWindow().hide();
   };
 
   return (
@@ -186,14 +183,14 @@ export function EmojiPopup() {
         ))}
       </div>
       <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-2">
-        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiGridSize}px)` }}>
+        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.emojiGridSize}px)` }}>
           {shown.map((item) => (
             <button
               key={item.type + item.id}
               title={item.label}
               onClick={() => pick(item.type, item.id)}
               className="flex items-center justify-center overflow-hidden rounded-md hover:bg-accent"
-              style={{ width: emojiGridSize, height: emojiGridSize }}
+              style={{ width: emojiCfg.emojiGridSize, height: emojiCfg.emojiGridSize }}
             >
               {item.thumb ? (
                 <img
@@ -202,7 +199,7 @@ export function EmojiPopup() {
                   alt=""
                 />
               ) : item.type === "emoji" ? (
-                <SmartEmoji char={item.id} code={item.code} size={Math.round(emojiGridSize * 0.7)} />
+                <SmartEmoji char={item.id} code={item.code} size={Math.round(emojiCfg.emojiGridSize * 0.7)} />
               ) : (
                 item.id
               )}

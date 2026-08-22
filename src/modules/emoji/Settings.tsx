@@ -1,43 +1,22 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { getConfig } from "@/lib/api";
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SettingRow } from "@/components/setting-row";
+import type { EmojiConfig } from "./config";
 
-export function EmojiSettings({ onRefresh }: { onRefresh: () => void }) {
-  const [hotkey, setHotkey] = useState("");
-  const [action, setAction] = useState<"paste" | "copy">("paste");
-  const [followMouse, setFollowMouse] = useState(true);
-  const [emojiGridSize, setEmojiGridSize] = useState(40);
-  const [customGridSize, setCustomGridSize] = useState(56);
+interface EmojiSettingsProps {
+  cfg: EmojiConfig;
+  onUpdate: (patch: Partial<EmojiConfig>) => void;
+}
 
-  useEffect(() => {
-    getConfig().then((cfg) => {
-      const m = cfg.modules.emoji ?? {};
-      setHotkey((m.hotkey as string) ?? "Ctrl+Shift+J");
-      setAction((m.click_action as "paste" | "copy") ?? "paste");
-      setFollowMouse((m.follow_mouse as boolean) ?? true);
-      if (m.emoji_grid_size != null) setEmojiGridSize(m.emoji_grid_size as number);
-      if (m.custom_grid_size != null) setCustomGridSize(m.custom_grid_size as number);
-    });
-  }, []);
-
-  const save = async (
-    patch: Partial<{ hotkey: string; click_action: string; follow_mouse: boolean; emoji_grid_size: number; custom_grid_size: number }>,
-  ) => {
-    // 注意：Tauri v2 命令参数 JS 侧必须用 camelCase
-    await invoke("save_emoji_settings", {
-      hotkey: patch.hotkey ?? hotkey,
-      clickAction: patch.click_action ?? action,
-      followMouse: patch.follow_mouse ?? followMouse,
-      emojiGridSize: patch.emoji_grid_size ?? emojiGridSize,
-      customGridSize: patch.custom_grid_size ?? customGridSize,
-    });
-    onRefresh();
-  };
+export function EmojiSettings({ cfg, onUpdate }: EmojiSettingsProps) {
+  // 滑块拖动用草稿值（流畅显示），松手（commit）才落盘
+  const [emojiGridDraft, setEmojiGridDraft] = useState(cfg.emojiGridSize);
+  const [customGridDraft, setCustomGridDraft] = useState(cfg.customGridSize);
+  useEffect(() => setEmojiGridDraft(cfg.emojiGridSize), [cfg.emojiGridSize]);
+  useEffect(() => setCustomGridDraft(cfg.customGridSize), [cfg.customGridSize]);
 
   return (
     <div className="space-y-4 p-4">
@@ -48,10 +27,8 @@ export function EmojiSettings({ onRefresh }: { onRefresh: () => void }) {
         <CardContent className="space-y-1">
           <SettingRow title="呼出表情面板热键" hint="按此热键弹出表情悬浮面板（统一呼出模式下禁用）">
             <HotkeyRecorder
-              value={hotkey}
-              onSave={async (combo) => {
-                await save({ hotkey: combo });
-              }}
+              value={cfg.hotkey}
+              onSave={(combo) => onUpdate({ hotkey: combo })}
             />
           </SettingRow>
         </CardContent>
@@ -68,12 +45,12 @@ export function EmojiSettings({ onRefresh }: { onRefresh: () => void }) {
                 min={28}
                 max={64}
                 step={4}
-                value={[emojiGridSize]}
-                onValueChange={([v]) => setEmojiGridSize(v)}
-                onValueCommit={([v]) => save({ emoji_grid_size: v })}
+                value={[emojiGridDraft]}
+                onValueChange={([v]) => setEmojiGridDraft(v)}
+                onValueCommit={([v]) => onUpdate({ emojiGridSize: v })}
               />
               <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                {emojiGridSize}px
+                {emojiGridDraft}px
               </span>
             </div>
           </SettingRow>
@@ -83,12 +60,12 @@ export function EmojiSettings({ onRefresh }: { onRefresh: () => void }) {
                 min={40}
                 max={96}
                 step={4}
-                value={[customGridSize]}
-                onValueChange={([v]) => setCustomGridSize(v)}
-                onValueCommit={([v]) => save({ custom_grid_size: v })}
+                value={[customGridDraft]}
+                onValueChange={([v]) => setCustomGridDraft(v)}
+                onValueCommit={([v]) => onUpdate({ customGridSize: v })}
               />
               <span className="w-9 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                {customGridSize}px
+                {customGridDraft}px
               </span>
             </div>
           </SettingRow>
@@ -105,9 +82,9 @@ export function EmojiSettings({ onRefresh }: { onRefresh: () => void }) {
               {(["paste", "copy"] as const).map((a) => (
                 <button
                   key={a}
-                  onClick={() => save({ click_action: a })}
+                  onClick={() => onUpdate({ clickAction: a })}
                   className={`rounded-md border px-3 py-1 text-xs ${
-                    action === a ? "border-primary text-primary" : "text-muted-foreground"
+                    cfg.clickAction === a ? "border-primary text-primary" : "text-muted-foreground"
                   }`}
                 >
                   {a === "paste" ? "粘贴" : "复制"}
@@ -117,8 +94,8 @@ export function EmojiSettings({ onRefresh }: { onRefresh: () => void }) {
           </SettingRow>
           <SettingRow title="面板跟随鼠标" hint="呼出时出现在鼠标附近，否则停留在上次位置">
             <Switch
-              checked={followMouse}
-              onCheckedChange={(checked) => save({ follow_mouse: checked })}
+              checked={cfg.followMouse}
+              onCheckedChange={(checked) => onUpdate({ followMouse: checked })}
             />
           </SettingRow>
         </CardContent>

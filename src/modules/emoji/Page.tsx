@@ -11,7 +11,6 @@ import {
   Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getConfig } from "@/lib/api";
 import { Drawer } from "@/components/ui/drawer";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
@@ -21,6 +20,8 @@ import { loadCatalog, type Catalog, type GroupDto } from "./api";
 import { SmartEmoji } from "./SmartEmoji";
 import { toast } from "@/lib/toast";
 import { usePrompt } from "@/components/ui/prompt-dialog";
+import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { EMOJI_DEFAULTS } from "./config";
 
 const GROUP_TABS = [
   { id: "favorite", zh: "收藏" },
@@ -65,8 +66,9 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
     emoji?: string;
     customId?: number;
   }>({ visible: false, x: 0, y: 0, type: "emoji" });
-  const [emojiGridSize, setEmojiGridSize] = useState(40);
-  const [customGridSize, setCustomGridSize] = useState(56);
+
+  // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
+  const { cfg: emojiCfg, update: updateEmojiCfg } = useModuleConfig("emoji", EMOJI_DEFAULTS);
 
   // 切换分类/搜索时：重置渲染批次（列表容器用 key 强制重建，滚动位置自然归零）
   useEffect(() => {
@@ -104,18 +106,6 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
   useEffect(() => {
     load().catch(console.error);
   }, []);
-
-  // 加载网格大小配置（挂载时 + 设置保存后刷新）
-  const loadGridSizes = useCallback(async () => {
-    const cfg = await getConfig();
-    const m = cfg.modules.emoji ?? {};
-    if (m.emoji_grid_size != null) setEmojiGridSize(m.emoji_grid_size as number);
-    if (m.custom_grid_size != null) setCustomGridSize(m.custom_grid_size as number);
-  }, []);
-
-  useEffect(() => {
-    loadGridSizes();
-  }, [loadGridSizes]);
 
   // 切回模块时刷新（keep-alive 下组件常驻，跨模块操作后需拿到最新数据）。
   // 早期卡顿源于激活时全量重载 + SmartEmoji 逐字符同步检测；检测已改分片（每帧 24 个），
@@ -304,7 +294,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
 
       <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="mt-3 flex-1 overflow-y-auto">
         {visibleEmoji.slice(0, visible).length > 0 && (
-          <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiGridSize}px)` }}>
+          <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.emojiGridSize}px)` }}>
             {visibleEmoji.slice(0, visible).map((e) => (
               <button
                 key={e.char}
@@ -321,15 +311,15 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
                   });
                 }}
                 className="flex items-center justify-center rounded-md hover:bg-accent"
-                style={{ width: emojiGridSize, height: emojiGridSize }}
+                style={{ width: emojiCfg.emojiGridSize, height: emojiCfg.emojiGridSize }}
               >
-                <SmartEmoji char={e.char} code={e.code} size={Math.round(emojiGridSize * 0.7)} />
+                <SmartEmoji char={e.char} code={e.code} size={Math.round(emojiCfg.emojiGridSize * 0.7)} />
               </button>
             ))}
           </div>
         )}
         {visibleCustoms.slice(0, visible).length > 0 && (
-          <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: `repeat(auto-fill, ${customGridSize}px)` }}>
+          <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.customGridSize}px)` }}>
             {visibleCustoms.slice(0, visible).map((c) => (
               <div key={c.id} className="group relative">
                 <button
@@ -345,7 +335,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
                     });
                   }}
                   className="flex items-center justify-center overflow-hidden rounded-md border hover:border-primary"
-                  style={{ width: customGridSize, height: customGridSize }}
+                  style={{ width: emojiCfg.customGridSize, height: emojiCfg.customGridSize }}
                 >
                   {c.thumb ? (
                     <img
@@ -432,7 +422,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
       </ContextMenu>
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="表情设置">
-        <EmojiSettings onRefresh={() => { load(); loadGridSizes(); }} />
+        <EmojiSettings cfg={emojiCfg} onUpdate={updateEmojiCfg} />
       </Drawer>
     </div>
   );
