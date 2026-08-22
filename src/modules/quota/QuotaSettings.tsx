@@ -14,6 +14,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "@/lib/toast";
 
 interface AccountInfo {
   id: string;
@@ -117,6 +118,7 @@ function AccountField({
     if (!window.confirm(`删除账户「${account.name}」？其消费历史将保留在磁盘但不再展示。`)) return;
     try {
       await invoke("remove_account", { id: account.id });
+      toast("已删除账户");
       onChange();
     } catch (e) {
       setResult({ ok: false, msg: String(e) });
@@ -239,19 +241,22 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
     if (!s) return;
     const next = { ...s, ...patch };
     setS(next);
-    invoke("save_settings", { settings: next }).then(onRefresh).catch(console.error);
+    invoke("save_settings", { settings: next })
+      .then(onRefresh)
+      .catch((e) => toast(`保存设置失败：${e}`));
   };
 
   const addAccount = async () => {
     setBusy(true);
     try {
       await invoke("add_account", { kind: newKind, name: newName });
+      toast("已添加账户");
       setNewName("");
       setAdding(false);
       reload();
       onRefresh?.();
     } catch (e) {
-      console.error(e);
+      toast(`添加失败：${e}`);
     } finally {
       setBusy(false);
     }
