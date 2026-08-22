@@ -7,10 +7,12 @@ import { fmtMoney, type AccountStatusPayload } from "./quota-cards";
 
 export function QuotaSummary({
   accounts,
+  loading = false,
   threshold,
   critical,
 }: {
   accounts: AccountStatusPayload[];
+  loading?: boolean;
   threshold: number;
   critical: number;
 }) {
@@ -23,11 +25,12 @@ export function QuotaSummary({
   ).length;
   const windows = go.reduce((s, a) => s + a.go_windows.length, 0);
 
+  // 首帧加载中显示「—」，避免闪现误导性的 ¥0.00 / 0
   const items = [
-    { icon: Wallet, label: "DeepSeek 总余额", value: fmtMoney(total) },
-    { icon: AlertTriangle, label: "告急账户", value: String(alertCount), danger: alertCount > 0 },
-    { icon: TrendingDown, label: "偏低账户", value: String(lowCount), warn: lowCount > 0 },
-    { icon: Layers, label: "Go 套餐窗口", value: String(windows) },
+    { icon: Wallet, label: "DeepSeek 总余额", value: loading ? "—" : fmtMoney(total) },
+    { icon: AlertTriangle, label: "告急账户", value: loading ? "—" : String(alertCount), danger: !loading && alertCount > 0 },
+    { icon: TrendingDown, label: "偏低账户", value: loading ? "—" : String(lowCount), warn: !loading && lowCount > 0 },
+    { icon: Layers, label: "Go 套餐窗口", value: loading ? "—" : String(windows) },
   ];
 
   return (

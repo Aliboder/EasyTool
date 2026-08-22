@@ -86,6 +86,7 @@ export function QuotaPage() {
         <div className="space-y-6 p-6">
           <QuotaSummary
             accounts={status?.accounts ?? []}
+            loading={status == null}
             threshold={threshold}
             critical={critical}
           />
@@ -95,7 +96,11 @@ export function QuotaPage() {
               <Wallet className="size-4" />
               DeepSeek 账户
             </h3>
-            {dsAccounts.length === 0 ? (
+            {status == null ? (
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                加载中...
+              </div>
+            ) : dsAccounts.length === 0 ? (
               <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
                 暂无 DeepSeek 账户，点击右上角 ⚙ 添加
               </div>
@@ -118,7 +123,11 @@ export function QuotaPage() {
               <Layers className="size-4" />
               OpenCode Go 套餐
             </h3>
-            {goAccounts.length === 0 ? (
+            {status == null ? (
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                加载中...
+              </div>
+            ) : goAccounts.length === 0 ? (
               <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
                 暂无 Go 账户，点击右上角 ⚙ 添加
               </div>
