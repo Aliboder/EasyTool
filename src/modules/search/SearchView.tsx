@@ -545,7 +545,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   ) : null;
 
   const body = browsingApps ? (
-    appsBody
+    <div className="p-2">{appsBody}</div>
   ) : error ? (
       <div className="flex h-full items-center justify-center px-6 text-center text-xs text-muted-foreground">
         {error}
@@ -622,7 +622,11 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
           value: query,
           onChange: onQueryChange,
           placeholder:
-            browsingApps ? "浏览已安装应用，输入关键词同时搜索文件…" : "输入关键词搜索文件…",
+            status === null
+              ? "正在连接 Everything…"
+              : status.running
+                ? "Everything 已连接，输入关键词搜索文件或启动应用…"
+                : "未检测到 Everything，仅可浏览和启动已安装应用",
           autoFocus: true,
           inputRef: inputRef,
           onKeyDown: onKeyDown,
@@ -781,13 +785,16 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       )}
 
       <div ref={scrollRef} onScroll={onScroll} className="themed-scroll flex-1 overflow-y-auto">
-        {/* 搜索时匹配的应用置顶显示（点击直接启动）——所有 Tab 一致 */}
+        {/* 搜索时匹配的应用置顶显示（点击直接启动）——所有 Tab 一致，网格图标形态 */}
         {query.trim() && apps !== null && (
           <AppsSection
             apps={apps.filter((a) =>
               a.name.toLowerCase().includes(query.trim().toLowerCase()),
             )}
             onOpen={openApp}
+            gridSize={cfg.gridSize}
+            icons={icons}
+            loadIcon={loadIcon}
           />
         )}
         {body}

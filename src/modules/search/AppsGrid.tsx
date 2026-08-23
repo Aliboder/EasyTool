@@ -15,30 +15,35 @@ export interface ScannedApp {
   usage_count: number;
 }
 
-/** 搜索结果置顶区：紧凑的应用胶囊列表 */
+/** 搜索结果置顶区：匹配应用以网格图标卡片展示 */
 export function AppsSection({
   apps,
   onOpen,
+  gridSize,
+  icons,
+  loadIcon,
 }: {
   apps: ScannedApp[];
   onOpen: (path: string) => void;
+  gridSize: number;
+  icons: Record<string, string>;
+  loadIcon: (path: string) => Promise<void>;
 }) {
   if (apps.length === 0) return null;
   return (
     <div className="border-b p-2">
       <div className="mb-1.5 text-xs font-medium text-muted-foreground">应用</div>
-      <div className="flex flex-wrap gap-1">
-        {apps.map((a) => (
-          <button
-            key={a.path}
-            title={a.path}
-            onClick={() => onOpen(a.path)}
-            className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors hover:bg-accent"
-          >
-            <span className="max-w-[160px] truncate">{a.name}</span>
-          </button>
-        ))}
-      </div>
+      <AppsGrid
+        apps={apps}
+        query=""
+        gridSize={gridSize}
+        viewMode="grid"
+        sortBy="name"
+        sortDesc={false}
+        icons={icons}
+        loadIcon={loadIcon}
+        onOpen={onOpen}
+      />
     </div>
   );
 }
