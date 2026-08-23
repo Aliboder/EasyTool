@@ -144,6 +144,7 @@ function SysAppGrid({
   apps,
   search,
   gridSize,
+  viewMode,
   sortBy,
   sortDesc,
   icons,
@@ -154,6 +155,7 @@ function SysAppGrid({
   apps: ScannedApp[] | null;
   search: string;
   gridSize: number;
+  viewMode: "grid" | "list";
   sortBy: "name" | "usage";
   sortDesc: boolean;
   icons: Record<string, string>;
@@ -187,6 +189,56 @@ function SysAppGrid({
     return (
       <div className="py-8 text-center text-sm text-muted-foreground">
         没有匹配的应用
+      </div>
+    );
+  }
+  // 列表视图：行式布局，图标 + 名称 + 完整路径（找文件更直观）
+  if (viewMode === "list") {
+    return (
+      <div className="flex flex-col">
+        {list.map((a) => {
+          if (!icons[a.path]) loadIcon(a.path);
+          const icon = icons[a.path];
+          return (
+            <div
+              key={a.path}
+              title={`${a.name}\n${a.path}`}
+              onClick={() => onOpen(a.path)}
+              className="group relative flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50"
+            >
+              {icon ? (
+                <img
+                  src={`data:image/png;base64,${icon}`}
+                  className="size-5 shrink-0 object-contain"
+                  alt=""
+                />
+              ) : (
+                <FileQuestion className="size-5 shrink-0 text-muted-foreground" />
+              )}
+              <span className="min-w-0 flex-1 truncate text-sm">{a.name}</span>
+              <span className="max-w-[45%] shrink-0 truncate text-xs text-muted-foreground">
+                {a.path}
+              </span>
+              {a.fixed && (
+                <Pin className="size-3.5 shrink-0 fill-primary text-primary" />
+              )}
+              <button
+                title={a.fixed ? "取消固定" : "固定到快速启动"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTogglePin(a);
+                }}
+                className="absolute right-1 top-1/2 hidden -translate-y-1/2 rounded-md border bg-background/95 p-1 shadow-sm group-hover:flex hover:bg-accent"
+              >
+                {a.fixed ? (
+                  <PinOff className="size-3 text-muted-foreground" />
+                ) : (
+                  <Pin className="size-3 fill-primary text-primary" />
+                )}
+              </button>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -984,6 +1036,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
             apps={sysApps}
             search={search}
             gridSize={cfg.gridSize}
+            viewMode={cfg.viewMode}
             sortBy={cfg.sysSortBy}
             sortDesc={cfg.sysSortDesc}
             icons={fileIcons}
@@ -1221,6 +1274,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
               apps={sysApps}
               search={search}
               gridSize={cfg.gridSize}
+              viewMode={cfg.viewMode}
               sortBy={cfg.sysSortBy}
               sortDesc={cfg.sysSortDesc}
               icons={fileIcons}
