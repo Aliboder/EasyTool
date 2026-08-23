@@ -41,6 +41,12 @@ impl AppsDb {
              );",
         )
         .map_err(|e| format!("建表失败: {e}"))?;
+        // 清理历史版本产生的带扩展前缀（\\?\）的脏计数键
+        conn.execute(
+            "DELETE FROM app_usage WHERE substr(target, 1, 4) = ?1",
+            params![r"\\?"],
+        )
+        .map_err(|e| format!("清理失败: {e}"))?;
         Ok(Self { conn })
     }
 
@@ -82,6 +88,19 @@ impl AppsDb {
 
 use rusqlite::params;
 
+/// 归一化路径：剥掉 canonicalize 产生的扩展前缀（\\?\ 与 \\?\UNC\），统一小写。
+/// 扫描键与监测键必须经过同一归一化，否则计数匹配不上
+fn normalize_path(p: String) -> String {
+    let s = if let Some(rest) = p.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = p.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        p
+    };
+    s.to_lowercase()
+}
+
 /// 解析 .lnk 快捷方式的目标路径（COM IShellLinkW）；失败返回 None
 fn resolve_lnk(path: &str) -> Option<String> {
     use windows::core::{HSTRING, Interface};
@@ -120,11 +139,11 @@ pub fn resolve_target(path: &str) -> String {
     let lower = path.to_lowercase();
     if lower.ends_with(".lnk") {
         if let Some(t) = resolve_lnk(path) {
-            return t.to_lowercase();
+            return normalize_path(t);
         }
     } else if !lower.starts_with("http://") && !lower.starts_with("https://") {
         if let Ok(c) = std::fs::canonicalize(path) {
-            return c.to_string_lossy().to_lowercase();
+            return normalize_path(c.to_string_lossy().into_owned());
         }
     }
     lower

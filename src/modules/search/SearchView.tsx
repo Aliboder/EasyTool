@@ -321,11 +321,16 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     if (filter === APPS_TAB) ensureApps(true); // 切到应用 Tab 强制刷新频率数据
   }, [filter, ensureApps]);
 
-  const openApp = useCallback((path: string) => {
-    invoke("search_open_path", { path }).catch((e) =>
-      toast(`打开失败：${e}`),
-    );
-  }, []);
+  const openApp = useCallback(
+    (path: string) => {
+      invoke("search_open_path", { path }).catch((e) =>
+        toast(`打开失败：${e}`),
+      );
+      // 启动的应用即将成为前台：延迟重扫一次，频率排序随之实时变化
+      window.setTimeout(() => ensureApps(true), 1500);
+    },
+    [ensureApps],
+  );
   const appsKeyHandler = useRef<((e: React.KeyboardEvent) => void) | null>(null);
 
   // 搜索选项菜单关闭逻辑（点击外部关闭）
