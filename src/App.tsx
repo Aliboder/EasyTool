@@ -83,8 +83,25 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    getManifests().then(setManifests).catch(console.error);
-    getConfig().then(setConfig).catch(console.error);
+    invoke("log_frontend", { level: "info", msg: "[diag] app mounted" }).catch(
+      () => {},
+    );
+    Promise.all([getManifests(), getConfig()])
+      .then(([m, c]) => {
+        setManifests(m);
+        setConfig(c);
+        invoke("log_frontend", {
+          level: "info",
+          msg: "[diag] bootstrap done",
+        }).catch(() => {});
+      })
+      .catch(e => {
+        console.error(e);
+        invoke("log_frontend", {
+          level: "error",
+          msg: `[diag] bootstrap failed: ${e}`,
+        }).catch(() => {});
+      });
   }, []);
 
   useEffect(() => {

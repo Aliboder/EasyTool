@@ -159,6 +159,10 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   }, [search, filter]);
 
   useEffect(() => {
+    invoke("log_frontend", {
+      level: "info",
+      msg: "[diag] clippage mounted",
+    }).catch(() => {});
     load();
   }, [load]);
 
