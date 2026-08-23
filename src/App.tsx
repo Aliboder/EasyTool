@@ -68,9 +68,10 @@ function App() {
   const entranceRef = useWindowEntrance(true, ["animate-in", "fade-in-0", "zoom-in-95"]);
   const [manifests, setManifests] = useState<Manifest[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [active, setActive] = useState<string>("clipboard");
+  // 落地面板 = 设置排序第一位且启用的模块；初始留空，待模块清单就绪后由下方 effect 选定
+  const [active, setActive] = useState<string>("");
   // keep-alive：已访问过的模块保留在 DOM（切换时显隐，不卸载重建，避免切页卡顿）
-  const [visited, setVisited] = useState<Set<string>>(() => new Set(["clipboard"]));
+  const [visited, setVisited] = useState<Set<string>>(() => new Set());
 
   const selectModule = useCallback((id: string) => {
     setActive(id);
@@ -155,10 +156,14 @@ function App() {
 
   // 模块禁用后从 keep-alive 卸载（不再空跑 effect/监听）；当前停在被禁用模块时回退到首个可用模块
   useEffect(() => {
-    // 清单未就绪时 ids 为空，会把 visited 全部误剪掉且之后永不回填（首屏空白根因），跳过
-    if (!enabledModules.length) return;
+    // 清单未就绪时跳过（空 ids 会把 visited 全部误剪掉且之后永不回填，首屏空白根因）；
+    // 判断依据必须是「清单是否就绪」而非「启用列表是否为空」——全部禁用是合法状态，照常清理
+    if (!orderedManifests.length) return;
     const ids = new Set(enabledModules.map((m) => m.id));
     setVisited((prev) => {
+      // 名单为空（启动首次就绪/全部禁用后重新启用）→ 补入排序第一位且启用的模块，
+      // 保证落地面板的组件会挂载
+      if (prev.size === 0 && enabledModules.length) return new Set([enabledModules[0].id]);
       const next = new Set([...prev].filter((id) => ids.has(id)));
       return next.size === prev.size ? prev : next;
     });
