@@ -7,6 +7,8 @@ export const GRID_GAP = 8;
 // 格子内容尺寸公式：图标占格子一半，文字最小可读
 export const gridIconSize = (cell: number) => Math.max(cell * 0.5, 24);
 export const gridFontScale = (cell: number) => Math.max(cell * 0.15, 10);
+/** 卡片格内边距（与外框留出呼吸感，文件/应用卡片共用） */
+export const gridPadding = (cell: number) => cell * 0.1;
 
 /**
  * 实测容器的网格列数（用于键盘 ↑↓ 跨行步进）。

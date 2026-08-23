@@ -40,7 +40,7 @@ import { AppsGrid, AppsSection, type ScannedApp } from "./AppsGrid";
 import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { toast } from "@/lib/toast";
-import { gridColumns, gridVerticalTarget, gridIconSize, gridFontScale } from "@/lib/grid";
+import { gridColumns, gridVerticalTarget, gridIconSize, gridFontScale, gridPadding } from "@/lib/grid";
 
 const SORT_FIELDS: HeaderSortField[] = [
   { id: "name", label: "名称" },
@@ -490,7 +490,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
             ? "border-primary bg-accent"
             : "border-transparent hover:bg-accent/50",
         )}
-        style={{ width: gs, height: gs, padding: `${gs * 0.1}px` }}
+        style={{ width: gs, height: gs, padding: gridPadding(gs) }}
       >
         {visualNode(r, iconSize)}
         <span className="w-full truncate text-center leading-tight" style={{ fontSize: `${gridFontScale(gs)}px` }} title={r.name}>
