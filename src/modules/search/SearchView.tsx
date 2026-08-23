@@ -36,6 +36,7 @@ import {
   type SearchSettingsData,
 } from "./SearchSettings";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { AppsGrid, AppsSection, type ScannedApp } from "./AppsGrid";
 import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { toast } from "@/lib/toast";
@@ -86,6 +87,9 @@ function fmtTime(ms: number | null): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+
+/// 「应用」Tab：已安装应用中心（非 Everything 过滤器）
+const APPS_TAB = "apps";
 
 /// 预设过滤器（对应 Everything 语法；label 用于 tooltip，query 为空串表示无过滤）
 const FILTERS: { id: string; label: string; icon: LucideIcon; query: string }[] = [
@@ -236,13 +240,14 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
 
   const doSearch = useCallback(
     async (q: string, filterQuery: string, opts: SearchOptions) => {
+      if (filter === APPS_TAB) return; // 应用 Tab 不做文件搜索
       setLoading(true);
       setError(null);
       const items = await fetchPage(q, filterQuery, opts, 0, true);
       if (items) await preloadVisuals(items);
       setLoading(false);
     },
-    [fetchPage, preloadVisuals],
+    [fetchPage, preloadVisuals, filter],
   );
 
   const loadMore = useCallback(async () => {
@@ -284,15 +289,43 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     }, 150);
   };
 
-  // 过滤器/选项变化时立即重搜（不等待输入）
+  // 过滤器/选项变化时立即重搜（不等待输入）；「应用」Tab 不触发 Everything 搜索
   useEffect(() => {
     if (debounce.current) window.clearTimeout(debounce.current);
+    if (filter === APPS_TAB) return;
     doSearch(query, activeFilter.query, options);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilter, options]);
 
   // 弹窗尺寸记忆（共享 Hook 内置防抖）
   usePopupGeometry("search", { trackSize: popup });
+
+  // 已安装应用库：「应用」Tab 数据源；30 秒内不重复扫描
+  const [apps, setApps] = useState<ScannedApp[] | null>(null);
+  const appsFetchedAt = useRef(0);
+  const ensureApps = useCallback(
+    (force = false) => {
+      if (!force && appsFetchedAt.current && Date.now() - appsFetchedAt.current < 30_000)
+        return;
+      appsFetchedAt.current = Date.now();
+      invoke<ScannedApp[]>("search_scan_apps")
+        .then(setApps)
+        .catch(console.error);
+    },
+    [],
+  );
+  useEffect(() => {
+    ensureApps();
+  }, [ensureApps]);
+  useEffect(() => {
+    if (filter === APPS_TAB) ensureApps(true); // 切到应用 Tab 强制刷新频率数据
+  }, [filter, ensureApps]);
+
+  const openApp = useCallback((path: string) => {
+    invoke("search_open_path", { path }).catch((e) =>
+      toast(`打开失败：${e}`),
+    );
+  }, []);
 
   // 搜索选项菜单关闭逻辑（点击外部关闭）
   useEffect(() => {
@@ -467,8 +500,26 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     );
   };
 
+  // 「应用」Tab：已安装应用网格/列表（点击直接启动）
+  const appsBody =
+    filter === APPS_TAB ? (
+      <AppsGrid
+        apps={apps}
+        query={query}
+        gridSize={cfg.gridSize}
+        viewMode={cfg.viewMode}
+        sortBy={cfg.appSortBy}
+        sortDesc={cfg.appSortDesc}
+        icons={icons}
+        loadIcon={loadIcon}
+        onOpen={openApp}
+      />
+    ) : null;
+
   const body =
-    error ? (
+    filter === APPS_TAB ? (
+      appsBody
+    ) : error ? (
       <div className="flex h-full items-center justify-center px-6 text-center text-xs text-muted-foreground">
         {error}
       </div>
@@ -581,7 +632,10 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
             </HeaderButton>
           </>
         }
-        tabs={FILTERS.map((f) => ({ id: f.id, icon: f.icon, title: f.label }))}
+        tabs={[
+          { id: APPS_TAB, label: "应用" },
+          ...FILTERS.map((f) => ({ id: f.id, icon: f.icon, title: f.label })),
+        ]}
         activeTab={filter}
         onTabChange={setFilter}
         tabsTrailing={
@@ -683,7 +737,18 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         </div>
       )}
 
-      <div ref={scrollRef} onScroll={onScroll} className="themed-scroll flex-1 overflow-y-auto">{body}</div>
+      <div ref={scrollRef} onScroll={onScroll} className="themed-scroll flex-1 overflow-y-auto">
+        {/* 搜索时匹配的应用置顶显示（点击直接启动） */}
+        {filter !== APPS_TAB && query.trim() && apps !== null && (
+          <AppsSection
+            apps={apps.filter((a) =>
+              a.name.toLowerCase().includes(query.trim().toLowerCase()),
+            )}
+            onOpen={openApp}
+          />
+        )}
+        {body}
+      </div>
 
       <Drawer
         open={showSettings}

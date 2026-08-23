@@ -1,5 +1,5 @@
 // 网格统一约定：gap、尺寸公式、键盘跨行步进。
-// 各模块的格子网格（quicklaunch/search/emoji/clipboard）一律使用本文件，
+// 各模块的格子网格（search/emoji/clipboard）一律使用本文件，
 // 规范详见 docs/module-guide.md「网格实现标准」。
 
 export const GRID_GAP = 8;

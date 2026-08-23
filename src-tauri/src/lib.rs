@@ -26,15 +26,6 @@ fn set_active_module(module: String) {
         .unwrap() = module;
 }
 
-/// 获取当前活动的模块
-fn get_active_module() -> String {
-    ACTIVE_MODULE
-        .get_or_init(|| Mutex::new("clipboard".into()))
-        .lock()
-        .unwrap()
-        .clone()
-}
-
 /// 极简日志器：输出到 stderr + 日志文件（%APPDATA%/com.aliboder.easytool/easytool.log）
 struct SimpleLogger {
     file: std::sync::Mutex<std::fs::File>,
@@ -246,16 +237,11 @@ fn emoji_enabled(app: &tauri::AppHandle) -> bool {
     module_enabled(app, "emoji")
 }
 
-fn quicklaunch_enabled(app: &tauri::AppHandle) -> bool {
-    module_enabled(app, "quicklaunch")
-}
-
 struct Hotkeys {
     unified: bool,
     clip_hotkey: String,
     search_hotkey: String,
     emoji_hotkey: String,
-    quicklaunch_hotkey: String,
     main_hotkey: String,
 }
 
@@ -266,17 +252,14 @@ struct ResolvedHotkeys {
     clip_enabled: bool,
     search_enabled: bool,
     emoji_enabled: bool,
-    quicklaunch_enabled: bool,
     clip: Option<Shortcut>,
     search: Option<Shortcut>,
     emoji: Option<Shortcut>,
-    quicklaunch: Option<Shortcut>,
     main: Option<Shortcut>,
     /// 原始字符串（注册接口需要 &str 参数）
     clip_str: Option<String>,
     search_str: Option<String>,
     emoji_str: Option<String>,
-    quicklaunch_str: Option<String>,
     main_str: Option<String>,
 }
 
@@ -290,16 +273,13 @@ fn refresh_resolved_hotkeys(app: &tauri::AppHandle) {
         clip_enabled: clipboard_enabled(app),
         search_enabled: search_enabled(app),
         emoji_enabled: emoji_enabled(app),
-        quicklaunch_enabled: quicklaunch_enabled(app),
         clip: Shortcut::from_str(&hk.clip_hotkey).ok(),
         search: Shortcut::from_str(&hk.search_hotkey).ok(),
         emoji: Shortcut::from_str(&hk.emoji_hotkey).ok(),
-        quicklaunch: Shortcut::from_str(&hk.quicklaunch_hotkey).ok(),
         main: Shortcut::from_str(&hk.main_hotkey).ok(),
         clip_str: Some(hk.clip_hotkey.clone()),
         search_str: Some(hk.search_hotkey.clone()),
         emoji_str: Some(hk.emoji_hotkey.clone()),
-        quicklaunch_str: Some(hk.quicklaunch_hotkey),
         main_str: Some(hk.main_hotkey),
     };
     *RESOLVED_HOTKEYS
@@ -340,19 +320,11 @@ fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Shift+J")
         .to_string();
-    let quicklaunch_hotkey = cfg
-        .modules
-        .get("quicklaunch")
-        .and_then(|m| m.get("hotkey"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Shift+Q")
-        .to_string();
     Hotkeys {
         unified: cfg.unified_hotkey,
         clip_hotkey,
         search_hotkey,
         emoji_hotkey,
-        quicklaunch_hotkey,
         main_hotkey: cfg
             .hotkeys
             .get("main")
@@ -401,14 +373,6 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
                 match app.global_shortcut().register(hk.as_str()) {
                     Ok(_) => log::info!("emoji hotkey registered: {hk}"),
                     Err(e) => log::error!("failed to register emoji hotkey: {e}"),
-                }
-            }
-        }
-        if resolved.quicklaunch_enabled {
-            if let Some(hk) = &resolved.quicklaunch_str {
-                match app.global_shortcut().register(hk.as_str()) {
-                    Ok(_) => log::info!("quicklaunch hotkey registered: {hk}"),
-                    Err(e) => log::error!("failed to register quicklaunch hotkey: {e}"),
                 }
             }
         }
@@ -465,12 +429,6 @@ pub fn run() {
                     {
                         log::info!("emoji hotkey matched, showing popup");
                         modules::emoji::on_hotkey(app);
-                    } else if !resolved.unified
-                        && resolved.quicklaunch_enabled
-                        && resolved.quicklaunch.as_ref().is_some_and(|s| s == shortcut)
-                    {
-                        log::info!("quicklaunch hotkey matched, showing popup");
-                        modules::quicklaunch::on_hotkey(app);
                     } else if resolved.main.as_ref().is_some_and(|s| s == shortcut) {
                         if resolved.unified {
                             log::info!("main hotkey toggling main window");
@@ -555,15 +513,6 @@ pub fn run() {
                 None
             };
 
-            let quicklaunch_handle = if quicklaunch_enabled(app.handle()) {
-                let app_clone = app.handle().clone();
-                Some(std::thread::spawn(move || {
-                    modules::quicklaunch::setup_from_handle(&app_clone)
-                }))
-            } else {
-                None
-            };
-
             // 等待剪贴板模块初始化完成（弹窗窗口延迟到首次呼出时创建，避免启动闪现）
             if let Some(handle) = clipboard_handle {
                 match handle.join() {
@@ -616,19 +565,6 @@ pub fn run() {
                     }
                     Err(e) => {
                         log::error!("emoji module thread panicked: {:?}", e);
-                    }
-                }
-            }
-
-            // 等待快速启动模块初始化完成
-            if let Some(handle) = quicklaunch_handle {
-                match handle.join() {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => {
-                        log::error!("quicklaunch module init failed: {e}");
-                    }
-                    Err(e) => {
-                        log::error!("quicklaunch module thread panicked: {:?}", e);
                     }
                 }
             }
@@ -719,6 +655,8 @@ pub fn run() {
             modules::search::commands::search_copy_path,
             modules::search::commands::search_copy_file,
             modules::search::commands::search_set_hotkey,
+            modules::search::commands::search_scan_apps,
+            modules::search::commands::search_open_path,
             modules::emoji::commands::get_emoji_static,
             modules::emoji::commands::get_emoji_dynamic,
             modules::emoji::commands::get_groups,
@@ -735,26 +673,6 @@ pub fn run() {
             modules::emoji::commands::get_emoji_thumb,
             modules::emoji::commands::apply_emoji,
             modules::emoji::commands::copy_custom_emoji,
-            modules::quicklaunch::commands::quicklaunch_create_item,
-            modules::quicklaunch::commands::quicklaunch_get_item,
-            modules::quicklaunch::commands::quicklaunch_list_items,
-            modules::quicklaunch::commands::quicklaunch_update_item,
-            modules::quicklaunch::commands::quicklaunch_delete_item,
-            modules::quicklaunch::commands::quicklaunch_sort_items,
-            modules::quicklaunch::commands::quicklaunch_create_folder,
-            modules::quicklaunch::commands::quicklaunch_get_folder,
-            modules::quicklaunch::commands::quicklaunch_list_folders,
-            modules::quicklaunch::commands::quicklaunch_list_folders_with_items,
-            modules::quicklaunch::commands::quicklaunch_update_folder,
-            modules::quicklaunch::commands::quicklaunch_delete_folder,
-            modules::quicklaunch::commands::quicklaunch_sort_folders,
-            modules::quicklaunch::commands::quicklaunch_open_item,
-            modules::quicklaunch::commands::quicklaunch_open_item_as_admin,
-            modules::quicklaunch::commands::quicklaunch_add_from_path,
-            modules::quicklaunch::commands::quicklaunch_scan_apps,
-            modules::quicklaunch::commands::quicklaunch_open_path,
-            modules::quicklaunch::commands::quicklaunch_unpin_by_target,
-            modules::quicklaunch::commands::quicklaunch_create_folder_with_items,
             set_active_module,
         ])
         .on_window_event(|window, event| {
@@ -783,11 +701,7 @@ pub fn run() {
                             .unwrap()
                             .unified_hotkey;
                         if unified {
-                            // 快速启动模块不自动关闭（支持拖拽）
-                            let active_module = get_active_module();
-                            if active_module != "quicklaunch" {
-                                hide_after_blur_grace(window);
-                            }
+                            hide_after_blur_grace(window);
                         }
                     }
                 }

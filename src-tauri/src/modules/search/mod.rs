@@ -3,11 +3,14 @@
 //! 依赖：用户需安装 Everything（免费，voidtools.com）。Everything64.dll 随应用打包，
 //! 通过窗口消息/共享内存与运行中的 Everything.exe 通信。
 
+pub mod apps;
 pub mod commands;
+pub mod foreground;
 pub mod sdk;
 
 use crate::config::ConfigState;
 use tauri::Manager;
+use std::sync::Mutex;
 use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -150,6 +153,15 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     std::thread::spawn(move || {
         load_sdk(&handle);
     });
+    // 已安装应用中心：频率计数库
+    let data_dir = app.path().app_data_dir()?;
+    std::fs::create_dir_all(&data_dir)?;
+    let db = apps::AppsDb::open(&data_dir.join("apps.db"))
+        .map_err(|e| tauri::Error::Io(std::io::Error::other(e)))?;
+    app.manage(Mutex::new(apps::AppsState { db }));
+    // 前台使用频率监测（事件钩子）
+    let fg = app.clone();
+    std::thread::spawn(move || foreground::start(fg));
     log::info!("search module ready");
     Ok(())
 }

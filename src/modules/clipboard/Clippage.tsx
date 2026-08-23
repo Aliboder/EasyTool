@@ -798,23 +798,6 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
             }}
           />
         )}
-        {menu?.item.kind === "files" && menu?.item.preview && (
-          <ContextMenuItem
-            icon={<Pin className="size-3.5" />}
-            label="固定到快速启动"
-            onClick={async () => {
-              if (menu) {
-                try {
-                  await invoke("quicklaunch_add_from_path", { path: menu.item.preview });
-                  toast("已固定到快速启动");
-                } catch (e) {
-                  toast(String(e));
-                }
-                setMenu(null);
-              }
-            }}
-          />
-        )}
         <ContextMenuDivider />
         <ContextMenuItem
           icon={<Trash2 className="size-3.5" />}

@@ -159,6 +159,25 @@ pub fn search_open_file(path: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// 扫描已安装应用（「应用」Tab 数据源；后台线程执行）
+#[tauri::command]
+pub async fn search_scan_apps(app: AppHandle) -> CmdResult<Vec<super::apps::ScannedApp>> {
+    let res = tauri::async_runtime::spawn_blocking(move || super::apps::scan_installed(&app))
+        .await
+        .map_err(|e| CommandError::from(format!("扫描任务失败: {e}")))?;
+    res.map_err(CommandError::from)
+}
+
+/// 直接打开任意路径（应用 Tab 点击启动用；.lnk 由 shell 解析目标）
+#[tauri::command]
+pub fn search_open_path(path: String) -> CmdResult<()> {
+    std::process::Command::new("explorer")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| CommandError::from(format!("打开失败: {e}")))?;
+    Ok(())
+}
+
 /// 在资源管理器中打开文件所在位置并选中
 #[tauri::command]
 pub fn search_open_file_location(path: String) -> CmdResult<()> {

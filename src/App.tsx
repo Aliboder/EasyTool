@@ -23,7 +23,6 @@ const Clippage = lazy(() => import("@/modules/clipboard/Clippage").then(m => ({ 
 const QuotaPage = lazy(() => import("@/modules/quota/QuotaPage").then(m => ({ default: m.QuotaPage })));
 const EmojiPage = lazy(() => import("@/modules/emoji/Page").then(m => ({ default: m.EmojiPage })));
 const SearchPage = lazy(() => import("@/modules/search/Page").then(m => ({ default: m.SearchPage })));
-const QuicklaunchPage = lazy(() => import("@/modules/quicklaunch/Page").then(m => ({ default: m.QuicklaunchPage })));
 
 function App() {
   const entranceRef = useWindowEntrance(true, ["animate-in", "fade-in-0", "zoom-in-95"]);
@@ -167,11 +166,6 @@ function App() {
       {visited.has("search") && (
         <div className={active === "search" ? "h-full" : "hidden"}>
           <SearchPage />
-        </div>
-      )}
-      {visited.has("quicklaunch") && (
-        <div className={active === "quicklaunch" ? "h-full" : "hidden"}>
-          <QuicklaunchPage />
         </div>
       )}
     </div>

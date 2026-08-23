@@ -1,9 +1,9 @@
 //! 前台窗口监测：SetWinEventHook 事件驱动（零轮询），
-//! 应用被切到前台时，为 target 命中的固定条目 usage_count +1 并推送前端
+//! 应用被切到前台时为其目标累计使用次数（供「应用」Tab 频率排序）
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::Threading::{
@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WINEVENT_OUTOFCONTEXT, MSG,
 };
 
-use super::QuicklaunchState;
+use super::apps::{resolve_target, AppsState};
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static LAST_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -40,7 +40,7 @@ pub fn start(app: AppHandle) {
         }
         log::info!("foreground monitor ready (event hook)");
         let mut msg = MSG::default();
-        // 返回值仅在线程收到 WM_QUIT 时为 0；本线程生命周期内持续泵
+        // 钩子事件经由本线程的消息循环派发；线程生命周期内持续泵
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {}
     }
 }
@@ -58,7 +58,6 @@ unsafe extern "system" fn on_foreground(
     if h == 0 || LAST_HWND.swap(h, Ordering::Relaxed) == h {
         return; // 同一窗口重复激活不计数
     }
-    let Some(app) = APP.get() else { return };
 
     let mut pid = 0u32;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
@@ -86,24 +85,16 @@ unsafe extern "system" fn on_foreground(
     let _ = CloseHandle(HANDLE(proc.0));
     let Some(exe_path) = exe_path else { return };
 
-    let Some(state) = app.try_state::<Mutex<QuicklaunchState>>() else {
+    let target = resolve_target(&exe_path);
+    let Some(app) = APP.get() else { return };
+    let Some(state) = app.try_state::<Mutex<AppsState>>() else {
         return;
     };
-    let updates = {
+    let res = {
         let st = state.lock().unwrap();
-        let r = st.db.increment_usage(&exe_path);
-        // 全部应用 Tab 的频率数据：任何前台程序都累计
-        if let Err(e) = st.db.increment_sys_usage(&exe_path) {
-            log::warn!("sys usage increment failed: {e}");
-        }
-        r
+        st.db.increment(&target)
     };
-    match updates {
-        Ok(updates) if !updates.is_empty() => {
-            log::debug!("usage +1: {} -> {:?}", exe_path, updates.len());
-            let _ = app.emit("quicklaunch://usage", &updates);
-        }
-        Ok(_) => {}
-        Err(e) => log::warn!("usage increment failed: {e}"),
+    if let Err(e) = res {
+        log::warn!("app usage increment failed: {e}");
     }
 }
