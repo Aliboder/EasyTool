@@ -272,7 +272,8 @@ useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
 
 ## 4. 数据与配置规范
 
-- 模块配置：`config.json` 的 `modules.<id>`（HashMap<String, Value>）。**前端读写走 `useModuleConfig` + `set_module_config`（见第 3 节）**；Rust 内部读取用 `module_config`、写回用 `save_config`
+- 模块配置：`config.json` 的 `modules.<id>`（HashMap<String, Value>）。**前端读写走 `useModuleConfig` + `set_module_config`（见第 3 节）**；Rust 侧统一用 `config.rs` 的两个助手——读 `module_cfg(app, "<id>")`，改写落盘 `update_module(app, "<id>", |v| { ...; Ok(()) })?`（内置加锁/存盘/锁释放时机）。**禁止再造模块级 `module_config()` 副本或手写「锁→get_mut→save」样板**（v0.4.6 已清理五份副本）；写入之外还有动作的才写专用命令
+- **操作反馈**：用户触发的命令（增删改、保存）失败必须 toast/内联提示，不得只 `console.error` 静默吞掉；成功无可见变化时也补 toast（参考 quota 的 QuotaSettings.tsx）
 - **文件图标/缩略图**：唯一入口是共享命令 `get_file_icon` / `get_file_thumb`，前端一律经 `useFileIcons` 缓存调用；禁止再造模块级图标加载命令或手写缓存 map
 - 模块私有数据：`app.path().app_data_dir()/<你的文件>`，即 `%APPDATA%\com.aliboder.easytool\`
 - 密钥：`keyring::Entry::new("com.aliboder.easytool", <用户标识>)`。**多账户场景每个账户独立槽位**（参考 quota 的 `get_account_key`/`set_account_key` + `key_ref`，绝不复用固定槽位，否则同类账户串号）
@@ -322,8 +323,9 @@ useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
 - [ ] `modules/mod.rs` 已声明 `pub mod foo`；lib.rs setup 与 invoke_handler 已注册
 - [ ] 前端页面/设置已接入 App.tsx（导航栏自动出现）
 - [ ] 独立窗口的 4 处联动齐全，capabilities 权限完备
-- [ ] 配置读写走 `module_config` + `save_config`，无持锁嵌套调用
+- [ ] 配置读写走 `module_cfg` / `update_module`（config.rs 助手），无自建 module_config 副本、无持锁嵌套调用
 - [ ] **模块设置走统一地基**：config.ts + useModuleConfig + 受控 Settings（第 3 节），未自写 save_xxx_settings 纯配置命令
+- [ ] **用户操作有反馈**：失败必提示（toast/内联），成功无可见变化时补 toast；不得只 console.error
 - [ ] **弹窗**：入口用 mountPopup；几何记忆用 usePopupGeometry；图标/缩略图经 useFileIcons（未手写缓存、未新增重复命令）
 - [ ] Slider 用 onValueChange 直连 onUpdate（Hook 防抖落盘）；手写 invoke 的参数键名为 camelCase
 - [ ] 网络/耗时操作在后台线程
