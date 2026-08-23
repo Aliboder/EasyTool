@@ -75,8 +75,8 @@ fn ensure_popup_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
     .decorations(false)
     .skip_taskbar(true)
     .visible(false)
-    .inner_size(400.0, 320.0)
-    .min_inner_size(320.0, 240.0)
+    .inner_size(620.0, 480.0)
+    .min_inner_size(400.0, 300.0)
     .resizable(true)
     .always_on_top(true)
     .build();

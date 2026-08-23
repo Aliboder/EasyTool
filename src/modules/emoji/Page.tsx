@@ -201,7 +201,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
 
   return (
     <div 
-      className="relative flex h-full flex-col p-4"
+      className="relative flex h-full flex-col bg-background text-foreground"
       onContextMenu={(e) => e.preventDefault()}
     >
       {PromptDialog}
