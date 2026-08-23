@@ -306,13 +306,17 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
   // 键盘导航：↑↓ 移动高亮（网格模式按列数跳行）、Enter 打开、Delete 删除、Esc 关弹层/隐藏窗口
   const [kbIdx, setKbIdx] = useState<number | null>(null);
 
+  // 键盘导航序列：网格视图下分组卡排在条目前面，需计入偏移（列表视图无分组卡）
+  const kbGroupCount = cfg.viewMode === "grid" ? foldersWithItems.length : 0;
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       if (expandedFolder != null) setExpandedFolder(null);
       else if (popup) getCurrentWindow().hide();
       return;
     }
-    if (!items.length) return;
+    const total = kbGroupCount + items.length;
+    if (!total) return;
     const dir = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
     if (dir !== 0) {
       e.preventDefault();
@@ -320,14 +324,27 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         cfg.viewMode === "grid" && gridRef.current
           ? gridColumns(gridRef.current)
           : 1;
-      setKbIdx((i) => gridVerticalTarget(i ?? -1, dir, items.length, cols));
-    } else if (e.key === "Enter" && kbIdx != null && kbIdx < items.length) {
+      setKbIdx((i) => gridVerticalTarget(i ?? -1, dir, total, cols));
+    } else if (e.key === "Enter" && kbIdx != null && kbIdx < total) {
       e.preventDefault();
-      handleOpen(items[kbIdx]);
-    } else if (e.key === "Delete" && kbIdx != null && kbIdx < items.length) {
+      if (kbIdx < kbGroupCount) {
+        setExpandedFolder(foldersWithItems[kbIdx]?.id ?? null);
+      } else {
+        const it = items[kbIdx - kbGroupCount];
+        if (it) handleOpen(it);
+      }
+    } else if (
+      e.key === "Delete" &&
+      kbIdx != null &&
+      kbIdx >= kbGroupCount &&
+      kbIdx < total
+    ) {
       e.preventDefault();
-      handleDelete(items[kbIdx].id);
-      setKbIdx(null);
+      const it = items[kbIdx - kbGroupCount];
+      if (it) {
+        handleDelete(it.id);
+        setKbIdx(null);
+      }
     }
   };
 
@@ -756,7 +773,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                   }}
                 >
                   {/* 显示分组 */}
-                  {foldersWithItems.map((folder) => (
+                  {foldersWithItems.map((folder, folderIdx) => (
                     <div key={`folder-${folder.id}`} data-item-id={folder.id}>
                       <GroupCard
                         id={folder.id}
@@ -764,7 +781,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                         items={folder.items}
                         gridSize={cfg.gridSize}
                         fileIcons={fileIcons}
-                        selected={selectedIds.has(folder.id)}
+                        selected={selectedIds.has(folder.id) || kbIdx === folderIdx}
                         onSelect={(id) => {
                           setExpandedFolder(id);
                         }}
@@ -798,7 +815,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                           icon={item.item_type === "url" ? null : fileIcons[item.path]}
                           showExtension={cfg.showExtension}
                           singleClickOpen={cfg.singleClickOpen}
-                          selected={selectedIds.has(item.id) || kbIdx === itemIdx}
+                          selected={selectedIds.has(item.id) || kbIdx === kbGroupCount + itemIdx}
                           onSelect={(id, e) => handleItemSelect(id, e)}
                           onOpen={handleOpen}
                           onDelete={handleDelete}
@@ -831,7 +848,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                 gridTemplateColumns: `repeat(auto-fill, ${cfg.gridSize}px)`,
               }}
             >
-              {foldersWithItems.map((folder) => (
+              {foldersWithItems.map((folder, folderIdx) => (
                 <div key={`folder-${folder.id}`} data-item-id={folder.id}>
                   <GroupCard
                     id={folder.id}
@@ -839,7 +856,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                     items={folder.items}
                     gridSize={cfg.gridSize}
                     fileIcons={fileIcons}
-                    selected={selectedIds.has(folder.id)}
+                    selected={selectedIds.has(folder.id) || kbIdx === folderIdx}
                     onSelect={(id) => { setExpandedFolder(id); }}
                     onOpen={(id) => { setExpandedFolder(id); }}
                     onContextMenu={(e, id) => {
@@ -862,7 +879,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                     icon={item.item_type === "url" ? null : fileIcons[item.path]}
                     showExtension={cfg.showExtension}
                     singleClickOpen={cfg.singleClickOpen}
-                    selected={selectedIds.has(item.id) || kbIdx === itemIdx}
+                    selected={selectedIds.has(item.id) || kbIdx === kbGroupCount + itemIdx}
                     onSelect={(id, e) => handleItemSelect(id, e)}
                     onOpen={handleOpen}
                     onDelete={handleDelete}
@@ -895,7 +912,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                           icon={item.item_type === "url" ? null : fileIcons[item.path]}
                           showExtension={cfg.showExtension}
                           singleClickOpen={cfg.singleClickOpen}
-                          selected={selectedIds.has(item.id) || kbIdx === itemIdx}
+                          selected={selectedIds.has(item.id) || kbIdx === kbGroupCount + itemIdx}
                           onSelect={(id, e) => handleItemSelect(id, e)}
                           onOpen={handleOpen}
                           onDelete={handleDelete}
@@ -925,7 +942,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
                     icon={item.item_type === "url" ? null : fileIcons[item.path]}
                     showExtension={cfg.showExtension}
                     singleClickOpen={cfg.singleClickOpen}
-                    selected={selectedIds.has(item.id) || kbIdx === itemIdx}
+                    selected={selectedIds.has(item.id) || kbIdx === kbGroupCount + itemIdx}
                     onSelect={(id, e) => handleItemSelect(id, e)}
                     onOpen={handleOpen}
                     onDelete={handleDelete}

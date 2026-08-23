@@ -49,6 +49,9 @@ export function useModuleConfig<T extends object>(moduleId: string, defaults: T)
   }, [moduleId]);
 
   const reload = useCallback(async () => {
+    // 有待落盘的本地修改时跳过重读：本地 state 即最新真值，
+    // 否则 focus 重读会用旧存储值覆盖刚改还没写盘的显示（滑块拖动中切窗口必现）
+    if (Object.keys(pendingRef.current).length > 0) return;
     try {
       const config = await invoke<{ modules?: Record<string, Record<string, unknown>> }>("get_config");
       const m = config?.modules?.[moduleId];

@@ -97,6 +97,18 @@ function App() {
     [orderedManifests, config],
   );
 
+  // 模块禁用后从 keep-alive 卸载（不再空跑 effect/监听）；当前停在被禁用模块时回退到首个可用模块
+  useEffect(() => {
+    const ids = new Set(enabledModules.map((m) => m.id));
+    setVisited((prev) => {
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+    setActive((cur) =>
+      cur !== "settings" && !ids.has(cur) ? (enabledModules[0]?.id ?? "clipboard") : cur,
+    );
+  }, [enabledModules]);
+
   const toggleModule = async (id: string, enabled: boolean) => {
     await setModuleEnabled(id, enabled);
     setConfig(await getConfig());
