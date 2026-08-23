@@ -752,3 +752,34 @@
 - `src/modules/emoji/Settings.tsx` - save 函数
 
 45. **提交 ≠ 安全：工作区文件可能被编辑器旧缓冲覆盖**：VS Code 等编辑器若保留旧版本缓冲，一次保存会把磁盘上较新的已提交内容退回旧版（本次「边拉边生效」改造 5 个文件整体回退且 tsc 可编译通过，极难察觉）。信号：功能行为无故回退但 git log 显示代码早已提交。排查用 git diff（非 git status 干净就安全），恢复用 git checkout -- <file>。多会话/多人协作时（见坑 19）提交前后都应 diff 一遍
+
+---
+
+## 2026-08-24
+
+### 启动流程体检：setup 内阻塞会推迟首帧 + 开库 expect 一炸全灭
+
+**问题描述**：冷启动全链路审查发现两类问题：① search/emoji 模块的 `join()` 排在 setup 里，任何模块初始化慢都会推迟窗口显示；② 剪贴板/表情开库失败（库损坏）直接 `expect` panic，应用完全无法启动且无托盘无提示，用户只能手动删数据文件。
+
+**根本原因**：
+1. `win.show()` 在 setup 内调用时，**真正绘制要等 setup 返回、事件循环启动之后**——所以把 show 提前到 join 之前毫无用处，唯一有效手段是把阻塞移出 setup。join 只是同步点，模块工作在 spawn 时已并行开始；
+2. `AppState::new(...).expect(...)` / `Db::open(...).expect(...)` 把「数据损坏」升级成「程序崩溃」，错误处理层级错配。
+
+**解决方案**：
+1. search/emoji 的 join 移入 `build_tray` 之后的 `std::thread::spawn` 后台线程（剪贴板保留同步 join——它是主窗口首屏数据源，且备份是 6h 节流、VACUUM 超 8MB 才触发，关键路径只剩毫秒级开库）；
+2. 新增 `lib.rs::quarantine_broken_db(path)`：开库失败时把损坏库（含 -wal/-shm）改名 `.broken-<时间戳>` 留证后重建空库；剪贴板重建再失败才返回 Err（模块降级禁用），emoji 同样兜底；
+3. 迁移失败加落盘计数器（`migration_clipboard_failed`），连续 3 次失败停止自动重试，防旧库损坏时每次启动白跑复制+导入；
+4. 热键注册失败补发系统通知（`notify_hotkey_failed`，tauri_plugin_notification Rust 侧直调无需 capability）——原来只写日志，统一模式下热键被占用=用户无法呼出窗口且毫无感知；
+5. 日志加时间戳（SimpleLogger 加 `chrono::Local::now()`）；主窗口配置 `"backgroundColor": "#0a0a0a"`（= dark 主题 oklch(0.145 0 0)，Tauri ≥2.1 支持）防 WebView2 白底在暗色主题下的白闪。
+
+**教训**：
+1. **setup 是首帧之前的关键路径**：里面每一毫秒都算启动耗时；show() 在其中只是标记可见，不产生绘制。要提前显示就把工作移出去，而不是挪 show 的位置；
+2. **join 与工作的区别**：spawn 出去的初始化早已并行执行，同步等待点放哪里只影响「谁等它」，不影响「它何时完成」——首屏不依赖的模块，join 放后台即可；
+3. **expect 只该用于「不可能失败」的场景**：磁盘上的数据库文件是用户环境的一部分，损坏是常态输入，必须降级隔离（改名留证+重建）而非崩溃；
+4. 给用户的可感知故障（热键失效、注册失败）必须有日志之外的反馈通道。
+
+**相关代码**：
+- `src-tauri/src/lib.rs` - setup 尾部后台 join、`quarantine_broken_db`、`notify_hotkey_failed`、SimpleLogger 时间戳
+- `src-tauri/src/modules/clipboard/mod.rs` / `modules/emoji/mod.rs` - 开库兜底
+- `src-tauri/src/migrate.rs` - 迁移失败计数上限
+- `index.html` / `src-tauri/tauri.conf.json` - 标题、backgroundColor

@@ -34,8 +34,17 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     let data_dir = app.path().app_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
     db::backup_database(&data_dir);
-    let state = AppState::new(data_dir.clone(), data_dir.join("clipboard.db"), max_items(app))
-        .expect("failed to init clipboard state");
+    // 开库失败（典型：库损坏）→ 隔离损坏文件重建空库，应用照常启动
+    let db_path = data_dir.join("clipboard.db");
+    let state = match AppState::new(data_dir.clone(), db_path.clone(), max_items(app)) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("clipboard db init failed ({e}), quarantining broken db and recreating");
+            crate::quarantine_broken_db(&db_path);
+            AppState::new(data_dir.clone(), db_path, max_items(app))
+                .map_err(|e| tauri::Error::Io(std::io::Error::other(e.to_string())))?
+        }
+    };
     if let Ok(db) = state.db.lock() {
         let _ = db.vacuum_if_large(8 * 1024 * 1024);
     }

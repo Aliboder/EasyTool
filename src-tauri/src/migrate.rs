@@ -46,7 +46,18 @@ pub fn run_migration(app: &AppHandle) {
     if !cfg.migrated.iter().any(|m| m == "clipboard") {
         let old_dir = old_pasteboard_dir();
         let old_db = old_dir.join("pasteboard.db");
-        if old_db.exists() {
+        // 失败计数落盘：连续 3 次失败后停止自动重试，避免旧库损坏时每次启动都白跑一遍复制+导入
+        let fail_counter = data_dir.join("migration_clipboard_failed");
+        let fails: u32 = std::fs::read_to_string(&fail_counter)
+            .ok()
+            .and_then(|t| t.trim().parse().ok())
+            .unwrap_or(0);
+        if fails >= 3 {
+            log::warn!(
+                "migration: clipboard failed {fails} times, giving up (delete {} to retry)",
+                fail_counter.display()
+            );
+        } else if old_db.exists() {
             match migrate_clipboard_db(
                 &old_db,
                 &data_dir.join("clipboard.db"),
@@ -59,8 +70,12 @@ pub fn run_migration(app: &AppHandle) {
                     // 成功才标记完成；失败不标记，下次启动重试（INSERT OR IGNORE 保证重试幂等）
                     cfg.migrated.push("clipboard".into());
                     changed = true;
+                    let _ = std::fs::remove_file(&fail_counter);
                 }
-                Err(e) => log::warn!("migration: clipboard failed, will retry next launch: {e}"),
+                Err(e) => {
+                    log::warn!("migration: clipboard failed, will retry next launch: {e}");
+                    let _ = std::fs::write(&fail_counter, (fails + 1).to_string());
+                }
             }
         } else {
             // 旧库不存在：无可迁移数据，标记完成避免每次启动空跑

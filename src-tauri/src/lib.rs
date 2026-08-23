@@ -39,7 +39,8 @@ impl log::Log for SimpleLogger {
     }
     fn log(&self, record: &log::Record) {
         let line = format!(
-            "[{}] {}: {}",
+            "[{}] [{}] {}: {}",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
             record.level(),
             record.module_path().unwrap_or("easytool"),
             record.args()
@@ -333,6 +334,32 @@ fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
     }
 }
 
+/// 开库失败兜底：把损坏的库文件（含 -wal/-shm）改名隔离留证，让调用方重建空库。
+/// 避免库损坏时 expect 直接 panic，导致应用完全无法启动且无托盘可操作
+pub(crate) fn quarantine_broken_db(db_path: &std::path::Path) {
+    let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+    for suffix in ["", "-wal", "-shm"] {
+        let p = std::path::PathBuf::from(format!("{}{suffix}", db_path.display()));
+        if let (true, Some(name)) = (p.exists(), p.file_name()) {
+            let mut new_name = name.to_os_string();
+            new_name.push(format!(".broken-{ts}"));
+            let _ = std::fs::rename(&p, p.with_file_name(new_name));
+        }
+    }
+}
+
+/// 热键注册失败时的用户可见提示（系统通知；被其他程序占用是最常见原因）。
+/// 只写日志的话，统一模式下用户将无法用热键呼出窗口且毫无感知
+fn notify_hotkey_failed(app: &tauri::AppHandle, hk: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app
+        .notification()
+        .builder()
+        .title("EasyTool 热键注册失败")
+        .body(format!("{hk} 可能已被其他程序占用，请到设置中更换"))
+        .show();
+}
+
 /// 按统一呼出模式重新注册全局热键：
 /// - unified=true：只注册主窗口热键，模块独立热键全部禁用
 /// - unified=false：只注册各模块独立热键，主窗口呼出热键失效（改用托盘呼出）
@@ -346,7 +373,10 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
         if let Some(hk) = &resolved.main_str {
             match app.global_shortcut().register(hk.as_str()) {
                 Ok(_) => log::info!("[unified] main hotkey registered: {hk}"),
-                Err(e) => log::error!("failed to register main hotkey: {e}"),
+                    Err(e) => {
+                        log::error!("failed to register main hotkey: {e}");
+                        notify_hotkey_failed(app, hk);
+                    }
             }
         } else {
             log::warn!("[unified] main hotkey invalid, nothing registered");
@@ -356,7 +386,10 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
             if let Some(hk) = &resolved.clip_str {
                 match app.global_shortcut().register(hk.as_str()) {
                     Ok(_) => log::info!("clipboard hotkey registered: {hk}"),
-                    Err(e) => log::error!("failed to register clipboard hotkey: {e}"),
+                    Err(e) => {
+                        log::error!("failed to register clipboard hotkey: {e}");
+                        notify_hotkey_failed(app, hk);
+                    }
                 }
             }
         }
@@ -364,7 +397,10 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
             if let Some(hk) = &resolved.search_str {
                 match app.global_shortcut().register(hk.as_str()) {
                     Ok(_) => log::info!("search hotkey registered: {hk}"),
-                    Err(e) => log::error!("failed to register search hotkey: {e}"),
+                    Err(e) => {
+                        log::error!("failed to register search hotkey: {e}");
+                        notify_hotkey_failed(app, hk);
+                    }
                 }
             }
         }
@@ -372,7 +408,10 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
             if let Some(hk) = &resolved.emoji_str {
                 match app.global_shortcut().register(hk.as_str()) {
                     Ok(_) => log::info!("emoji hotkey registered: {hk}"),
-                    Err(e) => log::error!("failed to register emoji hotkey: {e}"),
+                    Err(e) => {
+                        log::error!("failed to register emoji hotkey: {e}");
+                        notify_hotkey_failed(app, hk);
+                    }
                 }
             }
         }
@@ -543,32 +582,6 @@ pub fn run() {
                 });
             }
 
-            // 等待搜索模块初始化完成（SDK 后台加载）
-            if let Some(handle) = search_handle {
-                match handle.join() {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => {
-                        log::error!("search module init failed: {e}");
-                    }
-                    Err(e) => {
-                        log::error!("search module thread panicked: {:?}", e);
-                    }
-                }
-            }
-
-            // 等待表情模块初始化完成
-            if let Some(handle) = emoji_handle {
-                match handle.join() {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => {
-                        log::error!("emoji module init failed: {e}");
-                    }
-                    Err(e) => {
-                        log::error!("emoji module thread panicked: {:?}", e);
-                    }
-                }
-            }
-
             // 全局热键（按统一呼出模式注册）
             reapply_hotkeys(app.handle());
             // 主窗口形态：统一模式下置顶 + 隐藏任务栏
@@ -599,6 +612,26 @@ pub fn run() {
             }
 
             build_tray(app)?;
+
+            // search/emoji 的 join 放后台线程：setup 内任何阻塞都会推迟事件循环启动
+            // （即推迟首帧绘制）；二者实际工作在上方 spawn 时已并行开始，
+            // 主窗口首屏只依赖剪贴板模块，前端首次访问对应页面时早已就绪
+            std::thread::spawn(move || {
+                if let Some(handle) = search_handle {
+                    match handle.join() {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => log::error!("search module init failed: {e}"),
+                        Err(e) => log::error!("search module thread panicked: {:?}", e),
+                    }
+                }
+                if let Some(handle) = emoji_handle {
+                    match handle.join() {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => log::error!("emoji module init failed: {e}"),
+                        Err(e) => log::error!("emoji module thread panicked: {:?}", e),
+                    }
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
