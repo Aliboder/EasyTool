@@ -783,3 +783,23 @@
 - `src-tauri/src/modules/clipboard/mod.rs` / `modules/emoji/mod.rs` - 开库兜底
 - `src-tauri/src/migrate.rs` - 迁移失败计数上限
 - `index.html` / `src-tauri/tauri.conf.json` - 标题、backgroundColor
+
+---
+
+## 2026-08-24
+
+### 启动后剪贴板页面空白：keep-alive 清理 effect 在清单就绪前"误杀"首屏模块
+
+**问题描述**：冷启动后主窗口显示剪贴板模块但内容区全空；右键→刷新（WebView2 默认菜单）无效；点底栏「剪切板」才转圈（懒加载）后显示内容。
+
+**根本原因**：App.tsx keep-alive 的清理 effect 依赖 `enabledModules`，但首次渲染时 config/manifests 未返回，`enabledModules = []`，effect 把 `visited` 里的 `"clipboard"` 全部过滤掉；bootstrap 完成后 effect 重跑却**只过滤不回填**（空集滤空集），`{visited.has("clipboard") && <Clippage/>}` 永远为假 → 懒加载组件永不挂载。点底栏有效是因为 `selectModule` 会重新 `setVisited` 回填。
+
+**解决方案**：清理 effect 开头加守卫 `if (!enabledModules.length) return;`——清单未就绪时无从校验，不清理。
+
+**教训**：
+1. **"按允许列表修剪状态"的 effect 必须防空列表**：数据未就绪时的空允许列表会把合法状态清空，且单向过滤逻辑永远不会自我恢复；
+2. 排查"组件没渲染"先确认**挂载条件**（这里是 `visited.has()`），而不是数据加载链路——日志里懒加载 chunk 完全没有触发记录就是关键信号（既无成功也无失败=请求从未发出）；
+3. 时间戳日志的排查价值：多次 "app mounted" 无 "clippage mounted" 直接把问题定位到挂载条件而非 IPC/后端。
+
+**相关代码**：
+- `src/App.tsx` - 清理 effect 加空列表守卫

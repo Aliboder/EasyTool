@@ -155,6 +155,8 @@ function App() {
 
   // 模块禁用后从 keep-alive 卸载（不再空跑 effect/监听）；当前停在被禁用模块时回退到首个可用模块
   useEffect(() => {
+    // 清单未就绪时 ids 为空，会把 visited 全部误剪掉且之后永不回填（首屏空白根因），跳过
+    if (!enabledModules.length) return;
     const ids = new Set(enabledModules.map((m) => m.id));
     setVisited((prev) => {
       const next = new Set([...prev].filter((id) => ids.has(id)));
