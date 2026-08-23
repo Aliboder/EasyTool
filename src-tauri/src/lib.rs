@@ -753,6 +753,7 @@ pub fn run() {
             modules::quicklaunch::commands::quicklaunch_add_from_path,
             modules::quicklaunch::commands::quicklaunch_scan_apps,
             modules::quicklaunch::commands::quicklaunch_open_path,
+            modules::quicklaunch::commands::quicklaunch_unpin_by_target,
             modules::quicklaunch::commands::quicklaunch_create_folder_with_items,
             set_active_module,
         ])

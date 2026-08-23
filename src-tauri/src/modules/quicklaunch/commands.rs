@@ -299,12 +299,15 @@ pub struct ScannedApp {
 }
 
 // 注意：Path::extension() 返回值不带前导点（"lnk" 而非 ".lnk"）
-const SCAN_EXTS: &[&str] = &["lnk", "url"];
+const SCAN_EXTS: &[&str] = &["lnk"];
+
+/// 卸载程序特征词（目标路径或快捷方式名命中即排除）
+const UNINSTALL_KEYS: &[&str] = &["uninst", "unwise", "卸载"];
 
 fn collect_apps(
     dir: &std::path::Path,
     depth: u32,
-    out: &mut Vec<ScannedApp>,
+    out: &mut Vec<(String, String)>,
     seen: &mut std::collections::HashSet<String>,
 ) {
     if depth > 6 {
@@ -316,41 +319,41 @@ fn collect_apps(
     for entry in rd.flatten() {
         let p = entry.path();
         if p.is_dir() {
-            collect_apps(&p, depth + 1, out, seen);
+            // 跳过自启动目录：里面的程序不属于"可启动的应用"
+            let is_startup = p
+                .file_name()
+                .map(|s| s.to_string_lossy().eq_ignore_ascii_case("startup"))
+                .unwrap_or(false);
+            if !is_startup {
+                collect_apps(&p, depth + 1, out, seen);
+            }
         } else if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
             if SCAN_EXTS.contains(&ext.to_lowercase().as_str()) {
-                // 路径去重 + 同名快捷方式去重（用户菜单/公共菜单各一份只留一个）
+                // 路径去重（同目标去重在解析后按 target 进行）
                 let path_key = p.to_string_lossy().to_lowercase();
-                let stem_key = format!(
-                    "stem:{}",
-                    p.file_stem().map(|s| s.to_string_lossy().to_lowercase())
-                        .unwrap_or_default()
-                );
-                if seen.insert(path_key) && seen.insert(stem_key) {
-                    out.push(ScannedApp {
-                        name: p
-                            .file_stem()
+                if seen.insert(path_key) {
+                    out.push((
+                        p.to_string_lossy().into_owned(),
+                        p.file_stem()
                             .map(|s| s.to_string_lossy().into_owned())
                             .unwrap_or_default(),
-                        path: p.to_string_lossy().into_owned(),
-                        fixed: false,
-                        usage_count: 0,
-                    });
+                    ));
                 }
             }
         }
     }
 }
 
-/// 扫描开始菜单中的快捷方式，供「全部应用」Tab 与添加选择器使用。
-/// 与已固定条目目标相同的项标记 fixed=true（比对库内 target 列）
+/// 扫描开始菜单中的快捷方式，供「全部应用」Tab 与固定操作使用。
+/// 「软件」判定三道筛（解析目标后）：必须是 .exe；排除卸载程序；
+/// 排除 Startup 自启动目录；再按解析目标去重
 #[tauri::command]
 pub async fn quicklaunch_scan_apps(
     app: AppHandle,
 ) -> CmdResult<Vec<ScannedApp>> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut out: Vec<ScannedApp> = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let mut candidates: Vec<(String, String)> = Vec::new(); // (path, name)
+        let mut seen_paths = std::collections::HashSet::new();
         let mut roots: Vec<std::path::PathBuf> = Vec::new();
         if let Some(d) = std::env::var_os("APPDATA") {
             roots.push(std::path::PathBuf::from(d).join(r"Microsoft\Windows\Start Menu\Programs"));
@@ -359,7 +362,7 @@ pub async fn quicklaunch_scan_apps(
             roots.push(std::path::PathBuf::from(d).join(r"Microsoft\Windows\Start Menu\Programs"));
         }
         for r in &roots {
-            collect_apps(&r, 0, &mut out, &mut seen);
+            collect_apps(&r, 0, &mut candidates, &mut seen_paths);
         }
         // 固定条目的目标集合：扫描项命中即标记 fixed
         let fixed_targets: std::collections::HashSet<String> =
@@ -374,13 +377,33 @@ pub async fn quicklaunch_scan_apps(
                     .collect(),
                 None => Default::default(),
             };
-        // 先解析各扫描项目标（复用给 fixed 判定与计数落库）
-        let mut resolved: Vec<String> = Vec::with_capacity(out.len());
-        for a in out.iter_mut() {
-            let t = resolve_target(&a.path);
-            a.fixed = !fixed_targets.is_empty() && fixed_targets.contains(&t);
-            resolved.push(t);
+
+        // 三道筛 + 解析 + 按目标去重
+        let mut out: Vec<ScannedApp> = Vec::new();
+        let mut resolved: Vec<String> = Vec::with_capacity(candidates.len());
+        let mut seen_targets: std::collections::HashSet<String> = Default::default();
+        for (path, name) in candidates {
+            let target = resolve_target(&path);
+            if !target.ends_with(".exe") {
+                continue; // 文档/帮助/文件夹/网站/失效链接
+            }
+            let hay = format!("{} {}", target, name.to_lowercase());
+            if UNINSTALL_KEYS.iter().any(|k| hay.contains(k)) {
+                continue; // 卸载程序
+            }
+            if !seen_targets.insert(target.clone()) {
+                continue; // 同一目标的重复快捷方式
+            }
+            let fixed = !fixed_targets.is_empty() && fixed_targets.contains(&target);
+            resolved.push(target.clone());
+            out.push(ScannedApp {
+                name,
+                path,
+                fixed,
+                usage_count: 0,
+            });
         }
+
         // 落库并取回全局使用次数
         let usage_map: std::collections::HashMap<String, i64> =
             match app.try_state::<Mutex<QuicklaunchState>>() {
@@ -414,13 +437,30 @@ pub fn quicklaunch_open_path(path: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// 按解析目标取消固定：删除与该目标相同的全部固定条目
+#[tauri::command]
+pub fn quicklaunch_unpin_by_target(
+    state: State<'_, Mutex<QuicklaunchState>>,
+    path: String,
+) -> CmdResult<bool> {
+    let st = state.lock().map_err(|e| format!("锁状态失败: {e}"))?;
+    let target = resolve_target(&path);
+    let ids = st.db.find_ids_by_target(&target)?;
+    let mut removed = false;
+    for id in ids {
+        st.db.delete_item(id)?;
+        removed = true;
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod scan_tests {
     use super::*;
 
     #[test]
     fn scan_real_start_menu() {
-        let mut out: Vec<ScannedApp> = Vec::new();
+        let mut candidates: Vec<(String, String)> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         let mut roots: Vec<std::path::PathBuf> = Vec::new();
         if let Some(d) = std::env::var_os("APPDATA") {
@@ -436,12 +476,31 @@ mod scan_tests {
             roots.push(r);
         }
         for r in &roots {
-            collect_apps(r, 0, &mut out, &mut seen);
+            collect_apps(r, 0, &mut candidates, &mut seen);
         }
-        println!("scanned count = {}", out.len());
-        for a in out.iter().take(5) {
-            println!("  e.g. {} -> {}", a.name, a.path);
+        println!("candidates = {}", candidates.len());
+        // 三道筛后仍应有真实软件
+        let software: Vec<&(String, String)> = candidates
+            .iter()
+            .filter(|(p, n)| {
+                let t = resolve_target(p);
+                t.ends_with(".exe")
+                    && !UNINSTALL_KEYS
+                        .iter()
+                        .any(|k| format!("{} {}", t, n.to_lowercase()).contains(k))
+            })
+            .collect();
+        println!("software after filters = {}", software.len());
+        for (p, _) in software.iter().take(3) {
+            println!("  e.g. {} -> {}", n_of(p), p);
         }
-        assert!(!out.is_empty(), "scan found nothing");
+        assert!(!software.is_empty(), "scan found nothing");
+
+        fn n_of(p: &str) -> String {
+            std::path::Path::new(p)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        }
     }
 }

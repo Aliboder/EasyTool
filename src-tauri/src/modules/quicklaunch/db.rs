@@ -116,6 +116,19 @@ impl QuicklaunchDb {
             .map_err(|e| format!("读取失败: {e}"))
     }
 
+    /// 与某目标匹配的全部条目 id
+    pub fn find_ids_by_target(&self, target: &str) -> Result<Vec<i64>, String> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM items WHERE target = ?1")
+            .map_err(|e| format!("查询失败: {e}"))?;
+        let rows = stmt
+            .query_map(params![target], |r| r.get(0))
+            .map_err(|e| format!("查询失败: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取失败: {e}"))
+    }
+
     /// 扫描结果落库（新目标计数从 0 起，已有的保留），返回 目标→当前次数
     pub fn sync_sys_targets(&self, targets: &[String]) -> Result<Vec<(String, i64)>, String> {
         for t in targets {

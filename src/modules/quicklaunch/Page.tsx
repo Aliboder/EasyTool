@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   DndContext,
@@ -23,13 +24,13 @@ import { ItemCard, QuicklaunchItem } from "./ItemCard";
 import { GroupCard } from "./GroupCard";
 import { FolderOverlay } from "./FolderOverlay";
 import { QuicklaunchSettings } from "./Settings";
-import { AppPicker, type ScannedApp } from "./AppPicker";
+import type { ScannedApp } from "./AppPicker";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
-import { Plus, FolderPlus, Settings2, ClipboardPaste, LayoutList, LayoutGrid, FileQuestion } from "lucide-react";
+import { Plus, FolderPlus, Settings2, ClipboardPaste, LayoutList, LayoutGrid, FileQuestion, Pin, PinOff } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-header";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
@@ -51,8 +52,8 @@ export type FilterType =
   | "sysapps";
 
 const QL_FILTERS: { id: FilterType; label: string }[] = [
-  { id: "sysapps", label: "全部应用" },
   { id: "all", label: "固定" },
+  { id: "sysapps", label: "全部应用" },
   { id: "app", label: "应用" },
   { id: "file", label: "文件" },
   { id: "folder", label: "文件夹" },
@@ -148,6 +149,7 @@ function SysAppGrid({
   icons,
   loadIcon,
   onOpen,
+  onTogglePin,
 }: {
   apps: ScannedApp[] | null;
   search: string;
@@ -157,6 +159,7 @@ function SysAppGrid({
   icons: Record<string, string>;
   loadIcon: (path: string) => Promise<void>;
   onOpen: (path: string) => void;
+  onTogglePin: (app: ScannedApp) => void;
 }) {
   const list = useMemo(() => {
     const filtered = (apps ?? []).filter((a) =>
@@ -199,13 +202,12 @@ function SysAppGrid({
         if (!icons[a.path]) loadIcon(a.path);
         const icon = icons[a.path];
         return (
-          <button
+          <div
             key={a.path}
-            title={`${a.name}\n${a.path}`}
+            title={`${a.name}\n${a.path}${a.fixed ? "\n（已固定，点击打开）" : ""}`}
             onClick={() => onOpen(a.path)}
             className={cn(
-              "relative flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border border-transparent transition-colors hover:bg-accent/50",
-              a.fixed && "opacity-50",
+              "group relative flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border border-transparent transition-colors hover:bg-accent/50",
             )}
           >
             {icon ? (
@@ -233,12 +235,26 @@ function SysAppGrid({
             >
               {a.name}
             </span>
+            {/* 已固定常亮角标 */}
             {a.fixed && (
-              <span className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded bg-black/60 px-1 text-[8px] leading-3 text-white">
-                已固定
-              </span>
+              <Pin className="absolute right-1 top-1 size-3.5 fill-primary text-primary" />
             )}
-          </button>
+            {/* 悬浮固定/取消固定按钮（覆盖角标位置） */}
+            <button
+              title={a.fixed ? "取消固定" : "固定到快速启动"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePin(a);
+              }}
+              className="absolute right-0.5 top-0.5 hidden rounded-md border bg-background/95 p-1 shadow-sm group-hover:flex hover:bg-accent"
+            >
+              {a.fixed ? (
+                <PinOff className="size-3 text-muted-foreground" />
+              ) : (
+                <Pin className="size-3 fill-primary text-primary" />
+              )}
+            </button>
+          </div>
         );
       })}
     </div>
@@ -253,7 +269,6 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
     x: 0,
@@ -450,6 +465,22 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
     }
   };
 
+  // 全部应用 Tab：一键固定 / 取消固定（按解析目标匹配）
+  const togglePinSysApp = async (a: ScannedApp) => {
+    try {
+      if (a.fixed) {
+        await invoke("quicklaunch_unpin_by_target", { path: a.path });
+        toast(`已取消固定「${a.name}」`);
+      } else {
+        await invoke("quicklaunch_add_from_path", { path: a.path });
+        toast(`已固定「${a.name}」`);
+      }
+      fetchItems();
+    } catch (e) {
+      toast(String(e));
+    }
+  };
+
 
 
   const handleOpen = async (item: QuicklaunchItem) => {
@@ -616,9 +647,17 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
     }
   };
 
-  const handleAddItem = () => setPickerOpen(true);
+  const handleAddItem = async () => {
+    const picked = await open({
+      multiple: true,
+      filters: [{ name: "所有文件", extensions: ["*"] }],
+    });
+    if (picked) {
+      await addPaths(Array.isArray(picked) ? picked : [picked]);
+    }
+  };
 
-  // 批量添加（选择器「添加所选」/「浏览文件」共用）；重复内容由后端判重拦截
+  // 批量添加；重复内容由后端内容级判重拦截
   const addPaths = async (paths: string[]) => {
     for (const path of paths) {
       try {
@@ -924,13 +963,6 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         />
       </Drawer>
 
-      <AppPicker
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onAdd={addPaths}
-        gridSize={cfg.gridSize}
-      />
-
       <div
         ref={containerRef}
         className={cn(
@@ -957,6 +989,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
             icons={fileIcons}
             loadIcon={loadFileIcon}
             onOpen={openSysApp}
+            onTogglePin={togglePinSysApp}
           />
         ) : items.length === 0 && !search ? (
           <div className="flex h-full flex-col items-center justify-center gap-4">
@@ -1193,6 +1226,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
               icons={fileIcons}
               loadIcon={loadFileIcon}
               onOpen={openSysApp}
+              onTogglePin={togglePinSysApp}
             />
           </div>
         )}
