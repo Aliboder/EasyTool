@@ -12,6 +12,7 @@ export interface QuicklaunchItem {
   folder_id: number | null;
   sort_order: number;
   created_at: string;
+  usage_count: number;
 }
 
 interface ItemCardProps {

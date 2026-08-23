@@ -46,7 +46,17 @@ impl QuicklaunchDb {
             CREATE INDEX IF NOT EXISTS idx_items_folder ON items(folder_id);
             CREATE INDEX IF NOT EXISTS idx_items_type ON items(type);
             CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);"
-        ).map_err(|e| format!("创建表失败: {e}"))?;
+        ).map_err(|e| format!("建表失败: {e}"))?;
+
+        // v3：使用频率计数 + 解析目标（内容判重 / 前台监测匹配键）。
+        // SQLite 无 ADD COLUMN IF NOT EXISTS，逐条执行并忽略"已存在"错误
+        for sql in [
+            "ALTER TABLE items ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE items ADD COLUMN target TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_items_target ON items(target)",
+        ] {
+            let _ = self.conn.execute(sql, []);
+        }
         Ok(())
     }
     
@@ -61,17 +71,83 @@ impl QuicklaunchDb {
         ).optional().map_err(|e| format!("查询失败: {e}"))
     }
 
-    /// 全部条目的 (id, path)：内容级判重时逐条解析目标比对
-    pub fn list_item_paths(&self) -> Result<Vec<(i64, String)>, String> {
+    /// 全部条目的 (id, 判重键)：target 已解析则用之，否则回退小写路径
+    pub fn list_dedup_keys(&self) -> Result<Vec<(i64, String)>, String> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, path FROM items")
+            .prepare(
+                "SELECT id, CASE WHEN target IS NOT NULL AND target != '' THEN target
+                        ELSE lower(path) END FROM items",
+            )
             .map_err(|e| format!("查询失败: {e}"))?;
         let rows = stmt
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(|e| format!("查询失败: {e}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("读取失败: {e}"))
+    }
+
+    /// 待回填条目 (id, path)：target 为空的旧数据
+    pub fn list_missing_targets(&self) -> Result<Vec<(i64, String)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, path FROM items WHERE target IS NULL OR target = ''",
+            )
+            .map_err(|e| format!("查询失败: {e}"))?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| format!("查询失败: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取失败: {e}"))
+    }
+
+    /// 已解析的非空目标（前台监测匹配 / 扫描 fixed 标记用）
+    pub fn list_targets(&self) -> Result<Vec<String>, String> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT target FROM items WHERE target IS NOT NULL AND target != ''")
+            .map_err(|e| format!("查询失败: {e}"))?;
+        let rows = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(|e| format!("查询失败: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取失败: {e}"))
+    }
+
+    /// 目标命中前台 +1，返回受影响条目及新计数
+    pub fn increment_usage(&self, target: &str) -> Result<Vec<super::types::UsageUpdate>, String> {
+        self.conn
+            .execute(
+                "UPDATE items SET usage_count = usage_count + 1 WHERE target = ?1",
+                params![target],
+            )
+            .map_err(|e| format!("计数失败: {e}"))?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, usage_count FROM items WHERE target = ?1")
+            .map_err(|e| format!("查询失败: {e}"))?;
+        let rows = stmt
+            .query_map(params![target], |r| {
+                Ok(super::types::UsageUpdate {
+                    id: r.get(0)?,
+                    usage_count: r.get(1)?,
+                })
+            })
+            .map_err(|e| format!("查询失败: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取失败: {e}"))
+    }
+
+    /// 回填旧条目的解析目标（幂等）
+    pub fn set_target(&self, id: i64, target: &str) -> Result<(), String> {
+        self.conn
+            .execute(
+                "UPDATE items SET target = ?1 WHERE id = ?2",
+                params![target, id],
+            )
+            .map_err(|e| format!("更新失败: {e}"))?;
+        Ok(())
     }
     
     /// 更新项目的时间戳（用于重复添加时刷新）
@@ -83,11 +159,11 @@ impl QuicklaunchDb {
         Ok(())
     }
     
-    pub fn create_item(&self, item_type: ItemType, name: &str, path: &str, folder_id: Option<i64>) -> Result<Item, String> {
-        self.create_item_with_icon(item_type, name, path, folder_id, None)
+    pub fn create_item(&self, item_type: ItemType, name: &str, path: &str, folder_id: Option<i64>, target: Option<&str>) -> Result<Item, String> {
+        self.create_item_with_icon(item_type, name, path, folder_id, None, target)
     }
-    
-    pub fn create_item_with_icon(&self, item_type: ItemType, name: &str, path: &str, folder_id: Option<i64>, icon_path: Option<&str>) -> Result<Item, String> {
+
+    pub fn create_item_with_icon(&self, item_type: ItemType, name: &str, path: &str, folder_id: Option<i64>, icon_path: Option<&str>, target: Option<&str>) -> Result<Item, String> {
         let type_str = match item_type {
             ItemType::App => "app",
             ItemType::File => "file",
@@ -102,8 +178,8 @@ impl QuicklaunchDb {
         ).unwrap_or(0);
         
         self.conn.execute(
-            "INSERT INTO items (type, name, path, icon_path, folder_id, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![type_str, name, path, icon_path, folder_id, max_order + 1],
+            "INSERT INTO items (type, name, path, icon_path, folder_id, sort_order, target) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![type_str, name, path, icon_path, folder_id, max_order + 1, target],
         ).map_err(|e| format!("创建固定项失败: {e}"))?;
         
         let id = self.conn.last_insert_rowid();
@@ -112,7 +188,7 @@ impl QuicklaunchDb {
     
     pub fn get_item(&self, id: i64) -> Result<Item, String> {
         self.conn.query_row(
-            "SELECT id, type, name, path, icon_path, folder_id, sort_order, created_at FROM items WHERE id = ?1",
+            "SELECT id, type, name, path, icon_path, folder_id, sort_order, created_at, usage_count, target FROM items WHERE id = ?1",
             params![id],
             |row| {
                 let type_str: String = row.get(1)?;
@@ -132,6 +208,8 @@ impl QuicklaunchDb {
                     folder_id: row.get(5)?,
                     sort_order: row.get(6)?,
                     created_at: row.get(7)?,
+                    usage_count: row.get(8)?,
+                    target: row.get(9)?,
                 })
             },
         ).map_err(|e| format!("获取固定项失败: {e}"))
@@ -139,7 +217,7 @@ impl QuicklaunchDb {
     
     pub fn list_items(&self, filter: &super::types::FilterOptions) -> Result<Vec<Item>, String> {
         let mut sql = String::from(
-            "SELECT id, type, name, path, icon_path, folder_id, sort_order, created_at FROM items WHERE 1=1"
+            "SELECT id, type, name, path, icon_path, folder_id, sort_order, created_at, usage_count, target FROM items WHERE 1=1"
         );
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         
@@ -163,6 +241,7 @@ impl QuicklaunchDb {
         let sort_by = match filter.sort_by.as_deref() {
             Some("name") => "name",
             Some("created_at") => "created_at",
+            Some("usage") => "usage_count",
             Some("sort_order") | None => "sort_order",
             Some(_) => "sort_order", // 无效值使用默认排序
         };
@@ -188,6 +267,8 @@ impl QuicklaunchDb {
                 folder_id: row.get(5)?,
                 sort_order: row.get(6)?,
                 created_at: row.get(7)?,
+                    usage_count: row.get(8)?,
+                    target: row.get(9)?,
             })
         }).map_err(|e| format!("查询失败: {e}"))?;
         
@@ -337,8 +418,8 @@ impl QuicklaunchDb {
         let folder = self.get_folder(folder_id)?;
         
         let mut stmt = self.conn.prepare(
-            "SELECT id, type, name, path, icon_path, folder_id, sort_order, created_at 
-             FROM items WHERE folder_id = ?1 
+            "SELECT id, type, name, path, icon_path, folder_id, sort_order, created_at, usage_count, target
+             FROM items WHERE folder_id = ?1
              ORDER BY sort_order ASC LIMIT 4"
         ).map_err(|e| format!("准备查询失败: {e}"))?;
         
@@ -360,6 +441,8 @@ impl QuicklaunchDb {
                 folder_id: row.get(5)?,
                 sort_order: row.get(6)?,
                 created_at: row.get(7)?,
+                    usage_count: row.get(8)?,
+                    target: row.get(9)?,
             })
         }).map_err(|e| format!("查询失败: {e}"))?;
         

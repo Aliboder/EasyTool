@@ -1,9 +1,34 @@
 pub mod commands;
 pub mod db;
+pub mod foreground;
 pub mod types;
 
 use tauri::Manager;
 use std::sync::Mutex;
+
+/// 旧条目 target 回填：解析一次并存列，供判重/前台计数匹配（幂等）
+fn backfill_targets(app: &tauri::AppHandle) {
+    let Some(state) = app.try_state::<Mutex<QuicklaunchState>>() else {
+        return;
+    };
+    let Ok(rows) = state
+        .lock()
+        .unwrap()
+        .db
+        .list_missing_targets()
+    else {
+        return;
+    };
+    if rows.is_empty() {
+        return;
+    }
+    log::info!("backfilling {} item targets", rows.len());
+    for (id, path) in rows {
+        let t = commands::resolve_target(&path);
+        let _ = state.lock().unwrap().db.set_target(id, &t);
+    }
+    log::info!("backfill targets done");
+}
 use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
@@ -25,6 +50,12 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
         .map_err(|e| tauri::Error::Io(std::io::Error::other(e)))?;
     app.manage(Mutex::new(QuicklaunchState { db }));
     log::info!("quicklaunch module ready");
+
+    // 后台：旧条目 target 回填 + 前台窗口监测（事件钩子，零轮询）
+    let backfill = app.clone();
+    std::thread::spawn(move || backfill_targets(&backfill));
+    let fg = app.clone();
+    std::thread::spawn(move || foreground::start(fg));
     Ok(())
 }
 

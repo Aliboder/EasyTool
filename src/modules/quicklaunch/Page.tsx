@@ -35,6 +35,7 @@ import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-head
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 import { toast } from "@/lib/toast";
+import { listen } from "@tauri-apps/api/event";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { gridColumns, gridIconSize, gridFontScale, gridVerticalTarget } from "@/lib/grid";
 import { cn } from "@/lib/utils";
@@ -50,17 +51,17 @@ export type FilterType =
   | "sysapps";
 
 const QL_FILTERS: { id: FilterType; label: string }[] = [
-  { id: "all", label: "全部" },
+  { id: "all", label: "固定" },
   { id: "app", label: "应用" },
   { id: "file", label: "文件" },
   { id: "folder", label: "文件夹" },
   { id: "url", label: "URL" },
-  { id: "sysapps", label: "系统应用" },
+  { id: "sysapps", label: "全部应用" },
 ];
 
 interface QuicklaunchConfig {
   viewMode: "grid" | "list";
-  sortBy: "manual" | "name" | "created_at";
+  sortBy: "manual" | "name" | "created_at" | "usage";
   sortDesc: boolean;
   gridSize: number;
   showExtension: boolean;
@@ -323,8 +324,13 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
           if (item.item_type !== "url") loadFileIcon(item.path);
         }
       } else {
-        // 非手动排序：前端用 localeCompare 做中文拼音重排；方向系数使升降序生效
+        // 非手动排序：名称走拼音 localeCompare；频率按累计次数；方向系数使升降序生效
         const sorted = [...result].sort((a, b) => {
+          if (cfg.sortBy === "usage") {
+            return cfg.sortDesc
+              ? a.usage_count - b.usage_count
+              : b.usage_count - a.usage_count;
+          }
           const cmp =
             cfg.sortBy === "name"
               ? a.name.localeCompare(b.name, "zh-CN-u-co-pinyin")
@@ -374,6 +380,34 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
     fetchItems().then(() => setLoading(false));
     fetchFolders();
   }, [fetchItems, fetchFolders]);
+
+  // 后台前台监测推送：局部更新命中条目的使用次数（不整表刷新）
+  useEffect(() => {
+    const un = listen<{ id: number; usage_count: number }[]>(
+      "quicklaunch://usage",
+      (e) => {
+        const map = new Map(e.payload.map((u) => [u.id, u.usage_count]));
+        setItems((prev) =>
+          prev.map((it) =>
+            map.has(it.id) ? { ...it, usage_count: map.get(it.id)! } : it,
+          ),
+        );
+        setFoldersWithItems((prev) =>
+          prev.map((f) => ({
+            ...f,
+            items: f.items.map((it) =>
+              map.has(it.id)
+                ? { ...it, usage_count: map.get(it.id)! }
+                : it,
+            ),
+          })),
+        );
+      },
+    );
+    return () => {
+      un.then((fn) => fn());
+    };
+  }, []);
 
   // 系统应用库：进入页面与固定项变化后重新扫描（后台线程，带 fixed 标记）
   const [sysApps, setSysApps] = useState<ScannedApp[] | null>(null);
@@ -833,6 +867,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
               { id: "manual", label: "手动" },
               { id: "name", label: "名称" },
               { id: "created_at", label: "添加时间" },
+              { id: "usage", label: "频率" },
             ]}
             value={cfg.sortBy}
             onChange={(id) => updateConfig({ sortBy: id as QuicklaunchConfig["sortBy"] })}

@@ -22,6 +22,19 @@ pub struct Item {
     pub folder_id: Option<i64>,
     pub sort_order: i64,
     pub created_at: String,
+    /// 使用次数（前台窗口监测累加）
+    #[serde(default)]
+    pub usage_count: i64,
+    /// 解析后的真实目标（判重/计数匹配键），小写存储
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+}
+
+/// 前台监测计数更新（推送给前端局部刷新）
+#[derive(Debug, Clone, Serialize)]
+pub struct UsageUpdate {
+    pub id: i64,
+    pub usage_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

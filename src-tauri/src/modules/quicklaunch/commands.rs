@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 use std::sync::Mutex;
 use super::{QuicklaunchState, types::*};
 
@@ -35,10 +35,10 @@ fn resolve_lnk(path: &str) -> Option<String> {
     }
 }
 
-/// 解析条目的「真实目标」（判重键）：
+/// 解析条目的「真实目标」（判重/前台计数匹配键）：
 /// - .lnk → COM 解析目标程序；其余本地路径 → canonicalize（顺带解析符号链接）
 /// - URL 不解析；任何失败回退为小写化原路径
-fn resolve_target(path: &str) -> String {
+pub(crate) fn resolve_target(path: &str) -> String {
     let lower = path.to_lowercase();
     if lower.ends_with(".lnk") {
         if let Some(t) = resolve_lnk(path) {
@@ -61,7 +61,8 @@ pub fn quicklaunch_create_item(
     folder_id: Option<i64>,
 ) -> CmdResult<Item> {
     let st = state.lock().map_err(|e| format!("锁状态失败: {e}"))?;
-    st.db.create_item(item_type, &name, &path, folder_id)
+    let target = resolve_target(&path);
+    st.db.create_item(item_type, &name, &path, folder_id, Some(&target))
 }
 
 #[tauri::command]
@@ -240,8 +241,8 @@ pub fn quicklaunch_add_from_path(
     // 内容级判重：不同快捷方式/路径指向同一目标视为重复
     // （开始菜单与公共桌面各有一份 .lnk 是常见场景）
     let new_target = resolve_target(&path);
-    for (id, p) in st.db.list_item_paths().map_err(|e| format!("查询失败: {e}"))? {
-        if resolve_target(&p) == new_target {
+    for (id, key) in st.db.list_dedup_keys().map_err(|e| format!("查询失败: {e}"))? {
+        if key == new_target {
             st.db.touch_item(id).map_err(|e| format!("更新失败: {e}"))?;
             return st.db.get_item(id).map_err(|e| format!("获取项目失败: {e}"));
         }
@@ -265,7 +266,7 @@ pub fn quicklaunch_add_from_path(
         .unwrap_or_else(|| path.clone());
     
     // 图标由前端按需加载，不在此处获取
-    st.db.create_item(item_type, &name, &path, None)
+    st.db.create_item(item_type, &name, &path, None, Some(&new_target))
 }
 
 #[tauri::command]
@@ -338,11 +339,11 @@ fn collect_apps(
     }
 }
 
-/// 扫描开始菜单中的快捷方式，供「系统应用」Tab 与添加选择器使用。
-/// 传入已固定条目的路径列表时，返回结果会标记与固定项同目标的应用（fixed=true）
+/// 扫描开始菜单中的快捷方式，供「全部应用」Tab 与添加选择器使用。
+/// 与已固定条目目标相同的项标记 fixed=true（比对库内 target 列）
 #[tauri::command]
 pub async fn quicklaunch_scan_apps(
-    fixed_paths: Option<Vec<String>>,
+    app: AppHandle,
 ) -> CmdResult<Vec<ScannedApp>> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut out: Vec<ScannedApp> = Vec::new();
@@ -355,14 +356,21 @@ pub async fn quicklaunch_scan_apps(
             roots.push(std::path::PathBuf::from(d).join(r"Microsoft\Windows\Start Menu\Programs"));
         }
         for r in &roots {
-            collect_apps(r, 0, &mut out, &mut seen);
+            collect_apps(&r, 0, &mut out, &mut seen);
         }
-        // 已固定条目的目标集合：扫描项命中即标记 fixed
-        let fixed_targets: std::collections::HashSet<String> = fixed_paths
-            .unwrap_or_default()
-            .iter()
-            .map(|p| resolve_target(p))
-            .collect();
+        // 固定条目的目标集合：扫描项命中即标记 fixed
+        let fixed_targets: std::collections::HashSet<String> =
+            match app.try_state::<Mutex<QuicklaunchState>>() {
+                Some(state) => state
+                    .lock()
+                    .unwrap()
+                    .db
+                    .list_targets()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect(),
+                None => Default::default(),
+            };
         for a in out.iter_mut() {
             a.fixed = !fixed_targets.is_empty() && fixed_targets.contains(&resolve_target(&a.path));
         }

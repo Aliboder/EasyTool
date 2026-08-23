@@ -84,6 +84,7 @@ export function QuicklaunchSettings({ cfg, onUpdate }: QuicklaunchSettingsProps)
                 <SelectItem value="manual">手动排序</SelectItem>
                 <SelectItem value="name">按名称</SelectItem>
                 <SelectItem value="created_at">按添加时间</SelectItem>
+                <SelectItem value="usage">按使用频率</SelectItem>
               </SelectContent>
             </Select>
           </SettingRow>
