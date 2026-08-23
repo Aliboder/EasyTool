@@ -182,31 +182,44 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   };
 
   const doPaste = async (id: number) => {
-    if (!popup) {
-      // 主窗口内嵌模式：粘贴回唤起前窗口并隐藏主窗口（统一呼出模式下保持跟手粘贴）
+    try {
       await invoke("paste_item", { id });
-      hideWindow();
-      return;
+    } catch (e) {
+      toast(String(e));
     }
-    await invoke("paste_item", { id });
     hideWindow();
   };
 
   const togglePin = async (id: number, pinned: boolean) => {
-    await invoke("pin_item", { id, pinned });
-    setMenu(null);
-    await load();
+    try {
+      await invoke("pin_item", { id, pinned });
+      await load();
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setMenu(null);
+    }
   };
 
   const del = async (id: number) => {
-    await invoke("delete_item", { id });
-    setMenu(null);
-    await load();
+    try {
+      await invoke("delete_item", { id });
+      await load();
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setMenu(null);
+    }
   };
 
   const copy = async (id: number) => {
-    await invoke("copy_item", { id });
-    setMenu(null);
+    try {
+      await invoke("copy_item", { id });
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setMenu(null);
+    }
   };
 
   const viewImage = async (item: ItemDto) => {

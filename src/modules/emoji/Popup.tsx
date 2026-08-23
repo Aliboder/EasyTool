@@ -7,6 +7,7 @@ import { loadCatalog, type Catalog } from "./api";
 import { SmartEmoji } from "./SmartEmoji";
 import { toast } from "@/lib/toast";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { EMOJI_DEFAULTS } from "./config";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 import { gridColumns, gridVerticalTarget } from "@/lib/grid";
@@ -74,6 +75,8 @@ export function EmojiPopup() {
 
   // 统一配置（共享 Hook：focus 重读保证与主窗设置同步）
   const { cfg: emojiCfg } = useModuleConfig("emoji", EMOJI_DEFAULTS);
+// 固定位置模式：记录移动后的位置（跟随鼠标模式下不记录，见 usePopupGeometry）
+usePopupGeometry("emoji", { trackPos: emojiCfg.followMouse === false });
   const entranceRef = useWindowEntrance(true, ["animate-in", "fade-in-0"]);
 
   useEffect(() => {

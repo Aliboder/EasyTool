@@ -146,8 +146,9 @@ pub fn quicklaunch_open_item(
                 .map_err(|e| format!("打开失败: {e}"))?;
         }
         ItemType::Url => {
-            std::process::Command::new("cmd")
-                .args(["/c", "start", "", &item.path])
+            // explorer 打开 URL 走系统默认浏览器，不经 cmd 解析（含 & 的查询串不会被截断）
+            std::process::Command::new("explorer")
+                .arg(&item.path)
                 .spawn()
                 .map_err(|e| format!("打开URL失败: {e}"))?;
         }
