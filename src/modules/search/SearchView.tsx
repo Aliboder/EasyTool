@@ -241,7 +241,6 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
 
   const doSearch = useCallback(
     async (q: string, filterQuery: string, opts: SearchOptions) => {
-      if (filter === APPS_TAB) return; // 应用 Tab 不做文件搜索
       setLoading(true);
       setError(null);
       const items = await fetchPage(q, filterQuery, opts, 0, true);
@@ -383,8 +382,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (showSettings) return;
-    // 「应用」Tab：键盘导航由 AppsGrid 内部处理（↑↓ 步进 / Enter 启动）
-    if (filter === APPS_TAB) {
+    // 应用浏览态（无关键词）：键盘导航由 AppsGrid 内部处理（↑↓ 步进 / Enter 启动）
+    if (browsingApps) {
       appsKeyHandler.current?.(e);
       return;
     }
@@ -526,29 +525,28 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     );
   };
 
-  // 「应用」Tab：已安装应用网格/列表（点击直接启动）
-  const appsBody =
-    filter === APPS_TAB ? (
-      <AppsGrid
-        apps={apps}
-        query={query}
-        gridSize={cfg.gridSize}
-        viewMode={cfg.viewMode}
-        sortBy={cfg.appSortBy}
-        sortDesc={cfg.appSortDesc}
-        icons={icons}
-        loadIcon={loadIcon}
-        onOpen={openApp}
-        registerKeyHandler={(fn) => {
-          appsKeyHandler.current = fn;
-        }}
-      />
-    ) : null;
+  // 「应用」Tab 空态首页：浏览全部已安装应用；一旦有关键词，结果呈现与「全部」Tab 一致
+  const browsingApps = filter === APPS_TAB && !query.trim();
+  const appsBody = browsingApps ? (
+    <AppsGrid
+      apps={apps}
+      query={query}
+      gridSize={cfg.gridSize}
+      viewMode={cfg.viewMode}
+      sortBy={cfg.appSortBy}
+      sortDesc={cfg.appSortDesc}
+      icons={icons}
+      loadIcon={loadIcon}
+      onOpen={openApp}
+      registerKeyHandler={(fn) => {
+        appsKeyHandler.current = fn;
+      }}
+    />
+  ) : null;
 
-  const body =
-    filter === APPS_TAB ? (
-      appsBody
-    ) : error ? (
+  const body = browsingApps ? (
+    appsBody
+  ) : error ? (
       <div className="flex h-full items-center justify-center px-6 text-center text-xs text-muted-foreground">
         {error}
       </div>
@@ -623,7 +621,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         search={{
           value: query,
           onChange: onQueryChange,
-          placeholder: "输入关键词搜索文件…",
+          placeholder:
+            browsingApps ? "浏览已安装应用，输入关键词同时搜索文件…" : "输入关键词搜索文件…",
           autoFocus: true,
           inputRef: inputRef,
           onKeyDown: onKeyDown,
@@ -668,7 +667,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         activeTab={filter}
         onTabChange={setFilter}
         tabsTrailing={
-          filter === APPS_TAB ? (
+          browsingApps ? (
             <HeaderSort
               fields={[
                 { id: "name", label: "名称" },
@@ -747,7 +746,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         }
        />
 
-      {notReady && (
+      {notReady && !browsingApps && (
         <div className="border-b bg-secondary/40 p-3">
           <div className="flex flex-col gap-2 text-sm">
             <div>未检测到运行中的 Everything（文件搜索的底层引擎，免费）</div>
@@ -782,8 +781,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       )}
 
       <div ref={scrollRef} onScroll={onScroll} className="themed-scroll flex-1 overflow-y-auto">
-        {/* 搜索时匹配的应用置顶显示（点击直接启动） */}
-        {filter !== APPS_TAB && query.trim() && apps !== null && (
+        {/* 搜索时匹配的应用置顶显示（点击直接启动）——所有 Tab 一致 */}
+        {query.trim() && apps !== null && (
           <AppsSection
             apps={apps.filter((a) =>
               a.name.toLowerCase().includes(query.trim().toLowerCase()),
