@@ -15,19 +15,27 @@ src/modules/<id>/                      # React 前端组件
 - 模块在设置页可独立**启用/禁用**，配置项随模块独立保存
 - 侧边栏/底部导航栏与模块页由 manifest 驱动，新增模块后**壳 UI 自动出现该模块**，无需改导航栏
 - 模块可拥有独立窗口（目前仅剪贴板弹窗），也可仅作为主窗口内的一个页面
-- **复用共享前端工具**（不要重复造轮子）：
-  - `src/hooks/useModuleConfig.ts` 的 `useModuleConfig`（**模块配置统一读写，见「3. 配置管理标准」——新模块设置功能的地基，必用**）
-- `src/hooks/useFileIcons.ts` 的 `useFileIcons`（文件图标/缩略图按路径缓存 + 并发去重，返回 `{ icons, thumbs, loadIcon(path), loadThumb(path) }`）
-- `src/hooks/usePopupGeometry.ts` 的 `usePopupGeometry`（弹窗位置/尺寸记忆：移动/缩放停止 400ms 后写回模块配置 `fixed_pos` / `popup_size` 键）
-- `src/lib/popup-entry.tsx` 的 `mountPopup(<XxxPage />)`（独立弹窗窗口统一挂载入口：主题跟随 + createRoot 样板全内置，见 Step 5）
-  - `src/lib/theme.ts` 的 `applyTheme`（弹窗等独立窗口跟随主题）
-  - `src/lib/use-horizontal-wheel.ts` 的 `useHorizontalWheel`（滚轮→横向滚动，如历史列表）
-  - `src/lib/use-window-entrance.ts` 的 `useWindowEntrance`（窗口呼出入场动画，失焦置透明 + 聚焦重放，避免闪烁）
-  - `src/components/hotkey-recorder.tsx` 的 `HotkeyRecorder`（热键录制式设置）
-  - `src/components/LazyImage.tsx` 的 `LazyImage`（IntersectionObserver 懒加载图片）
-  - `src/components/ui/context-menu(-item/-divider).tsx`（自研右键菜单三件套，参考 quicklaunch/emoji 用法：容器级 `preventDefault` + 条目级 handler）
+- **复用共享前端工具**（不要重复造轮子，按使用频率排序）：
+  - `useModuleConfig`（`src/hooks/useModuleConfig.ts`）——**模块配置统一读写，新模块设置功能的地基，必用**（见「3. 配置管理标准」）
+  - `useFileIcons`（`src/hooks/useFileIcons.ts`）——文件图标/缩略图按路径缓存 + 并发去重，返回 `{ icons, thumbs, loadIcon(path), loadThumb(path) }`
+  - `usePopupGeometry`（`src/hooks/usePopupGeometry.ts`）——弹窗位置/尺寸记忆：移动/缩放停止 400ms 后写回模块配置 `fixed_pos` / `popup_size` 键
+  - `mountPopup(<XxxPage />)`（`src/lib/popup-entry.tsx`）——独立弹窗窗口统一挂载入口：主题跟随 + createRoot 样板全内置（见 Step 5）
+  - 网格公式库（`src/lib/grid.ts`）——`gridIconSize` / `gridFontScale` / `gridColumns` / `gridVerticalTarget`（见「5. 网格实现标准」）
+  - `toast()`（`src/lib/toast.ts`）——操作反馈提示（规范见第 4 节「操作反馈」条目）
+  - 其他场景件：`applyTheme`（主题跟随）/ `useHorizontalWheel`（滚轮→横向滚动）/ `useWindowEntrance`（呼出入场动画，失焦置透明+聚焦重放防闪烁）/ `HotkeyRecorder`（热键录制）/ `LazyImage`（懒加载图片）/ 右键菜单三件套 `ui/context-menu(-item/-divider).tsx`
 
 ## 2. 新增模块完整步骤（以模块 `foo` 为例）
+
+**改动文件总览**（先看清工作量边界再动手）：
+
+| 文件 | 必需性 | 作用 |
+|---|---|---|
+| `src-tauri/modules/foo/manifest.json` | ✅ 必需 | 元数据 + 默认配置（Step 1） |
+| `src-tauri/src/modules/foo/mod.rs` + `commands.rs` | ✅ 按需（纯前端模块可无后端） | 业务命令层（Step 2） |
+| `src-tauri/src/modules/mod.rs` / `lib.rs` | ✅ 有后端时 | 声明 + setup + 注册命令（Step 3） |
+| `src/modules/foo/Page.tsx` + `config.ts` + `Settings.tsx` | ✅ 必需 | 功能页 + 配置三件套（Step 4 + 第 3 节） |
+| `src/App.tsx` | ✅ 必需 | 页面路由 switch + 设置区挂载（Step 4） |
+| `foo_window.html` + `vite.config.ts` + `src/foo_window.tsx` + Rust 建窗 + capabilities | ⭕ 可选 | 独立弹窗五件套（Step 5） |
 
 ### Step 1：创建 manifest
 
@@ -46,7 +54,7 @@ src/modules/<id>/                      # React 前端组件
 字段说明：
 - `id`：唯一标识，作为 config 中 `modules.<id>` 的键、Rust 模块名、前端模块 id
 - `name`：设置页/侧边栏显示名
-- `icon`：`clipboard`（剪贴板图标）/ `gauge`（仪表图标）/ `smile`（表情图标）/ `search`（搜索图标）；新增图标需同步改 `src/App.tsx` 与 `src/components/layout/Sidebar.tsx` 的图标映射
+- `icon`：`clipboard` / `gauge`（仪表）/ `smile`（表情）/ `search`（搜索）/ `layout`（网格，quicklaunch 在用）；新增图标需同步改 `src/App.tsx` 与 `src/components/layout/Sidebar.tsx` 的图标映射
 - `enabled`：默认是否启用
 - `default_config`：模块配置项的默认值（任意 JSON，启动时并入 config）
 
@@ -59,7 +67,6 @@ src/modules/<id>/                      # React 前端组件
 ```rust
 pub mod commands;
 
-use tauri::{AppHandle, Manager, State};
 use std::sync::Mutex;
 
 pub struct FooState { /* 模块共享状态 */ }
@@ -70,19 +77,9 @@ pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
     log::info!("foo module ready");
     Ok(())
 }
-
-/// 读模块配置对象（统一入口，勿直接锁 config）
-pub fn module_config(app: &AppHandle) -> serde_json::Value {
-    app.state::<crate::config::ConfigState>()
-        .0
-        .lock()
-        .unwrap()
-        .modules
-        .get("foo")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}))
-}
 ```
+
+> ⚠️ **不要**在 mod.rs 里写模块级 `module_config()` 函数——读配置直接调 `crate::config::module_cfg(&app, "foo")`，写配置用 `crate::config::update_module`（见第 4 节）。历史上每个模块各抄一份导致五份重复，已全部清理。
 
 命令层 `src-tauri/src/modules/foo/commands.rs`（前端 invoke 的入口）：
 
@@ -90,15 +87,15 @@ pub fn module_config(app: &AppHandle) -> serde_json::Value {
 #[tauri::command]
 pub fn do_something(state: State<'_, Mutex<FooState>>) -> String { /* ... */ }
 
-// ⚠️ 纯配置保存【不要】再写 save_xxx_settings 命令——
-// 统一走壳层现成的 set_module_config(module_id, patch)（已注册，直接可用）。
-// 只有带副作用/复合状态的设置才值得写专用命令（如 clipboard 的 set_hotkey
+// ⚠️ 纯「写 JSON 并落盘」的配置保存【不要】写任何命令——
+// 前端 useModuleConfig 自动走壳层现成的 set_module_config(module_id, patch)。
+// 只有带副作用的设置才值得写专用命令（如 clipboard 的 set_hotkey
 // 做热键验证、quota 的 save_settings 保存后重评告警）。
 ```
 
 约定：
 - 命令命名前缀用模块语义（如 `set_max_items`、`get_stats`），避免全局泛名；跨模块同名必须带模块前缀（`#[tauri::command]` 按函数名生成宏符号，rename 解决不了冲突）
-- 模块配置读取统一走 `module_config`；**写入统一走前端 `set_module_config`**（Rust 内部写配置仍用 `save_config`）
+- Rust 侧配置读写只用 `config::module_cfg` / `config::update_module`；前端纯配置写入自动走 `set_module_config`
 - 密钥类数据存 Windows 凭据库（keyring），**不落盘明文**（见坑 7）
 
 ### Step 3：在 lib.rs 注册
@@ -119,7 +116,6 @@ if foo_enabled(app.handle()) {
 tauri::generate_handler![
     // ... 现有命令 ...
     modules::foo::commands::do_something,
-    modules::foo::commands::save_settings,
 ]
 ```
 
@@ -139,10 +135,12 @@ export function FooPage() {
 ```
 
 前端约定与可复用件：
+- **模块配置**：按第 3 节三件套写法接入 `useModuleConfig`，Settings 组件走受控契约（`{cfg, onUpdate}`），不写任何保存 invoke
 - **列表/网格 + 拖拽排序**：用已装的 `@dnd-kit`（参考 quota 面板与剪贴板固定板块）。⚠️ 拖拽对象为**小尺寸条目**时安全；大卡片注意「坑 9」
+- **网格布局**：遵守第 5 节网格标准（CSS Grid + grid.ts 公式）
 - **热键设置**：用共享 `HotkeyRecorder`（录制式），格式为 `Ctrl/Shift/Alt/Super + 键名`
 - **横向滚动列表**：用共享 `useHorizontalWheel`（返回 `{ ref, nodeRef }`，nodeRef 用于读取滚动位置）
-- **独立窗口跟随主题**：入口调用 `applyTheme(theme)`（参考 `clipboard_popup.tsx`）
+- **操作反馈**：用户触发的增删改失败必须 toast（`import { toast } from "@/lib/toast"`）
 
 接入 `src/App.tsx`：
 
@@ -209,9 +207,9 @@ switch (activeModule.id) {
 
 ### Step 7：测试
 
-后端纯逻辑加 `#[cfg(test)]` 单元测试（参考 clipboard 的 24 个、quota 的 10 个，当前共 36），`cargo test` 全绿。前端无测试框架，靠人工验收。
+后端纯逻辑加 `#[cfg(test)]` 单元测试（当前全项目 50 个，以 `cargo test` 输出为准），`cargo test` 全绿。前端无测试框架，靠人工验收（完成后给用户手动验收清单）。
 
-## 3. 配置管理标准（v0.4.6 起统一，新模块必须遵守）
+## 3. 配置管理标准（新模块必须遵守）
 
 模块设置的前后端机制已全项目统一为一份，**新模块直接踩在地基上，不要自己再造读写链路**：
 
@@ -251,16 +249,14 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 
 ### 3.3 控件提交时机
 
-- **Slider 一律 `onValueCommit` 落盘**；拖动中的流畅显示用本地草稿值：
+- **Slider 一律 `onValueChange` 直连 `onUpdate`**——Hook 内置 400ms 防抖合并写盘，拖动流畅且不会丢设置：
 
 ```tsx
-const [draft, setDraft] = useState(cfg.gridSize);
-useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
-<Slider value={[draft]} onValueChange={([v]) => setDraft(v)}
-        onValueCommit={([v]) => onUpdate({ gridSize: v })} />
+<Slider value={[cfg.gridSize]} onValueChange={([v]) => onUpdate({ gridSize: v })} />
 ```
 
-- Switch / 按钮组 / Select：即时生效
+- Switch / 按钮组 / Select：即时生效，同样直连
+- 唯一例外：**保存需要二次确认流程**时才用 `onValueCommit`（如 clipboard「历史上限」缩小要弹确认框）
 
 ### 3.4 例外规则（何时允许专用命令）
 
@@ -281,7 +277,7 @@ useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
 - **时间序列数据**（余额历史/消费历史）：quota 按账户分文件 `balance_history_<account_id>.json`（`{"records":[{time,balance}]}`，ISO 时间），用 `history::daily_series_all` 聚合完整每日序列
 - **条目顺序持久化**：数据库加排序列（如剪贴板 `items.pin_order`，NULL=未排过序排最后），查询 `ORDER BY col IS NULL, col ASC`，新增 `set_xxx_order(ids)` 命令保存
 
-## 5. 网格实现标准（v0.4.6 起统一）
+## 5. 网格实现标准
 
 涉及格子网格的模块（quicklaunch/search/emoji/clipboard）一律遵守：
 
@@ -293,6 +289,8 @@ useEffect(() => setDraft(cfg.gridSize), [cfg.gridSize]);
 6. 剪贴板的横向胶卷条（`grid-flow-col grid-rows-1`）是刻意的横向流设计，不属于本规范约束范围
 
 ## 6. 关键坑（新增模块时必须遵守）
+
+> **最易翻车五条**：坑 1（PowerShell 写文件变 GBK 乱码）、坑 2（Mutex 重入死锁）、坑 4（透明窗口崩溃）、坑 7（keyring 缺 feature 直接 panic）、坑 20（invoke 参数 snake_case **静默失败无报错**）。其余为场景性陷阱，用到对应功能时再查。
 
 1. **不要用 PowerShell 的 `Get-Content`/`Set-Content` 改写源码**（会把 UTF-8 写成 GBK）。改文件一律用编辑器工具
 2. **std Mutex 不可重入**：持 `ConfigState` 或任何 Mutex 锁期间，**绝不调用会再次取锁的函数**（如 `module_config`、`fetch_once` 这类内部取锁的）。先收进块作用域释放锁，再把网络/耗时操作放 `spawn_blocking`
