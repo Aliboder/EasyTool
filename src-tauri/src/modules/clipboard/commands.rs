@@ -55,33 +55,41 @@ fn first_file_is_image(item: &Item) -> bool {
 }
 
 /// 历史列表（可搜索、按类型筛选、分页）
+/// 磁盘探测较重，放后台线程避免阻塞主线程
 #[tauri::command]
-pub fn get_history(
-    state: State<'_, AppState>,
+pub async fn get_history(
+    app: AppHandle,
     filter: Option<String>,
     kind: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
 ) -> CmdResult<Vec<ItemDto>> {
-    let db = state.db.lock().unwrap();
-    let mut items = db.list_items(
-        filter.as_deref().unwrap_or(""),
-        kind.as_deref(),
-        limit.unwrap_or(100),
-        offset.unwrap_or(0),
-    )?;
-    // 实时检测：图片原图被手动删除后不再显示（恢复文件后自动重新出现）
-    items.retain(|it| match it.kind {
-        ItemKind::Image => it
-            .image_path
-            .as_deref()
-            .map(|p| std::path::Path::new(p).exists())
-            .unwrap_or(false),
-        // 图片 Tab：文件条目仅保留首个文件为图片的
-        ItemKind::Files => kind.as_deref() != Some("image") || first_file_is_image(it),
-        _ => true,
-    });
-    Ok(items.iter().map(|i| to_dto(&state, i)).collect())
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let db = state.db.lock().unwrap();
+        let mut items = db.list_items(
+            filter.as_deref().unwrap_or(""),
+            kind.as_deref(),
+            limit.unwrap_or(100),
+            offset.unwrap_or(0),
+        )?;
+        // 实时检测：图片原图被手动删除后不再显示（恢复文件后自动重新出现）
+        items.retain(|it| match it.kind {
+            ItemKind::Image => it
+                .image_path
+                .as_deref()
+                .map(|p| std::path::Path::new(p).exists())
+                .unwrap_or(false),
+            // 图片 Tab：文件条目仅保留首个文件为图片的
+            ItemKind::Files => kind.as_deref() != Some("image") || first_file_is_image(it),
+            _ => true,
+        });
+        Ok(items.iter().map(|i| to_dto(&state, i)).collect())
+    })
+    .await
+    .map_err(|e| CommandError {
+        message: format!("任务执行失败: {e}"),
+    })?
 }
 
 /// 固定 / 取消固定
@@ -137,10 +145,17 @@ pub fn clear_all_history(app: AppHandle, state: State<'_, AppState>) -> CmdResul
     Ok(n)
 }
 
-/// 粘贴条目到上一窗口（核心动作）
+/// 粘贴条目到上一窗口（核心动作；内含焦点恢复等待，放后台线程）
 #[tauri::command]
-pub fn paste_item(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
-    super::paste::paste_item(&state, id).map_err(|m| CommandError { message: m })
+pub async fn paste_item(app: AppHandle, id: i64) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        super::paste::paste_item(&state, id).map_err(|m| CommandError { message: m })
+    })
+    .await
+    .map_err(|e| CommandError {
+        message: format!("任务执行失败: {e}"),
+    })?
 }
 
 /// 复制条目到剪贴板（不粘贴，右键菜单用）
@@ -291,24 +306,31 @@ fn dir_size(dir: &std::path::Path) -> u64 {
     total
 }
 
-/// 数据统计：条目数量与磁盘占用
+/// 数据统计：条目数量与磁盘占用（目录递归较重，放后台线程）
 #[tauri::command]
-pub fn get_stats(state: State<'_, AppState>) -> CmdResult<StatsDto> {
-    let db = state.db.lock().unwrap();
-    let count = |kind: &str| -> i64 { db.count_by_kind(kind).unwrap_or(0) };
-    let total: i64 = db.count_all().unwrap_or(0);
-    let db_path = state.store.root().join("clipboard.db");
-    let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
-    let media_size =
-        dir_size(&state.store.root().join("images")) + dir_size(&state.store.root().join("thumbs"));
-    Ok(StatsDto {
-        total,
-        text: count("text"),
-        image: count("image"),
-        files: count("files"),
-        db_size,
-        media_size,
+pub async fn get_stats(app: AppHandle) -> CmdResult<StatsDto> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let db = state.db.lock().unwrap();
+        let count = |kind: &str| -> i64 { db.count_by_kind(kind).unwrap_or(0) };
+        let total: i64 = db.count_all().unwrap_or(0);
+        let db_path = state.store.root().join("clipboard.db");
+        let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+        let media_size =
+            dir_size(&state.store.root().join("images")) + dir_size(&state.store.root().join("thumbs"));
+        Ok(StatsDto {
+            total,
+            text: count("text"),
+            image: count("image"),
+            files: count("files"),
+            db_size,
+            media_size,
+        })
     })
+    .await
+    .map_err(|e| CommandError {
+        message: format!("任务执行失败: {e}"),
+    })?
 }
 
 /// 图片缩略图 base64（按 id 读取）
