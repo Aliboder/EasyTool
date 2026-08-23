@@ -47,7 +47,8 @@ fn get_selection(hwnd: HWND) -> (u32, u32) {
     }
     unsafe {
         let r = SendMessageW(hwnd, EM_GETSEL, Some(WPARAM(0)), Some(LPARAM(0)));
-        ((r.0 >> 16) as u32, (r.0 & 0xFFFF) as u32)
+        // Win32 约定：返回值 LOWORD=起点、HIWORD=终点
+        ((r.0 & 0xFFFF) as u32, (r.0 >> 16) as u32)
     }
 }
 

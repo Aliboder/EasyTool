@@ -46,7 +46,7 @@ pub fn run_migration(app: &AppHandle) {
     if !cfg.migrated.iter().any(|m| m == "clipboard") {
         let old_dir = old_pasteboard_dir();
         let old_db = old_dir.join("pasteboard.db");
-        let n = if old_db.exists() {
+        if old_db.exists() {
             match migrate_clipboard_db(
                 &old_db,
                 &data_dir.join("clipboard.db"),
@@ -56,37 +56,41 @@ pub fn run_migration(app: &AppHandle) {
             ) {
                 Ok(n) => {
                     log::info!("migration: clipboard imported {n} items");
-                    n
+                    // 成功才标记完成；失败不标记，下次启动重试（INSERT OR IGNORE 保证重试幂等）
+                    cfg.migrated.push("clipboard".into());
+                    changed = true;
                 }
-                Err(e) => {
-                    log::warn!("migration: clipboard failed: {e}");
-                    0
-                }
+                Err(e) => log::warn!("migration: clipboard failed, will retry next launch: {e}"),
             }
         } else {
-            0
-        };
-        changed = changed || n > 0;
-        cfg.migrated.push("clipboard".into());
+            // 旧库不存在：无可迁移数据，标记完成避免每次启动空跑
+            cfg.migrated.push("clipboard".into());
+            changed = true;
+        }
     }
 
     if !cfg.migrated.iter().any(|m| m == "balance") {
         let dst = data_dir.join("balance_history.json");
-        let mut n = 0;
+        let mut any_source = false;
+        let mut ok = false;
         for src in balance_source_paths() {
             if src.exists() {
+                any_source = true;
                 match migrate_balance_file(&src, &dst) {
                     Ok(k) => {
-                        n = k;
-                        log::info!("migration: balance history imported {n} records from {}", src.display());
+                        log::info!("migration: balance history imported {k} records from {}", src.display());
+                        ok = true;
                         break;
                     }
                     Err(e) => log::warn!("migration: balance failed: {e}"),
                 }
             }
         }
-        changed = changed || n > 0;
-        cfg.migrated.push("balance".into());
+        // 无源文件或导入成功才标记；全部失败则下次启动重试
+        if !any_source || ok {
+            cfg.migrated.push("balance".into());
+            changed = true;
+        }
     }
 
     // 分账户历史迁移：默认 deepseek 账户沿用旧单文件数据（兼容已迁移用户）

@@ -59,7 +59,13 @@ pub fn load_config(app: &AppHandle) -> AppConfig {
     let path = config_path(app);
     match fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_else(|_| {
-            let _ = fs::copy(&path, path.with_extension("broken.json"));
+            // 备份名带时间戳：多次损坏互不覆盖，原始数据永远留底
+            let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+            let backup = path.with_extension(format!("broken-{ts}.json"));
+            match fs::copy(&path, &backup) {
+                Ok(_) => log::warn!("config.json 解析失败，已备份到 {}", backup.display()),
+                Err(e) => log::error!("config.json 解析失败且备份失败: {e}"),
+            }
             AppConfig::default()
         }),
         Err(_) => AppConfig::default(),

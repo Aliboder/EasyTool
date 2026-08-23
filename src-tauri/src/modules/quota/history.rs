@@ -1,7 +1,7 @@
 //! 余额历史存储：SQLite（quota.db）持久化。统计基于相邻记录余额下降之和。
 //! 纯统计函数（today_spend/avg_daily_spent/daily_series）与存储解耦，便于测试。
 
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, Utc};
 
 use super::db::QuotaDb;
 
@@ -9,6 +9,12 @@ use super::db::QuotaDb;
 pub struct Record {
     pub time: DateTime<Utc>,
     pub balance: f64,
+}
+
+/// 记录归属的本地日历日：存储为 UTC，统计一律按本地时区日界切桶
+/// （否则 UTC+8 下本地 0-8 点的消费会被记到前一天）
+fn local_day(t: DateTime<Utc>) -> NaiveDate {
+    t.with_timezone(&Local).date_naive()
 }
 
 /// 按时间升序读取余额历史
@@ -38,7 +44,7 @@ pub fn append(
 fn spent_since(records: &[Record], from: NaiveDate) -> f64 {
     let mut spent = 0.0;
     for i in 1..records.len() {
-        let t = records[i].time.date_naive();
+        let t = local_day(records[i].time);
         if t < from {
             continue;
         }
@@ -61,7 +67,7 @@ pub fn avg_daily_spent(records: &[Record], days: i64, today: NaiveDate) -> f64 {
     let mut spent = 0.0;
     let mut days_with_data = 0usize;
     for i in 1..records.len() {
-        let t = records[i].time.date_naive();
+        let t = local_day(records[i].time);
         if t < start || t >= today {
             continue;
         }
@@ -72,7 +78,7 @@ pub fn avg_daily_spent(records: &[Record], days: i64, today: NaiveDate) -> f64 {
     }
     let mut seen = None;
     for r in records {
-        let t = r.time.date_naive();
+        let t = local_day(r.time);
         if t < start || t >= today {
             continue;
         }
@@ -93,7 +99,7 @@ pub fn avg_daily_spent(records: &[Record], days: i64, today: NaiveDate) -> f64 {
 pub fn daily_series(records: &[Record], days: u32, today: NaiveDate) -> Vec<(String, f64)> {
     let mut result = vec![0.0; days as usize];
     for i in 1..records.len() {
-        let t = records[i].time.date_naive();
+        let t = local_day(records[i].time);
         let idx = (today - t).num_days();
         if idx < 0 || idx >= days as i64 {
             continue;
@@ -116,7 +122,7 @@ pub fn daily_series(records: &[Record], days: u32, today: NaiveDate) -> Vec<(Str
 pub fn daily_series_all(records: &[Record], today: NaiveDate) -> Vec<(String, f64)> {
     let mut first: Option<NaiveDate> = None;
     for r in records {
-        let t = r.time.date_naive();
+        let t = local_day(r.time);
         if t > today {
             continue;
         }

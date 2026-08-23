@@ -41,6 +41,49 @@ const INTERVALS = [
   { value: 120, label: "2 分钟" },
 ];
 
+/// 阈值数字输入：本地草稿编辑，失焦/回车才提交（避免每键一次保存+全网轮询；
+/// 空串/非法/负数一律拒绝并还原）
+function ThresholdField({
+  label,
+  hint,
+  value,
+  onCommit,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  onCommit: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const n = Number(draft);
+    if (draft.trim() === "" || !Number.isFinite(n) || n < 0) {
+      setDraft(String(value));
+      return;
+    }
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        <div className="text-xs text-muted-foreground">{hint}</div>
+      </div>
+      <Input
+        type="number"
+        step="0.01"
+        min={0}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        className="w-32"
+      />
+    </div>
+  );
+}
+
 function AccountField({
   account,
   onChange,
@@ -343,34 +386,18 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">预警阈值</div>
-              <div className="text-xs text-muted-foreground">低于此值标橙并提醒一次（所有 DeepSeek 账户共用）</div>
-            </div>
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              value={s.warn_threshold}
-              onChange={(e) => set({ warn_threshold: Number(e.target.value) })}
-              className="w-32"
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">紧急阈值</div>
-              <div className="text-xs text-muted-foreground">低于此值标红并发出「余额告急」提醒（默认预警阈值的一半）</div>
-            </div>
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              value={s.critical_threshold}
-              onChange={(e) => set({ critical_threshold: Number(e.target.value) })}
-              className="w-32"
-            />
-          </div>
+          <ThresholdField
+            label="预警阈值"
+            hint="低于此值标橙并提醒一次（所有 DeepSeek 账户共用）"
+            value={s.warn_threshold}
+            onCommit={(v) => set({ warn_threshold: v })}
+          />
+          <ThresholdField
+            label="紧急阈值"
+            hint="低于此值标红并发出「余额告急」提醒（默认预警阈值的一半）"
+            value={s.critical_threshold}
+            onCommit={(v) => set({ critical_threshold: v })}
+          />
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-medium">余额不足通知</div>

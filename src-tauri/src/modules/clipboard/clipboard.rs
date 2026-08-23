@@ -115,25 +115,49 @@ pub fn read_files() -> Option<Vec<String>> {
                 return None;
             }
             // DROPFILES：pFiles(u32 偏移) + pt(8) + fNC(u32) + fWide(u32)
+            // 全程对照 GlobalSize 上限扫描，畸形外部数据不越界（内容来自任意进程）
+            let total = GlobalSize(h);
+            let end = base.add(total);
+            let guard = |p: *const u8| p < end;
+            if total < 20 {
+                let _ = GlobalUnlock(h);
+                return None;
+            }
             let pfiles = *(base as *const u32) as usize;
             let fwide = *(base.add(16) as *const u32) != 0;
-            let list_ptr = base.add(pfiles);
+            if pfiles >= total {
+                let _ = GlobalUnlock(h);
+                return None;
+            }
             let mut out = Vec::new();
-            let mut cur = list_ptr;
+            let mut cur = base.add(pfiles);
             loop {
+                if !guard(cur) {
+                    break; // 已到缓冲区末尾且无终止符：截断的畸形数据
+                }
                 let start = cur;
                 let mut len = 0usize;
+                let mut hit_end = false;
                 if fwide {
-                    while *((start as *const u16).add(len)) != 0 {
+                    let s16 = start as *const u16;
+                    while start.add(len * 2) < end {
+                        if *s16.add(len) == 0 {
+                            break;
+                        }
                         len += 1;
                     }
+                    hit_end = start.add(len * 2) >= end;
                 } else {
-                    while *start.add(len) != 0 {
+                    while start.add(len) < end {
+                        if *start.add(len) == 0 {
+                            break;
+                        }
                         len += 1;
                     }
+                    hit_end = start.add(len) >= end;
                 }
-                if len == 0 {
-                    break;
+                if len == 0 || hit_end {
+                    break; // 空串，或到缓冲区末尾仍无终止符（截断的畸形数据）
                 }
                 let s = if fwide {
                     String::from_utf16_lossy(std::slice::from_raw_parts(start as *const u16, len))
