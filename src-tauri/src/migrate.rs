@@ -32,7 +32,7 @@ fn balance_source_paths() -> Vec<PathBuf> {
 /// 启动时调用：自动执行未完成的迁移并写回标记
 pub fn run_migration(app: &AppHandle) {
     let state = app.state::<ConfigState>();
-    let mut cfg = state.0.lock().unwrap();
+    let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let data_dir = match app.path().app_data_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -321,8 +321,11 @@ fn migrate_balance_file(src: &Path, dst: &Path) -> Result<i64, String> {
         let _ = fs::create_dir_all(dir);
     }
     let payload = serde_json::json!({ "records": out });
-    fs::write(dst, serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?)
+    // 原子写（同 save_config）：防写盘中途崩溃损坏历史文件
+    let tmp = dst.with_extension("json.tmp");
+    fs::write(&tmp, serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?)
         .map_err(|e| format!("写入余额历史失败: {e}"))?;
+    fs::rename(&tmp, dst).map_err(|e| format!("写入余额历史失败: {e}"))?;
     Ok(added as i64)
 }
 

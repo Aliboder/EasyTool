@@ -127,20 +127,29 @@ pub async fn search(
 
 /// 获取 Everything 状态（运行探测：SDK 能查询成功即视为就绪）
 #[tauri::command]
-pub fn search_get_status() -> SearchStatus {
-    let running = {
-        let guard = sdk::sdk_lock();
-        match guard.as_ref() {
-            Some(sdk) => match sdk.search("", 0, 1, SORT_NAME_ASC, false, false, false, false) {                Ok(_) => true,
-                Err(e) => {
-                    log::warn!("everything probe failed: {e}");
-                    false
-                }
-            },
-            None => false,
-        }
-    };
-    SearchStatus { running }
+pub async fn search_get_status(app: AppHandle) -> SearchStatus {
+    // 探测是同步阻塞查询且要抢全局 sdk_lock——放后台线程执行，
+    // 避免大查询占锁时主线程陪等冻结 UI；顺带节流重试加载 SDK
+    tauri::async_runtime::spawn_blocking(move || {
+        super::ensure_sdk_loaded(&app);
+        let running = {
+            let guard = sdk::sdk_lock();
+            match guard.as_ref() {
+                Some(sdk) => match sdk.search("", 0, 1, SORT_NAME_ASC, false, false, false, false)
+                {
+                    Ok(_) => true,
+                    Err(e) => {
+                        log::warn!("everything probe failed: {e}");
+                        false
+                    }
+                },
+                None => false,
+            }
+        };
+        SearchStatus { running }
+    })
+    .await
+    .unwrap_or(SearchStatus { running: false })
 }
 
 /// 自动启动 Everything（安装时生效）
@@ -214,7 +223,7 @@ pub fn search_set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     let unified = {
         let state = app.state::<crate::config::ConfigState>();
-        let cfg = state.0.lock().unwrap();
+        let cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         cfg.unified_hotkey
     };
     if unified {

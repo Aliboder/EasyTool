@@ -92,7 +92,7 @@ unsafe extern "system" fn on_foreground(
         return;
     };
     let res = {
-        let st = state.lock().unwrap();
+        let st = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         st.db.increment(&target)
     };
     match res {

@@ -183,6 +183,28 @@ fn load_sdk(app: &tauri::AppHandle) {
     }
 }
 
+/// 上次尝试加载 SDK 的时间戳（毫秒），用于节流重试
+static LAST_SDK_TRY_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// SDK 未就绪时节流重试加载（最小间隔 30s）：启动时被杀毒拦截、资源未就绪等
+/// 瞬时故障可自愈，无需重启应用。已加载直接返回；调用方须在后台线程（sdk_lock 可能短暂阻塞）
+pub(crate) fn ensure_sdk_loaded(app: &tauri::AppHandle) {
+    if sdk::sdk_lock().is_some() {
+        return;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let last = LAST_SDK_TRY_MS.load(std::sync::atomic::Ordering::Relaxed);
+    if now.saturating_sub(last) < 30_000 {
+        return;
+    }
+    LAST_SDK_TRY_MS.store(now, std::sync::atomic::Ordering::Relaxed);
+    log::info!("retrying Everything SDK load");
+    load_sdk(app);
+}
+
 /// 定位 Everything64.dll（资源目录或开发目录 fallback）
 fn sdk_dll_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     if let Ok(p) = app

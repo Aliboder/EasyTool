@@ -239,7 +239,7 @@ impl EverythingSdk {
 
 /// 获取全局 SDK 实例的互斥锁（每次查询短暂持有；失败为 None 可重试）
 pub fn sdk_lock() -> MutexGuard<'static, Option<EverythingSdk>> {
-    SDK.get_or_init(|| Mutex::new(None)).lock().unwrap()
+    SDK.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 use std::sync::MutexGuard;

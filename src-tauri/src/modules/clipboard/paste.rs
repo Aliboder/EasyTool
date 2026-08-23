@@ -121,6 +121,9 @@ pub fn write_item_clipboard(state: &AppState, item: &Item) -> Result<(), String>
     }
     // 标记自身写入（监听侧跳过）
     state.mark_self_write();
+    // 登记本次写入的内容指纹：监听侧只跳过同内容的"回声"，
+    // 窗口内用户复制的新内容（指纹不同）照常入历史
+    state.set_pending_ignore(super::monitor::clipboard_signature().unwrap_or_default());
     Ok(())
 }
 
@@ -128,7 +131,7 @@ pub fn write_item_clipboard(state: &AppState, item: &Item) -> Result<(), String>
 pub fn paste_item(state: &AppState, id: i64) -> Result<(), String> {
     // 1. 读取条目
     let item = {
-        let db = state.db.lock().unwrap();
+        let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         db.get_item(id)
             .map_err(|e| e.to_string())?
             .ok_or("item not found")?

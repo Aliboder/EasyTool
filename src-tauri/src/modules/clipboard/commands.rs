@@ -66,13 +66,17 @@ pub async fn get_history(
 ) -> CmdResult<Vec<ItemDto>> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let db = state.db.lock().unwrap();
-        let mut items = db.list_items(
-            filter.as_deref().unwrap_or(""),
-            kind.as_deref(),
-            limit.unwrap_or(100),
-            offset.unwrap_or(0),
-        )?;
+        // 锁内只查库；磁盘探测（Path::exists 可能卡在网络盘/U盘上秒级）放锁外，
+        // 避免监听线程写历史被饿、其余剪贴板命令排队
+        let mut items = {
+            let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            db.list_items(
+                filter.as_deref().unwrap_or(""),
+                kind.as_deref(),
+                limit.unwrap_or(100),
+                offset.unwrap_or(0),
+            )?
+        };
         // 实时检测：图片原图被手动删除后不再显示（恢复文件后自动重新出现）
         items.retain(|it| match it.kind {
             ItemKind::Image => it
@@ -95,14 +99,14 @@ pub async fn get_history(
 /// 固定 / 取消固定
 #[tauri::command]
 pub fn pin_item(state: State<'_, AppState>, id: i64, pinned: bool) -> CmdResult<bool> {
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     Ok(db.set_pinned(id, pinned)?)
 }
 
 /// 保存固定条目拖拽排序（按传入 id 顺序）
 #[tauri::command]
 pub fn set_pin_order(state: State<'_, AppState>, ids: Vec<i64>) -> CmdResult<()> {
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     db.set_pin_orders(&ids)?;
     Ok(())
 }
@@ -110,7 +114,7 @@ pub fn set_pin_order(state: State<'_, AppState>, ids: Vec<i64>) -> CmdResult<()>
 /// 删除单条（含磁盘文件）
 #[tauri::command]
 pub fn delete_item(state: State<'_, AppState>, id: i64) -> CmdResult<bool> {
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(item) = db.delete_item(id)? {
         state.store.remove_files(&item);
         Ok(true)
@@ -122,7 +126,7 @@ pub fn delete_item(state: State<'_, AppState>, id: i64) -> CmdResult<bool> {
 /// 清空全部非固定条目
 #[tauri::command]
 pub fn clear_history(app: AppHandle, state: State<'_, AppState>) -> CmdResult<u32> {
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let removed = db.clear_unpinned()?;
     let n = removed.len() as u32;
     for item in removed {
@@ -135,7 +139,7 @@ pub fn clear_history(app: AppHandle, state: State<'_, AppState>) -> CmdResult<u3
 /// 清空全部历史（含固定条目）
 #[tauri::command]
 pub fn clear_all_history(app: AppHandle, state: State<'_, AppState>) -> CmdResult<u32> {
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let removed = db.clear_all()?;
     let n = removed.len() as u32;
     for item in removed {
@@ -162,7 +166,7 @@ pub async fn paste_item(app: AppHandle, id: i64) -> CmdResult<()> {
 #[tauri::command]
 pub fn copy_item(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
     let item = {
-        let db = state.db.lock().unwrap();
+        let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         db.get_item(id)
             .map_err(|e| CommandError {
                 message: e.to_string(),
@@ -231,7 +235,7 @@ pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
     // 统一呼出模式下模块热键被禁用
     let unified = {
         let state = app.state::<crate::config::ConfigState>();
-        let cfg = state.0.lock().unwrap();
+        let cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         cfg.unified_hotkey
     };
     if unified {
@@ -247,7 +251,7 @@ pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
         })?;
     // 写入 config
     let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap();
+    let mut cfg = cfg_state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(v) = cfg.modules.get_mut("clipboard") {
         v["hotkey"] = serde_json::json!(hotkey);
     }
@@ -311,7 +315,7 @@ fn dir_size(dir: &std::path::Path) -> u64 {
 pub async fn get_stats(app: AppHandle) -> CmdResult<StatsDto> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let db = state.db.lock().unwrap();
+        let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let count = |kind: &str| -> i64 { db.count_by_kind(kind).unwrap_or(0) };
         let total: i64 = db.count_all().unwrap_or(0);
         let db_path = state.store.root().join("clipboard.db");
@@ -336,37 +340,38 @@ pub async fn get_stats(app: AppHandle) -> CmdResult<StatsDto> {
 /// 图片缩略图 base64（按 id 读取）
 #[tauri::command]
 pub fn get_thumb(state: State<'_, AppState>, id: i64) -> CmdResult<Option<String>> {
-    let db = state.db.lock().unwrap();
-    let Some(item) = db.get_item(id)? else {
-        return Ok(None);
+    // 锁内只取路径；文件读取放锁外（大图/慢盘不阻塞监听线程与其他命令）
+    let path = {
+        let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(item) = db.get_item(id)? else {
+            return Ok(None);
+        };
+        item.thumb_path
     };
-    let Some(path) = item.thumb_path else {
-        return Ok(None);
-    };
-    Ok(std::fs::read(&path)
-        .ok()
+    Ok(path
+        .and_then(|p| std::fs::read(&p).ok())
         .map(|b| super::monitor::base64_encode(&b)))
 }
 
 /// 图片原图 base64（大图预览用，按 id 读取）
 #[tauri::command]
 pub fn get_image(state: State<'_, AppState>, id: i64) -> CmdResult<Option<String>> {
-    let db = state.db.lock().unwrap();
-    let Some(item) = db.get_item(id)? else {
-        return Ok(None);
+    let path = {
+        let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(item) = db.get_item(id)? else {
+            return Ok(None);
+        };
+        item.image_path
     };
-    let Some(path) = item.image_path else {
-        return Ok(None);
-    };
-    Ok(std::fs::read(&path)
-        .ok()
+    Ok(path
+        .and_then(|p| std::fs::read(&p).ok())
         .map(|b| super::monitor::base64_encode(&b)))
 }
 
 /// 图片原图磁盘路径（「查看大图」交给系统默认看图程序打开）
 #[tauri::command]
 pub fn get_image_path(state: State<'_, AppState>, id: i64) -> CmdResult<Option<String>> {
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let Some(item) = db.get_item(id)? else {
         return Ok(None);
     };

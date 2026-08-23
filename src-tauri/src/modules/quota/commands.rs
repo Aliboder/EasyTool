@@ -46,7 +46,7 @@ pub struct StatusPayload {
 /// 当前监控状态（前端轮询刷新）
 #[tauri::command]
 pub fn get_status(state: State<'_, Mutex<QuotaState>>) -> StatusPayload {
-    let st = state.lock().unwrap();
+    let st = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     StatusPayload {
         accounts: st
             .accounts
@@ -126,7 +126,7 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
 
     // 立即按新阈值在后台评估一次告警状态（锁已随 update_module 返回释放）
     if let Some(st_guard) = app.try_state::<Mutex<QuotaState>>() {
-        let st = st_guard.lock().unwrap();
+        let st = st_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if st.accounts.iter().any(|a| a.balance.is_some()) {
             drop(st);
             let app2 = app.clone();
@@ -193,12 +193,50 @@ pub fn add_account(app: AppHandle, kind: String, name: String) -> Result<Account
 /// 删除账户
 #[tauri::command]
 pub fn remove_account(app: AppHandle, id: String) -> Result<(), String> {
+    // 删除前先取出账户信息，用于清理凭据槽位
+    let acc = crate::config::module_cfg(&app, "quota")
+        .get("accounts")
+        .and_then(|a| a.as_array())
+        .and_then(|arr| {
+            arr.iter()
+                .find(|a| a.get("id").and_then(|i| i.as_str()) == Some(id.as_str()))
+        })
+        .cloned();
+
     crate::config::update_module(&app, "quota", |v| {
         if let Some(accounts) = v.get_mut("accounts").and_then(|a| a.as_array_mut()) {
             accounts.retain(|a| a.get("id").and_then(|i| i.as_str()) != Some(id.as_str()));
         }
         Ok(())
     })?;
+
+    // 尽力清理 keyring 槽位与历史数据，失败不阻塞删除本身。
+    // 槽位名兼容：独立槽位 quota-{id}；key_ref 缺失时回退旧 kind 共享槽位
+    if let Some(acc) = acc {
+        let key_ref = acc.get("key_ref").and_then(|v| v.as_str()).unwrap_or("");
+        let kind = acc.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+        let mut users = vec![format!("quota-{id}")];
+        if !key_ref.is_empty() {
+            users.push(key_ref.to_string());
+        } else if kind == "deepseek" || kind == "go" {
+            users.push(if kind == "go" { "opencode-go".into() } else { "deepseek".into() });
+        }
+        for user in users {
+            if let Ok(entry) = super::keyring_entry(&user) {
+                let _ = entry.delete_credential();
+            }
+        }
+    }
+    if let Some(db_guard) = app.try_state::<Mutex<QuotaDb>>() {
+        match db_guard.lock() {
+            Ok(db) => {
+                let _ = db.delete_account_data(&id);
+            }
+            Err(p) => {
+                let _ = p.into_inner().delete_account_data(&id);
+            }
+        }
+    }
 
     let app2 = app.clone();
     tauri::async_runtime::spawn_blocking(move || super::fetch_once(&app2));
@@ -271,7 +309,7 @@ pub struct StatsData {
 pub fn get_stats_data(app: AppHandle, account_id: String) -> StatsData {
     use chrono::Local;
     let db_guard = app.state::<Mutex<QuotaDb>>();
-    let db = db_guard.lock().unwrap();
+    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let records = history::load(&db, &account_id);
     let today = Local::now().date_naive();
     let today_spend = history::today_spend(&records, today);
@@ -292,7 +330,7 @@ pub fn get_stats_data(app: AppHandle, account_id: String) -> StatsData {
 pub fn get_daily_history(app: AppHandle, account_id: String) -> Vec<DailyPoint> {
     use chrono::Local;
     let db_guard = app.state::<Mutex<QuotaDb>>();
-    let db = db_guard.lock().unwrap();
+    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let records = history::load(&db, &account_id);
     let today = Local::now().date_naive();
     history::daily_series_all(&records, today)
@@ -320,7 +358,7 @@ pub struct GoCyclePayload {
 pub fn get_go_history(app: AppHandle, account_id: String, window: String, days: i64) -> Vec<GoPoint> {
     let since_ms = chrono::Utc::now().timestamp_millis() - days * 86_400_000;
     let db_guard = app.state::<Mutex<QuotaDb>>();
-    let db = db_guard.lock().unwrap();
+    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     db.go_series(&account_id, &window, since_ms)
         .unwrap_or_default()
         .into_iter()
@@ -335,7 +373,7 @@ pub fn get_go_history(app: AppHandle, account_id: String, window: String, days: 
 #[tauri::command]
 pub fn get_go_cycles(app: AppHandle, account_id: String, window: String) -> Vec<GoCyclePayload> {
     let db_guard = app.state::<Mutex<QuotaDb>>();
-    let db = db_guard.lock().unwrap();
+    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     db.cycle_history(&account_id, &window, 20)
         .unwrap_or_default()
         .into_iter()

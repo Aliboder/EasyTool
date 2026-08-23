@@ -296,7 +296,10 @@ fn extract_fragment(cf_html: &str) -> &str {
         digits.parse().ok()
     };
     match (read_offsets("StartFragment:"), read_offsets("EndFragment:")) {
-        (Some(s), Some(e)) if s < e && e <= cf_html.len() => &cf_html[s..e],
+        // 用 get() 同时校验字节范围与 UTF-8 字符边界：外部写出的偏移可能落在
+        // 多字节字符中间（lossy 解码后错位），直接切片会 panic 且发生在持
+        // CLIP_MUTEX 的调用链里——中毒后复制/粘贴功能整体瘫痪直到重启
+        (Some(s), Some(e)) if s < e => cf_html.get(s..e).unwrap_or(cf_html),
         _ => cf_html,
     }
 }

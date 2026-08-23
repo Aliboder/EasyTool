@@ -78,7 +78,11 @@ pub fn save_config(app: &AppHandle, cfg: &AppConfig) -> Result<(), String> {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
-    fs::write(&path, json).map_err(|e| e.to_string())
+    // 原子写：先落临时文件再改名覆盖，写盘中途崩溃不会留下半截 JSON
+    // （否则下次启动解析失败 → 静默回退默认配置：热键/账户/开关全丢）
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
 /// 读模块配置对象（缺失返回空对象）
@@ -101,7 +105,7 @@ pub fn update_module(
     f: impl FnOnce(&mut serde_json::Value) -> Result<(), String>,
 ) -> Result<(), String> {
     let state = app.state::<ConfigState>();
-    let mut cfg = state.0.lock().unwrap();
+    let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let v = cfg
         .modules
         .get_mut(id)
@@ -112,7 +116,7 @@ pub fn update_module(
 
 #[tauri::command]
 pub fn get_config(state: State<ConfigState>) -> AppConfig {
-    state.0.lock().unwrap().clone()
+    state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
 }
 
 #[tauri::command]
@@ -123,7 +127,7 @@ pub fn set_module_enabled(
     enabled: bool,
 ) -> Result<(), String> {
     {
-        let mut cfg = state.0.lock().unwrap();
+        let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(v) = cfg.modules.get_mut(&id) {
             v["enabled"] = serde_json::json!(enabled);
         } else {
@@ -147,7 +151,7 @@ pub fn set_module_config(
     patch: serde_json::Value,
 ) -> Result<(), String> {
     {
-        let mut cfg = state.0.lock().unwrap();
+        let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let m = cfg.modules.entry(module_id).or_default();
         if let Some(obj) = patch.as_object() {
             for (k, v) in obj {
@@ -167,14 +171,14 @@ pub fn set_module_order(
     state: State<ConfigState>,
     ids: Vec<String>,
 ) -> Result<(), String> {
-    let mut cfg = state.0.lock().unwrap();
+    let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     cfg.module_order = ids;
     save_config(&app, &cfg)
 }
 
 #[tauri::command]
 pub fn set_theme(app: AppHandle, state: State<ConfigState>, theme: String) -> Result<(), String> {
-    let mut cfg = state.0.lock().unwrap();
+    let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     cfg.theme = theme;
     save_config(&app, &cfg)
 }
@@ -187,7 +191,7 @@ pub fn set_unified_hotkey(
     enabled: bool,
 ) -> Result<(), String> {
     {
-        let mut cfg = state.0.lock().unwrap();
+        let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         cfg.unified_hotkey = enabled;
         save_config(&app, &cfg)?;
     }
@@ -206,7 +210,7 @@ pub fn set_main_hotkey(
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     // 主窗口呼出热键仅在统一呼出模式下有效（非统一模式主窗口由托盘呼出，注册了也会被 reapply 注销）
     let unified = {
-        let cfg = state.0.lock().unwrap();
+        let cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         cfg.unified_hotkey
     };
     if !unified {
@@ -217,11 +221,14 @@ pub fn set_main_hotkey(
         .register(hotkey.as_str())
         .map_err(|e| format!("快捷键无效或已被其他程序占用：{e}"))?;
     let _ = app.global_shortcut().unregister_all();
-    let mut cfg = state.0.lock().unwrap();
+    let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     cfg.hotkeys.insert("main".into(), hotkey.clone());
-    save_config(&app, &cfg)?;
+    let saved = save_config(&app, &cfg);
     drop(cfg);
+    // 落盘失败也必须先恢复热键注册再返回错误，
+    // 否则此刻已 unregister_all 且不再 reapply —— 全部热键静默失效直到重启
     crate::reapply_hotkeys(&app);
+    saved?;
     log::info!("main hotkey changed to {hotkey}");
     Ok(())
 }
@@ -238,7 +245,7 @@ pub fn save_main_size(
     if width < 400 || height < 300 {
         return Ok(());
     }
-    let mut cfg = state.0.lock().unwrap();
+    let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     cfg.main_size = Some(serde_json::json!({ "w": width, "h": height }));
     save_config(&app, &cfg)
 }
@@ -250,7 +257,7 @@ pub fn set_main_follow_mouse(
     state: State<ConfigState>,
     enabled: bool,
 ) -> Result<(), String> {
-    let mut cfg = state.0.lock().unwrap();
+    let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     cfg.main_follow_mouse = enabled;
     save_config(&app, &cfg)
 }

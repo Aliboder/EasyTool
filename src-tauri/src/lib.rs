@@ -137,7 +137,7 @@ fn save_main_window_size(app: &tauri::AppHandle) {
             // 与 save_main_size 一致：忽略 0/极小尺寸（隐藏/最小化时可能报 0x0）
             if size.width >= 400 && size.height >= 300 {
                 let cfg = app.state::<ConfigState>();
-                let mut cfg = cfg.0.lock().unwrap();
+                let mut cfg = cfg.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 cfg.main_size = Some(serde_json::json!({ "w": size.width, "h": size.height }));
                 let _ = config::save_config(app, &cfg);
             }
@@ -176,7 +176,7 @@ fn toggle_main(app: &tauri::AppHandle) {
 pub fn apply_main_window_mode(app: &tauri::AppHandle) {
     let unified = app
         .try_state::<ConfigState>()
-        .map(|s| s.0.lock().unwrap().unified_hotkey)
+        .map(|s| s.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).unified_hotkey)
         .unwrap_or(false);
     if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = win.set_always_on_top(unified);
@@ -299,7 +299,7 @@ fn read_resolved_hotkeys() -> ResolvedHotkeys {
 
 fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
     let state = app.state::<ConfigState>();
-    let cfg = state.0.lock().unwrap();
+    let cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let clip_hotkey = cfg
         .modules
         .get("clipboard")
@@ -597,7 +597,7 @@ pub fn run() {
             // 恢复主窗口记住的尺寸
             let saved_main_size = {
                 let state = app.state::<ConfigState>();
-                let c = state.0.lock().unwrap();
+                let c = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 c.main_size.clone()
             };
             if let Some(size) = saved_main_size {

@@ -151,7 +151,7 @@ pub fn migrate_account_keyrefs(app: &AppHandle) {
     });
 }
 
-fn keyring_entry(user: &str) -> Result<keyring::Entry, String> {
+pub(crate) fn keyring_entry(user: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new("com.aliboder.easytool", user)
         .map_err(|e| format!("初始化系统密钥库失败: {e}"))
 }
@@ -244,7 +244,7 @@ pub fn fetch_once(app: &AppHandle) {
 
     // 阶段 2：锁内应用结果
     let st_guard = app.state::<Mutex<QuotaState>>();
-    let mut st = st_guard.lock().unwrap();
+    let mut st = st_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     sync_accounts(&mut st.accounts, &accounts);
     for (acc, outcome) in outcomes {
         match outcome {
@@ -255,10 +255,9 @@ pub fn fetch_once(app: &AppHandle) {
             FetchOutcome::Failed(msg) => {
                 log::warn!("{} query failed: {msg}", acc.name);
                 if let Some(status) = st.accounts.iter_mut().find(|s| s.id == acc.id) {
-                    // Go 账户已有历史数据时保留旧数据不覆盖错误（与旧 fetch_go 语义一致）
-                    if !(acc.kind == AccountKind::Go && !status.go_windows.is_empty()) {
-                        status.error = Some(msg);
-                    }
+                    // 失败必须写入 error（Go 账户保留旧 go_windows 数据用于展示，
+                    // 但错误状态不能吞——否则密钥失效/断网时用户看到的是无标记的陈旧额度）
+                    status.error = Some(msg);
                 }
             }
         }
@@ -324,7 +323,7 @@ fn apply_deepseek(
     }
 
     let db_guard = app.state::<Mutex<QuotaDb>>();
-    let db = db_guard.lock().unwrap();
+    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let records = history::load(&db, &acc.id);
     let today_spend = history::today_spend(&records, today);
     let avg7 = history::avg_daily_spent(&records, 7, today);
@@ -357,7 +356,7 @@ fn apply_go(app: &AppHandle, st: &mut QuotaState, acc: &AccountConfig, windows: 
 /// 写入 Go 快照 + 重置周期检测
 fn persist_go(app: &AppHandle, account_id: &str, windows: &[GoQuota]) {
     let db_guard = app.state::<Mutex<QuotaDb>>();
-    let db = db_guard.lock().unwrap();
+    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let now = now_ms();
     for w in windows {
         let snap = GoSnapshot {
@@ -424,7 +423,7 @@ fn poll_loop(app: AppHandle) {
         };
         let due = {
             let st_guard = app.state::<Mutex<QuotaState>>();
-            let st = st_guard.lock().unwrap();
+            let st = st_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             match st.last_fetch {
                 Some(t) => t.elapsed().as_secs() >= interval,
                 None => true,
@@ -434,7 +433,7 @@ fn poll_loop(app: AppHandle) {
             // 先推进时间戳再拉取：即使 fetch_once panic 也不会形成秒级重试环
             {
                 let st_guard = app.state::<Mutex<QuotaState>>();
-                let mut st = st_guard.lock().unwrap();
+                let mut st = st_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 st.last_fetch = Some(Instant::now());
             }
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -465,7 +464,7 @@ fn import_json_history(app: &AppHandle) {
     };
     let accounts = account_configs(app);
     let db_guard = app.state::<Mutex<QuotaDb>>();
-    let db = db_guard.lock().unwrap();
+    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     for acc in accounts {
         let flag = format!("json_imported_{}", acc.id);
         if db.get_setting(&flag).is_some() {
@@ -499,10 +498,10 @@ fn import_json_history(app: &AppHandle) {
 fn restore_from_db(app: &AppHandle) {
     let accounts = account_configs(app);
     let st_guard = app.state::<Mutex<QuotaState>>();
-    let mut st = st_guard.lock().unwrap();
+    let mut st = st_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     sync_accounts(&mut st.accounts, &accounts);
     let db_guard = app.state::<Mutex<QuotaDb>>();
-    let db = db_guard.lock().unwrap();
+    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     for s in st.accounts.iter_mut() {
         if let Some((_t, balance, granted, topped_up)) = db.latest_balance(&s.id).unwrap_or(None) {
             s.balance = Some(balance);

@@ -49,8 +49,16 @@ fn get_selection(hwnd: HWND) -> (u32, u32) {
         return (0, 0);
     }
     unsafe {
-        let r = SendMessageW(hwnd, EM_GETSEL, Some(WPARAM(0)), Some(LPARAM(0)));
-        ((r.0 >> 16) as u32, (r.0 & 0xFFFF) as u32)
+        // EM_GETSEL 返回值打包为 (HIWORD=终点, LOWORD=起点) 且仅 16 位有效，
+        // 直接取返回值会得到反序选区、大文档尾部回绕错位；用指针出参拿完整 32 位 (start, end)
+        let (mut start, mut end) = (0u32, 0u32);
+        SendMessageW(
+            hwnd,
+            EM_GETSEL,
+            Some(WPARAM(&mut start as *mut u32 as usize)),
+            Some(LPARAM(&mut end as *mut u32 as isize)),
+        );
+        (start, end)
     }
 }
 

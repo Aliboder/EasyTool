@@ -208,7 +208,33 @@ impl QuotaDb {
                 params![account_id, s.captured_at, s.window, s.used_percent, s.resets_at],
             )
             .map(|_| ())
+            .map_err(|e| e.to_string())?;
+        // go_snapshots 只增不减会让库无限膨胀（30s×3 窗口 ≈ 8640 行/天/账户），
+        // 按账户只保留最近 2 万条（约 2~3 个月窗口序列）
+        self.conn
+            .execute(
+                "DELETE FROM go_snapshots WHERE account_id = ?1 AND rowid NOT IN (
+                    SELECT rowid FROM go_snapshots WHERE account_id = ?1
+                    ORDER BY captured_at DESC LIMIT 20000
+                )",
+                params![account_id],
+            )
+            .map(|_| ())
             .map_err(|e| e.to_string())
+    }
+
+    /// 删除账户的全部历史数据（remove_account 时调用，防 keyring/DB 残留）
+    pub fn delete_account_data(&self, account_id: &str) -> DbResult<()> {
+        for sql in [
+            "DELETE FROM balance_history WHERE account_id = ?1",
+            "DELETE FROM go_snapshots WHERE account_id = ?1",
+            "DELETE FROM go_cycles WHERE account_id = ?1",
+        ] {
+            self.conn
+                .execute(sql, params![account_id])
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     /// 某窗口的利用率时间序列（升序）

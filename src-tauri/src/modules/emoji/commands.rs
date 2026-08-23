@@ -24,7 +24,7 @@ const THUMB_CACHE_MAX: usize = 200;
 fn thumb_png(path: &str) -> Option<String> {
     let cache = THUMB_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     {
-        let map = cache.lock().unwrap();
+        let map = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(v) = map.get(path) {
             return v.clone();
         }
@@ -38,7 +38,7 @@ fn thumb_png(path: &str) -> Option<String> {
             .ok()?;
         Some(base64_encode(&buf))
     })();
-    let mut map = cache.lock().unwrap();
+    let mut map = cache.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if map.len() >= THUMB_CACHE_MAX {
         if let Some(old) = map.keys().next().cloned() {
             map.remove(&old);
@@ -110,7 +110,18 @@ pub fn get_emoji_static(app: AppHandle) -> R<Vec<StaticEmojiDto>> {
 
 /// 动态数据（收藏/使用统计 + 分组 + 图片表情）
 #[tauri::command]
-pub fn get_emoji_dynamic(state: State<'_, Db>) -> R<DynamicData> {
+pub async fn get_emoji_dynamic(app: AppHandle) -> R<DynamicData> {
+    // 打开面板可能现场解码全部图片表情缩略图（image 解码 + PNG 编码，耗时），
+    // 放后台线程执行——非 async 命令跑在主线程，会冻结整个 UI
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<Db>();
+        get_emoji_dynamic_impl(&state)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn get_emoji_dynamic_impl(state: &Db) -> R<DynamicData> {
     let usage = state
         .usage_map()
         .map_err(|e| e.to_string())?
@@ -208,7 +219,7 @@ pub fn add_clipboard_item_as_emoji(app: AppHandle, state: State<'_, Db>, id: i64
     use crate::modules::clipboard::models::ItemKind;
     let clip = app.state::<crate::modules::clipboard::state::AppState>();
     let item = {
-        let db = clip.db.lock().unwrap();
+        let db = clip.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         db.get_item(id).map_err(|e| e.to_string())?.ok_or("条目不存在")?
     };
     // 确定源文件路径：image 类型取原图，files 类型取列表首个文件
@@ -326,8 +337,18 @@ pub fn get_emoji_thumb(state: State<'_, Db>, id: i64) -> R<Option<String>> {
 
 /// 应用表情：记录使用 → 按配置粘贴到唤起前窗口或复制到剪贴板
 #[tauri::command]
-pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: String) -> R<()> {
-    let click_action = crate::config::module_cfg(&app, "emoji")
+pub async fn apply_emoji(app: AppHandle, kind: String, key: String) -> R<()> {
+    // 含固定 sleep(60ms) 等待与可能的图片解码写剪贴板，放后台线程避免冻结主线程
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<Db>();
+        apply_emoji_impl(&app, &state, kind, key)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn apply_emoji_impl(app: &AppHandle, state: &Db, kind: String, key: String) -> R<()> {
+    let click_action = crate::config::module_cfg(app, "emoji")
         .get("click_action")
         .and_then(|v| v.as_str())
         .unwrap_or("paste")
@@ -354,7 +375,7 @@ pub fn apply_emoji(app: AppHandle, state: State<'_, Db>, kind: String, key: Stri
             return super::paste::apply_text_to_foreground(&key).map_err(|e| e.to_string());
         }
         if clipboard::write_text_rich(&key, None) {
-            mark_self_write(&app, Some(dedup::hash_text(&key)));
+            mark_self_write(app, Some(dedup::hash_text(&key)));
             return Ok(());
         }
         return Err("写入剪贴板失败".into());

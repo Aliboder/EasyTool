@@ -134,8 +134,8 @@ fn poll_thread() {
     }
 }
 
-/// 剪贴板内容签名：格式名列表 + 文本内容（轮询用）
-fn clipboard_signature() -> Option<String> {
+/// 剪贴板内容签名：格式名列表 + 文本内容 hash（轮询与自写守卫共用）
+pub(crate) fn clipboard_signature() -> Option<String> {
     let mut parts = clipboard::format_names();
     parts.sort();
     let mut sig = parts.join("|");
@@ -167,13 +167,17 @@ fn process_clipboard_change() {
     // 自身写入守卫：写入剪贴板后 300ms 内的变化跳过。
     // 注意：事件路径与轮询路径都会走到这里，标记不能 swap(false) 一次性消费，
     // 否则事件路径跳过、轮询路径会再次进入而误记录。改为按时间窗口判断，超时后清除。
+    // 自身写入守卫：窗口内且内容指纹与登记的自身写入一致才跳过。
+    // 指纹不同 = 粘贴后用户又复制了新内容，必须照常记录
+    // （旧逻辑按时间一刀切，2s 内的真实复制被吞且轮询签名已推进、永不补录）
     if state.self_write.load(Ordering::SeqCst) {
         let recent = now_ms() - state.last_self_write_ms.load(Ordering::SeqCst) < SELF_WRITE_GUARD_MS;
-        if recent {
-            log::debug!("skip self write");
+        let sig = clipboard_signature().unwrap_or_default();
+        if recent && state.check_pending_ignore(&sig, SELF_WRITE_GUARD_MS, now_ms()) {
+            log::debug!("skip self write (fingerprint match)");
             return;
         }
-        // 窗口已过，清除残留标记（下次正常记录）
+        // 窗口已过或出现非自身的新内容：清除标记，正常记录
         state.self_write.store(false, Ordering::SeqCst);
     }
 
@@ -243,7 +247,7 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
 
     // 2. 去重：命中则顶到最前；若旧条目无富文本而新捕获有，则升级回填
     {
-        let db = state.db.lock().unwrap();
+        let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(existing_id) = db.find_by_hash(&hash)? {
             db.touch_item(existing_id, now)?;
             if let Some(h) = html {
@@ -290,7 +294,7 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
                         Ok(tp) => state.store.save_thumb(id, tp).unwrap_or_default(),
                         Err(_) => std::path::PathBuf::new(),
                     };
-                    let db = state.db.lock().unwrap();
+                    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                     let _ = db.set_image_paths(
                         id,
                         Some(img_path.to_string_lossy().into_owned()),
@@ -305,7 +309,7 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
         }
 
         // 5. 上限清理
-        let db = state.db.lock().unwrap();
+        let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let removed = db.prune(state.max_items.load(Ordering::SeqCst) as i64)?;
         if !removed.is_empty() {
             let ids: Vec<i64> = removed.iter().map(|r| r.id).collect();
@@ -329,7 +333,7 @@ pub(crate) fn save_files_batch(
     app: &AppHandle,
     files: &[String],
 ) -> Result<(), DbError> {
-    let db = state.db.lock().unwrap();
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let now = now_ms();
     for (i, path) in files.iter().enumerate() {
         let ts = now - (files.len() as i64 - 1 - i as i64);
