@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
 import { type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -145,5 +145,52 @@ export function HeaderButton({
     >
       {children}
     </button>
+  );
+}
+
+export interface HeaderSortField {
+  id: string;
+  label: string;
+}
+
+/** 面板头排序控件：字段按钮点击按 fields 顺序循环切换，方向按钮点击升降翻转 */
+export function HeaderSort({
+  fields,
+  value,
+  onChange,
+  desc,
+  onDescToggle,
+}: {
+  fields: HeaderSortField[];
+  value: string;
+  onChange: (nextId: string) => void;
+  desc: boolean;
+  onDescToggle: () => void;
+}) {
+  const idx = Math.max(
+    0,
+    fields.findIndex((f) => f.id === value),
+  );
+  const next = fields[(idx + 1) % fields.length];
+  return (
+    <div className="flex items-center gap-1 rounded-md border px-1.5 py-0.5">
+      <ArrowUpDown className="size-3 text-muted-foreground" />
+      <button
+        type="button"
+        title={`排序依据：${fields[idx].label}（点击切换）`}
+        onClick={() => onChange(next.id)}
+        className="shrink-0 rounded px-1 text-[11px] leading-5 text-foreground transition-colors hover:bg-accent"
+      >
+        {fields[idx].label}
+      </button>
+      <button
+        type="button"
+        title={desc ? "递减（点击改为递增）" : "递增（点击改为递减）"}
+        onClick={onDescToggle}
+        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        {desc ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />}
+      </button>
+    </div>
   );
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
-import { ModuleHeader, HeaderButton } from "@/components/module-header";
+import { ModuleHeader, HeaderButton, HeaderSort, type HeaderSortField } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
@@ -19,7 +19,6 @@ import {
   AlignJustify,
   FolderSearch,
   Regex,
-  ArrowUpDown,
   SlidersHorizontal,
   Folder,
   FileText,
@@ -32,13 +31,6 @@ import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   SearchSettings,
   SEARCH_DEFAULTS,
   type SearchSettingsData,
@@ -48,6 +40,13 @@ import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { toast } from "@/lib/toast";
 import { gridColumns, gridVerticalTarget } from "@/lib/grid";
+
+const SORT_FIELDS: HeaderSortField[] = [
+  { id: "name", label: "名称" },
+  { id: "path", label: "路径" },
+  { id: "size", label: "大小" },
+  { id: "modified", label: "修改" },
+];
 
 export interface SearchResultDto {
   name: string;
@@ -587,43 +586,13 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         onTabChange={setFilter}
         tabsTrailing={
           <>
-            <div className="flex items-center gap-1 rounded-md border px-1.5 py-0.5">
-              <ArrowUpDown className="size-3 text-muted-foreground" />
-              <Select
-                value={cfg.sortBy}
-                onValueChange={(v) => setSort(v as SearchSettingsData["sortBy"], cfg.sortDesc)}
-              >
-                <SelectTrigger className="h-5 w-14 border-0 p-0 text-[11px] shadow-none">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(
-                    [
-                      ["name", "名称"],
-                      ["path", "路径"],
-                      ["size", "大小"],
-                      ["modified", "修改"],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <SelectItem key={id} value={id}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={String(cfg.sortDesc)}
-                onValueChange={(v) => setSort(cfg.sortBy, v === "true")}
-              >
-                <SelectTrigger className="h-5 w-14 border-0 p-0 text-[11px] shadow-none">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="false">递增</SelectItem>
-                  <SelectItem value="true">递减</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <HeaderSort
+              fields={SORT_FIELDS}
+              value={cfg.sortBy}
+              onChange={(id) => setSort(id as SearchSettingsData["sortBy"], cfg.sortDesc)}
+              desc={cfg.sortDesc}
+              onDescToggle={() => setSort(cfg.sortBy, !cfg.sortDesc)}
+            />
 
             {/* 匹配选项菜单 */}
             <div ref={optsRef} className="relative">
