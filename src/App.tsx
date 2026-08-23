@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -42,33 +42,9 @@ function App() {
   }, []);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // 启动引导自愈：隐藏窗口冷启动时首批 IPC 可能不响应（WebView2 在首次
-  // 显示前推迟加载），未就绪则每 500ms 重试；呼出/聚焦窗口时立即重试一次，
-  // 保证第一次呼出就能看到完整界面，无需手动切换模块
-  const loadedRef = useRef(false);
   useEffect(() => {
-    let stop = false;
-    const load = async () => {
-      if (loadedRef.current || stop) return;
-      try {
-        const [m, c] = await Promise.all([getManifests(), getConfig()]);
-        if (stop) return;
-        loadedRef.current = true;
-        setManifests(m);
-        setConfig(c);
-      } catch (e) {
-        console.error("bootstrap failed, retrying...", e);
-      }
-    };
-    load();
-    const t = setInterval(load, 500);
-    const onFocus = () => load();
-    window.addEventListener("focus", onFocus);
-    return () => {
-      stop = true;
-      clearInterval(t);
-      window.removeEventListener("focus", onFocus);
-    };
+    getManifests().then(setManifests).catch(console.error);
+    getConfig().then(setConfig).catch(console.error);
   }, []);
 
   useEffect(() => {
