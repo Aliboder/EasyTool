@@ -818,3 +818,28 @@
 
 **相关代码**：
 - `src/App.tsx` - active/visited 初始为空 + 清理 effect 守卫改 orderedManifests + 名单回填
+
+---
+
+## 2026-08-24
+
+### 主窗口「先空白、闪一下、才加载」：显示时机与内容就绪解耦
+
+**问题描述**：冷启动时主窗口先弹出（只有深色底无内容），过一会儿界面框架带入场动画"闪一下"出现，再转圈后才显示剪贴板内容。
+
+**根本原因**：窗口显示时机由 Rust 决定（setup 完成就 `win.show()`），内容就绪由前端决定（WebView 加载页面 + React 挂载 + 懒加载模块代码，开发模式 vite 首次编译可达数秒）——两者从未对齐，「窗口出现」远早于「首帧绘制」。「闪一下」是界面框架的入场动画（fade+zoom 150ms），因空白期刚结束、数据未跟上而显得像卡顿重绘。
+
+**解决方案**：把显示决定权交给前端——
+1. Rust：setup 不再 `show()`；新增 `main_window_ready` 命令（show+unminimize+set_focus）；setup 尾部起 15s 兜底线程，前端异常未发信号则强制显示；
+2. 前端：bootstrap 完成 → 预载全部四个模块 chunk（与 lazy 共用同一 import thunk，命中缓存零额外请求）→ 双 rAF（确保主题类已应用、首帧已绘制）→ invoke `main_window_ready`。
+
+效果：窗口出现瞬间即完整内容，入场动画从"异常闪烁"变为正常开场；预载顺带让模块切换零等待。注意入场动画此时由 focus 事件触发播放（useWindowEntrance 的 hidden→visible 分支），与显示天然同步。
+
+**教训**：
+1. **多进程/多端协作的"就绪"必须显式握手**：Rust 无法感知 WebView 何时画完第一帧，靠猜测的固定时机必然或早（空白）或晚（白等）；让就绪方主动发信号 + 超时兜底是标准模式；
+2. 兜底线程要查 `is_visible()` 再 show，避免覆盖用户正常交互后的状态；
+3. 排查此类问题先量时间差：日志里后端就绪到前端 mounted 的 gap 直接暴露矛盾所在。
+
+**相关代码**：
+- `src-tauri/src/lib.rs` - `main_window_ready` 命令 + setup 移除 show + 15s 兜底
+- `src/App.tsx` - PAGE_IMPORTS 抽取共用 import + bootstrap 后双 rAF 发信号

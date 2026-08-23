@@ -43,26 +43,23 @@ const loadPage =
     }
   };
 
-const Clippage = lazy(
-  loadPage("clipboard", () =>
-    import("@/modules/clipboard/Clippage").then(m => ({ default: m.Clippage })),
-  ),
-);
-const QuotaPage = lazy(
-  loadPage("quota", () =>
-    import("@/modules/quota/QuotaPage").then(m => ({ default: m.QuotaPage })),
-  ),
-);
-const EmojiPage = lazy(
-  loadPage("emoji", () =>
-    import("@/modules/emoji/Page").then(m => ({ default: m.EmojiPage })),
-  ),
-);
-const SearchPage = lazy(
-  loadPage("search", () =>
-    import("@/modules/search/Page").then(m => ({ default: m.SearchPage })),
-  ),
-);
+const importClipboard = () =>
+  import("@/modules/clipboard/Clippage").then(m => ({ default: m.Clippage }));
+const importQuota = () =>
+  import("@/modules/quota/QuotaPage").then(m => ({ default: m.QuotaPage }));
+const importEmoji = () =>
+  import("@/modules/emoji/Page").then(m => ({ default: m.EmojiPage }));
+const importSearch = () =>
+  import("@/modules/search/Page").then(m => ({ default: m.SearchPage }));
+
+const Clippage = lazy(loadPage("clipboard", importClipboard));
+const QuotaPage = lazy(loadPage("quota", importQuota));
+const EmojiPage = lazy(loadPage("emoji", importEmoji));
+const SearchPage = lazy(loadPage("search", importSearch));
+
+// 首屏就绪前预载全部模块代码：与上方 lazy 共用同一 import（命中缓存，无额外请求），
+// 保证主窗口显示时落地面板代码已就位
+const PAGE_IMPORTS = [importClipboard, importQuota, importEmoji, importSearch];
 
 function App() {
   const entranceRef = useWindowEntrance(true, ["animate-in", "fade-in-0", "zoom-in-95"]);
@@ -88,9 +85,17 @@ function App() {
       () => {},
     );
     Promise.all([getManifests(), getConfig()])
-      .then(([m, c]) => {
+      .then(async ([m, c]) => {
         setManifests(m);
         setConfig(c);
+        // 预载模块代码 + 等两帧（主题应用、首帧绘制完成）→ 通知 Rust 显示主窗口，
+        // 窗口出现瞬间即完整内容（15s 后端兜底防前端异常永不显示）
+        await Promise.allSettled(PAGE_IMPORTS.map(importPage => importPage()));
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            invoke("main_window_ready").catch(() => {});
+          }),
+        );
         invoke("log_frontend", {
           level: "info",
           msg: "[diag] bootstrap done",

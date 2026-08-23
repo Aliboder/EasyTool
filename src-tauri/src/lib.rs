@@ -428,6 +428,13 @@ fn log_frontend(level: String, msg: String) {
     }
 }
 
+/// 前端首屏就绪信号：页面加载完成才显示主窗口（配合 visible:false，消除空白期）
+#[tauri::command]
+fn main_window_ready(app: tauri::AppHandle) {
+    log::info!("[frontend] first paint ready, showing main window");
+    show_main(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logger();
@@ -606,10 +613,19 @@ pub fn run() {
                     }
                 }
             }
-            // 窗口初始为隐藏（tauri.conf.json visible:false），恢复尺寸后再显示，避免先闪默认尺寸
-            if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-                let _ = win.show();
-            }
+            // 显示时机交给前端：首屏就绪后调 main_window_ready 再显示，
+            // 消除「窗口先出现、内容后跟上」的空白期；
+            // 15s 兜底：前端异常未发信号时强制显示，避免窗口永不出现
+            let fallback_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(15));
+                if let Some(win) = fallback_handle.get_webview_window(MAIN_WINDOW_LABEL) {
+                    if !win.is_visible().unwrap_or(true) {
+                        log::warn!("main_window_ready timeout, force showing main window");
+                        let _ = win.show();
+                    }
+                }
+            });
 
             build_tray(app)?;
 
@@ -636,6 +652,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             log_frontend,
+            main_window_ready,
             config::get_config,
             config::set_module_enabled,
             config::set_module_config,
