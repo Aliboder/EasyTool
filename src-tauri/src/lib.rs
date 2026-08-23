@@ -215,74 +215,39 @@ pub(crate) fn popup_position_physical(hwnd: windows::Win32::Foundation::HWND) ->
     modules::clipboard::popup_position_physical(hwnd)
 }
 
-fn clipboard_enabled(app: &tauri::AppHandle) -> bool {
+/// 读模块启用开关（统一实现；下方各模块包装名保留以便调用点自解释）
+fn module_enabled(app: &tauri::AppHandle, id: &str) -> bool {
     app.try_state::<ConfigState>()
         .map(|s| {
             s.0.lock()
                 .unwrap()
                 .modules
-                .get("clipboard")
+                .get(id)
                 .and_then(|m| m.get("enabled"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
         })
         .unwrap_or(false)
+}
+
+fn clipboard_enabled(app: &tauri::AppHandle) -> bool {
+    module_enabled(app, "clipboard")
 }
 
 fn quota_enabled(app: &tauri::AppHandle) -> bool {
-    app.try_state::<ConfigState>()
-        .map(|s| {
-            s.0.lock()
-                .unwrap()
-                .modules
-                .get("quota")
-                .and_then(|m| m.get("enabled"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
+    module_enabled(app, "quota")
 }
 
 fn search_enabled(app: &tauri::AppHandle) -> bool {
-    app.try_state::<ConfigState>()
-        .map(|s| {
-            s.0.lock()
-                .unwrap()
-                .modules
-                .get("search")
-                .and_then(|m| m.get("enabled"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
+    module_enabled(app, "search")
 }
 
 fn emoji_enabled(app: &tauri::AppHandle) -> bool {
-    app.try_state::<ConfigState>()
-        .map(|s| {
-            s.0.lock()
-                .unwrap()
-                .modules
-                .get("emoji")
-                .and_then(|m| m.get("enabled"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
+    module_enabled(app, "emoji")
 }
 
 fn quicklaunch_enabled(app: &tauri::AppHandle) -> bool {
-    app.try_state::<ConfigState>()
-        .map(|s| {
-            s.0.lock()
-                .unwrap()
-                .modules
-                .get("quicklaunch")
-                .and_then(|m| m.get("enabled"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
+    module_enabled(app, "quicklaunch")
 }
 
 struct Hotkeys {
