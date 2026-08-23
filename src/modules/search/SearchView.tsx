@@ -326,6 +326,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       toast(`打开失败：${e}`),
     );
   }, []);
+  const appsKeyHandler = useRef<((e: React.KeyboardEvent) => void) | null>(null);
 
   // 搜索选项菜单关闭逻辑（点击外部关闭）
   useEffect(() => {
@@ -362,6 +363,11 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (showSettings) return;
+    // 「应用」Tab：键盘导航由 AppsGrid 内部处理（↑↓ 步进 / Enter 启动）
+    if (filter === APPS_TAB) {
+      appsKeyHandler.current?.(e);
+      return;
+    }
     const idx = results.findIndex((r) => r.full_path === selected);
     const isGrid = cfg.viewMode === "grid";
     const cols = isGrid && gridRef.current ? gridColumns(gridRef.current) : 1;
@@ -513,6 +519,9 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         icons={icons}
         loadIcon={loadIcon}
         onOpen={openApp}
+        registerKeyHandler={(fn) => {
+          appsKeyHandler.current = fn;
+        }}
       />
     ) : null;
 

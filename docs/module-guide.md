@@ -280,7 +280,7 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 
 ## 5. 网格实现标准
 
-涉及格子网格的模块（quicklaunch/search/emoji/clipboard）一律遵守：
+涉及格子网格的模块（search/emoji/clipboard）一律遵守：
 
 1. **容器**：真 CSS Grid，`className="grid gap-2"` + `style={{ gridTemplateColumns: repeat(auto-fill, Npx), gridAutoRows: Npx }}`（N=配置的格子尺寸）。**不要用 flex-wrap 模拟网格**
 2. **内容缩放公式**：从 `src/lib/grid.ts` 引用 `gridIconSize(cell)`（图标 50%）与 `gridFontScale(cell)`（字号 15%），禁止手写魔法数字。例外：emoji 字形即内容，用 70% 比例

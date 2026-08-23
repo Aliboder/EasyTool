@@ -1,6 +1,13 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileQuestion } from "lucide-react";
-import { gridIconSize, gridFontScale, gridPadding } from "@/lib/grid";
+import {
+  gridColumns,
+  gridIconSize,
+  gridFontScale,
+  gridPadding,
+  gridVerticalTarget,
+} from "@/lib/grid";
+import { cn } from "@/lib/utils";
 
 export interface ScannedApp {
   name: string;
@@ -47,6 +54,7 @@ export function AppsGrid({
   icons,
   loadIcon,
   onOpen,
+  registerKeyHandler,
 }: {
   apps: ScannedApp[] | null;
   query: string;
@@ -57,7 +65,9 @@ export function AppsGrid({
   icons: Record<string, string>;
   loadIcon: (path: string) => Promise<void>;
   onOpen: (path: string) => void;
-}) {
+  /** 向外注册键盘处理函数（↑↓ 步进 / Enter 启动），供容器 onKeyDown 转发 */
+  registerKeyHandler?: (fn: ((e: React.KeyboardEvent) => void) | null) => void;
+  }) {
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = (apps ?? []).filter((a) =>
@@ -74,6 +84,40 @@ export function AppsGrid({
       return sortDesc ? -cmp : cmp;
     });
   }, [apps, query, sortBy, sortDesc]);
+
+  // 键盘导航（↑↓ 按实测列数跨行步进，Enter 启动）：向容器注册处理函数
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const listRef = useRef(list);
+  listRef.current = list;
+  const activeRef = useRef(activeIdx);
+  activeRef.current = activeIdx;
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+
+  useEffect(() => {
+    if (!registerKeyHandler) return;
+    registerKeyHandler((e: React.KeyboardEvent) => {
+      const items = listRef.current;
+      if (!items.length) return;
+      const dir = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+      if (dir !== 0) {
+        e.preventDefault();
+        const cols =
+          viewMode === "grid" && rootRef.current
+            ? gridColumns(rootRef.current)
+            : 1;
+        setActiveIdx((i) => gridVerticalTarget(i ?? -1, dir, items.length, cols));
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const i = activeRef.current;
+        if (i != null && i < items.length) onOpenRef.current(items[i].path);
+      }
+    });
+    return () => registerKeyHandler(null);
+  });
 
   if (apps === null) {
     return (
@@ -93,7 +137,7 @@ export function AppsGrid({
   if (viewMode === "list") {
     return (
       <div className="flex flex-col">
-        {list.map((a) => {
+        {list.map((a, i) => {
           if (!icons[a.path]) loadIcon(a.path);
           const icon = icons[a.path];
           return (
@@ -101,7 +145,10 @@ export function AppsGrid({
               key={a.path}
               title={`${a.name}\n${a.path}`}
               onClick={() => onOpen(a.path)}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50"
+              className={cn(
+                "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50",
+                activeIdx === i && "bg-accent",
+              )}
             >
               {icon ? (
                 <img
@@ -125,21 +172,30 @@ export function AppsGrid({
 
   return (
     <div
+      ref={rootRef}
       className="grid gap-2"
       style={{
         gridAutoRows: `${gridSize}px`,
         gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
       }}
     >
-      {list.map((a) => {
+      {list.map((a, i) => {
         if (!icons[a.path]) loadIcon(a.path);
         const icon = icons[a.path];
         return (
           <div
             key={a.path}
             title={`${a.name}\n${a.path}`}
-            onClick={() => onOpen(a.path)}
-            className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-transparent transition-colors hover:bg-accent/50"
+            onClick={() => {
+              setActiveIdx(i);
+              onOpen(a.path);
+            }}
+            className={cn(
+              "flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border transition-colors",
+              activeIdx === i
+                ? "border-primary bg-accent"
+                : "border-transparent hover:bg-accent/50",
+            )}
             style={{ padding: gridPadding(gridSize) }}
           >
             {icon ? (
