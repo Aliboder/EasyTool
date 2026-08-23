@@ -51,18 +51,21 @@ export type FilterType =
   | "sysapps";
 
 const QL_FILTERS: { id: FilterType; label: string }[] = [
+  { id: "sysapps", label: "全部应用" },
   { id: "all", label: "固定" },
   { id: "app", label: "应用" },
   { id: "file", label: "文件" },
   { id: "folder", label: "文件夹" },
   { id: "url", label: "URL" },
-  { id: "sysapps", label: "全部应用" },
 ];
 
 interface QuicklaunchConfig {
   viewMode: "grid" | "list";
   sortBy: "manual" | "name" | "created_at" | "usage";
   sortDesc: boolean;
+  /** 「全部应用」Tab 独立排序记忆 */
+  sysSortBy: "name" | "usage";
+  sysSortDesc: boolean;
   gridSize: number;
   showExtension: boolean;
   singleClickOpen: boolean;
@@ -75,6 +78,8 @@ const QL_DEFAULTS: QuicklaunchConfig = {
   gridSize: 64,
   showExtension: true,
   singleClickOpen: false,
+  sysSortBy: "name",
+  sysSortDesc: false,
 };
 
 export { QL_DEFAULTS };
@@ -138,6 +143,8 @@ function SysAppGrid({
   apps,
   search,
   gridSize,
+  sortBy,
+  sortDesc,
   icons,
   loadIcon,
   onOpen,
@@ -145,17 +152,27 @@ function SysAppGrid({
   apps: ScannedApp[] | null;
   search: string;
   gridSize: number;
+  sortBy: "name" | "usage";
+  sortDesc: boolean;
   icons: Record<string, string>;
   loadIcon: (path: string) => Promise<void>;
   onOpen: (path: string) => void;
 }) {
-  const list = useMemo(
-    () =>
-      (apps ?? []).filter((a) =>
-        a.name.toLowerCase().includes(search.trim().toLowerCase()),
-      ),
-    [apps, search],
-  );
+  const list = useMemo(() => {
+    const filtered = (apps ?? []).filter((a) =>
+      a.name.toLowerCase().includes(search.trim().toLowerCase()),
+    );
+    // 频率降序为"最常用在前"，方向可翻转；名称按中文拼音
+    if (sortBy === "usage") {
+      return filtered.sort((a, b) =>
+        sortDesc ? a.usage_count - b.usage_count : b.usage_count - a.usage_count,
+      );
+    }
+    return filtered.sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name, "zh-CN-u-co-pinyin");
+      return sortDesc ? -cmp : cmp;
+    });
+  }, [apps, search, sortBy, sortDesc]);
   if (apps === null) {
     return (
       <div className="py-8 text-center text-sm text-muted-foreground">
@@ -836,7 +853,13 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         />
       )}
       <ModuleHeader
-        search={{ value: search, onChange: setSearch, placeholder: "搜索固定项…", autoFocus: true }}
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder:
+            filter === "sysapps" ? "搜索全部应用…" : "搜索固定项…",
+          autoFocus: true,
+        }}
         actions={
           <>
             <HeaderButton
@@ -862,18 +885,35 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         activeTab={filter}
         onTabChange={(id) => setFilter(id as FilterType)}
         tabsTrailing={
-          <HeaderSort
-            fields={[
-              { id: "manual", label: "手动" },
-              { id: "name", label: "名称" },
-              { id: "created_at", label: "添加时间" },
-              { id: "usage", label: "频率" },
-            ]}
-            value={cfg.sortBy}
-            onChange={(id) => updateConfig({ sortBy: id as QuicklaunchConfig["sortBy"] })}
-            desc={cfg.sortDesc}
-            onDescToggle={() => updateConfig({ sortDesc: !cfg.sortDesc })}
-          />
+          filter === "sysapps" ? (
+            <HeaderSort
+              fields={[
+                { id: "name", label: "名称" },
+                { id: "usage", label: "频率" },
+              ]}
+              value={cfg.sysSortBy}
+              onChange={(id) =>
+                updateConfig({ sysSortBy: id as "name" | "usage" })
+              }
+              desc={cfg.sysSortDesc}
+              onDescToggle={() => updateConfig({ sysSortDesc: !cfg.sysSortDesc })}
+            />
+          ) : (
+            <HeaderSort
+              fields={[
+                { id: "manual", label: "手动" },
+                { id: "name", label: "名称" },
+                { id: "created_at", label: "添加时间" },
+                { id: "usage", label: "频率" },
+              ]}
+              value={cfg.sortBy}
+              onChange={(id) =>
+                updateConfig({ sortBy: id as QuicklaunchConfig["sortBy"] })
+              }
+              desc={cfg.sortDesc}
+              onDescToggle={() => updateConfig({ sortDesc: !cfg.sortDesc })}
+            />
+          )
         }
       />
 
@@ -889,7 +929,6 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         onClose={() => setPickerOpen(false)}
         onAdd={addPaths}
         gridSize={cfg.gridSize}
-        fixedPaths={items.map((i) => i.path)}
       />
 
       <div
@@ -913,6 +952,8 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
             apps={sysApps}
             search={search}
             gridSize={cfg.gridSize}
+            sortBy={cfg.sysSortBy}
+            sortDesc={cfg.sysSortDesc}
             icons={fileIcons}
             loadIcon={loadFileIcon}
             onOpen={openSysApp}
@@ -1147,6 +1188,8 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
               apps={sysApps}
               search={search}
               gridSize={cfg.gridSize}
+              sortBy={cfg.sysSortBy}
+              sortDesc={cfg.sysSortDesc}
               icons={fileIcons}
               loadIcon={loadFileIcon}
               onOpen={openSysApp}

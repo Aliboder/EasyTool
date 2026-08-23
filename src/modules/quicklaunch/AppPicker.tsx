@@ -13,6 +13,8 @@ export interface ScannedApp {
   path: string;
   /** 与某个已固定条目指向同一目标 */
   fixed: boolean;
+  /** 全局前台使用次数 */
+  usage_count: number;
 }
 
 /** 已安装应用选择器：网格展示扫描结果，已固定的置灰禁选，勾选后批量走既有添加流程 */
@@ -21,15 +23,12 @@ export function AppPicker({
   onClose,
   onAdd,
   gridSize,
-  fixedPaths,
 }: {
   open: boolean;
   onClose: () => void;
   /** 返回选中的路径（可能多条），由父组件执行 quicklaunch_add_from_path */
   onAdd: (paths: string[]) => void;
   gridSize?: number;
-  /** 当前固定项路径：后端据此标记哪些应用已固定 */
-  fixedPaths: string[];
 }) {
   const cell = Math.max(gridSize ?? 72, 56);
   const [apps, setApps] = useState<ScannedApp[] | null>(null);
@@ -44,7 +43,7 @@ export function AppPicker({
     setError(null);
     setPicked(new Set());
     setQ("");
-    invoke<ScannedApp[]>("quicklaunch_scan_apps", { fixedPaths })
+    invoke<ScannedApp[]>("quicklaunch_scan_apps")
       .then(setApps)
       .catch((e) => {
         console.error("scan apps failed:", e);

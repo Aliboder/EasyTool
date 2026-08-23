@@ -294,6 +294,8 @@ pub struct ScannedApp {
     pub path: String,
     /// 该应用与某个已固定条目指向同一目标
     pub fixed: bool,
+    /// 全局前台使用次数（与固定项同一监测源）
+    pub usage_count: i64,
 }
 
 // 注意：Path::extension() 返回值不带前导点（"lnk" 而非 ".lnk"）
@@ -332,6 +334,7 @@ fn collect_apps(
                             .unwrap_or_default(),
                         path: p.to_string_lossy().into_owned(),
                         fixed: false,
+                        usage_count: 0,
                     });
                 }
             }
@@ -371,8 +374,28 @@ pub async fn quicklaunch_scan_apps(
                     .collect(),
                 None => Default::default(),
             };
+        // 先解析各扫描项目标（复用给 fixed 判定与计数落库）
+        let mut resolved: Vec<String> = Vec::with_capacity(out.len());
         for a in out.iter_mut() {
-            a.fixed = !fixed_targets.is_empty() && fixed_targets.contains(&resolve_target(&a.path));
+            let t = resolve_target(&a.path);
+            a.fixed = !fixed_targets.is_empty() && fixed_targets.contains(&t);
+            resolved.push(t);
+        }
+        // 落库并取回全局使用次数
+        let usage_map: std::collections::HashMap<String, i64> =
+            match app.try_state::<Mutex<QuicklaunchState>>() {
+                Some(state) => state
+                    .lock()
+                    .unwrap()
+                    .db
+                    .sync_sys_targets(&resolved)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect(),
+                None => Default::default(),
+            };
+        for (a, t) in out.iter_mut().zip(&resolved) {
+            a.usage_count = *usage_map.get(t).unwrap_or(&0);
         }
         out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         Ok(out)

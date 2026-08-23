@@ -91,7 +91,12 @@ unsafe extern "system" fn on_foreground(
     };
     let updates = {
         let st = state.lock().unwrap();
-        st.db.increment_usage(&exe_path)
+        let r = st.db.increment_usage(&exe_path);
+        // 全部应用 Tab 的频率数据：任何前台程序都累计
+        if let Err(e) = st.db.increment_sys_usage(&exe_path) {
+            log::warn!("sys usage increment failed: {e}");
+        }
+        r
     };
     match updates {
         Ok(updates) if !updates.is_empty() => {

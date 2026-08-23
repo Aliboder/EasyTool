@@ -54,6 +54,7 @@ impl QuicklaunchDb {
             "ALTER TABLE items ADD COLUMN usage_count INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE items ADD COLUMN target TEXT",
             "CREATE INDEX IF NOT EXISTS idx_items_target ON items(target)",
+            "CREATE TABLE IF NOT EXISTS sys_app_usage (target TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0)",
         ] {
             let _ = self.conn.execute(sql, []);
         }
@@ -113,6 +114,41 @@ impl QuicklaunchDb {
             .map_err(|e| format!("查询失败: {e}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("读取失败: {e}"))
+    }
+
+    /// 扫描结果落库（新目标计数从 0 起，已有的保留），返回 目标→当前次数
+    pub fn sync_sys_targets(&self, targets: &[String]) -> Result<Vec<(String, i64)>, String> {
+        for t in targets {
+            self.conn
+                .execute(
+                    "INSERT INTO sys_app_usage(target, count)
+                     VALUES (?1, COALESCE((SELECT count FROM sys_app_usage WHERE target = ?1), 0))
+                     ON CONFLICT(target) DO NOTHING",
+                    params![t],
+                )
+                .map_err(|e| format!("同步失败: {e}"))?;
+        }
+        let mut stmt = self
+            .conn
+            .prepare("SELECT target, count FROM sys_app_usage")
+            .map_err(|e| format!("查询失败: {e}"))?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| format!("查询失败: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取失败: {e}"))
+    }
+
+    /// 系统应用目标命中 +1（不存在则建行）
+    pub fn increment_sys_usage(&self, target: &str) -> Result<(), String> {
+        self.conn
+            .execute(
+                "INSERT INTO sys_app_usage(target, count) VALUES (?1, 1)
+                 ON CONFLICT(target) DO UPDATE SET count = count + 1",
+                params![target],
+            )
+            .map_err(|e| format!("计数失败: {e}"))?;
+        Ok(())
     }
 
     /// 目标命中前台 +1，返回受影响条目及新计数
