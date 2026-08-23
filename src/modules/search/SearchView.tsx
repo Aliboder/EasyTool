@@ -164,13 +164,6 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     return () => window.removeEventListener("focus", refreshStatus);
   }, [refreshStatus]);
 
-  // 每次呼出/聚焦窗口都强制重扫应用数据（面板外启动的软件也能即时反映）
-  useEffect(() => {
-    const onFocus = () => ensureApps(true);
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [ensureApps]);
-
   const activeFilter = useMemo(() => FILTERS.find((f) => f.id === filter) ?? FILTERS[0], [filter]);
 
   const PAGE_SIZE = 100;
@@ -327,6 +320,13 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   useEffect(() => {
     if (filter === APPS_TAB) ensureApps(true); // 切到应用 Tab 强制刷新频率数据
   }, [filter, ensureApps]);
+
+  // 每次呼出/聚焦窗口都强制重扫应用数据（面板外启动的软件也能即时反映）
+  useEffect(() => {
+    const onFocus = () => ensureApps(true);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [ensureApps]);
 
   // 后台监测计数后通知刷新：节流 5 秒，仅在应用 Tab 或有搜索词时拉取
   useEffect(() => {
