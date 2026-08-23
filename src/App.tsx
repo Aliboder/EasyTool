@@ -19,10 +19,50 @@ import { SettingsView } from "@/components/settings-view";
 import { applyTheme } from "@/lib/theme";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 
-const Clippage = lazy(() => import("@/modules/clipboard/Clippage").then(m => ({ default: m.Clippage })));
-const QuotaPage = lazy(() => import("@/modules/quota/QuotaPage").then(m => ({ default: m.QuotaPage })));
-const EmojiPage = lazy(() => import("@/modules/emoji/Page").then(m => ({ default: m.EmojiPage })));
-const SearchPage = lazy(() => import("@/modules/search/Page").then(m => ({ default: m.SearchPage })));
+// 诊断插桩：记录各页面分包的加载耗时/失败（写入 easytool.log）
+const loadPage =
+  (
+    name: string,
+    loader: () => Promise<{ default: React.ComponentType<any> }>,
+  ) =>
+  async () => {
+    const t0 = Date.now();
+    try {
+      const m = await loader();
+      invoke("log_frontend", {
+        level: "info",
+        msg: `[chunk] ${name} loaded in ${Date.now() - t0}ms`,
+      }).catch(() => {});
+      return m;
+    } catch (e) {
+      invoke("log_frontend", {
+        level: "error",
+        msg: `[chunk] ${name} FAILED: ${e}`,
+      }).catch(() => {});
+      throw e;
+    }
+  };
+
+const Clippage = lazy(
+  loadPage("clipboard", () =>
+    import("@/modules/clipboard/Clippage").then(m => ({ default: m.Clippage })),
+  ),
+);
+const QuotaPage = lazy(
+  loadPage("quota", () =>
+    import("@/modules/quota/QuotaPage").then(m => ({ default: m.QuotaPage })),
+  ),
+);
+const EmojiPage = lazy(
+  loadPage("emoji", () =>
+    import("@/modules/emoji/Page").then(m => ({ default: m.EmojiPage })),
+  ),
+);
+const SearchPage = lazy(
+  loadPage("search", () =>
+    import("@/modules/search/Page").then(m => ({ default: m.SearchPage })),
+  ),
+);
 
 function App() {
   const entranceRef = useWindowEntrance(true, ["animate-in", "fade-in-0", "zoom-in-95"]);
