@@ -43,11 +43,15 @@ pub struct GoQuota {
 const DEEPSEEK_ENDPOINT: &str = "https://api.deepseek.com/user/balance";
 const GO_ENDPOINT: &str = "https://opencode.ai/zen/go/v1/usage";
 
-fn client() -> reqwest::blocking::Client {
-    reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .unwrap_or_default()
+/// 进程级共享 HTTP 客户端：复用连接池，避免每次轮询重新 TLS 握手
+fn client() -> &'static reqwest::blocking::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .unwrap_or_default()
+    })
 }
 
 fn do_get(client: &reqwest::blocking::Client, url: &str, api_key: &str) -> QuotaResult<String> {
@@ -78,7 +82,7 @@ pub fn fetch_balance(api_key: &str) -> QuotaResult<Balance> {
         return Err(QuotaError::AuthFailed("尚未设置 API 密钥".into()));
     }
     let client = client();
-    let body = do_get(&client, DEEPSEEK_ENDPOINT, api_key)?;
+    let body = do_get(client, DEEPSEEK_ENDPOINT, api_key)?;
     parse_balance(&body)
 }
 
@@ -162,7 +166,7 @@ pub fn fetch_go_quota(api_key: &str) -> QuotaResult<Vec<GoQuota>> {
         ));
     }
     let client = client();
-    let body = do_get(&client, GO_ENDPOINT, &key)?;
+    let body = do_get(client, GO_ENDPOINT, &key)?;
     parse_usage(&body)
 }
 

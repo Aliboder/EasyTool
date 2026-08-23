@@ -191,8 +191,15 @@ impl Db {
         let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let keyword = keyword.trim();
         if !keyword.is_empty() {
-            let pattern = format!("%{keyword}%");
-            sql.push_str(" AND (content LIKE ? OR file_paths LIKE ?)");
+            // 转义 LIKE 通配符，让 %/_ 按字面匹配
+            let esc = keyword
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            let pattern = format!("%{esc}%");
+            sql.push_str(
+                " AND (content LIKE ? ESCAPE '\\' OR file_paths LIKE ? ESCAPE '\\')",
+            );
             args.push(Box::new(pattern.clone()));
             args.push(Box::new(pattern));
         }
@@ -404,6 +411,10 @@ pub fn backup_database(data_dir: &std::path::Path) {
         }
     }
     let dest = backup_dir.join(format!("pasteboard-{}.db", now_ms()));
+    // 先把 WAL 落盘，避免崩溃后备份缺少尾部提交
+    if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+        let _ = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_r| Ok(()));
+    }
     if std::fs::copy(&db_path, &dest).is_ok() {
         log::info!("db backup saved: {}", dest.display());
     }

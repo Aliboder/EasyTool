@@ -306,7 +306,7 @@ fn apply_deepseek(
         notify(app, "🚨 余额告急", &msg);
         log::warn!("alert: balance critical, {msg}");
     }
-    if status.initialized && warn && notify_low {
+    if status.initialized && warn && !critical && notify_low {
         let msg = format!(
             "{} 余额仅剩 ¥{:.2}（预警阈值: ¥{:.2}）",
             acc.name, b.amount, threshold
@@ -431,11 +431,14 @@ fn poll_loop(app: AppHandle) {
             }
         };
         if due {
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                fetch_once(&app);
+            // 先推进时间戳再拉取：即使 fetch_once panic 也不会形成秒级重试环
+            {
                 let st_guard = app.state::<Mutex<QuotaState>>();
                 let mut st = st_guard.lock().unwrap();
                 st.last_fetch = Some(Instant::now());
+            }
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                fetch_once(&app);
             }));
         }
     }

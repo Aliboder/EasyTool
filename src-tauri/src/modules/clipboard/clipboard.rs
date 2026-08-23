@@ -379,7 +379,11 @@ pub fn write_text_rich(text: &str, html: Option<&str>) -> bool {
                             } else {
                                 let _ = GlobalFree(Some(h2));
                             }
+                        } else {
+                            let _ = GlobalFree(Some(h2));
                         }
+                    } else {
+                        let _ = GlobalFree(Some(h2));
                     }
                 }
             }

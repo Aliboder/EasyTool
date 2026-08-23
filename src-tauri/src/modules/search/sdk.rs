@@ -196,7 +196,9 @@ impl EverythingSdk {
             let mut buf = vec![0u16; 4096];
             for i in 0..count {
                 let len = (self.fns.get_result_full_path_name)(i, buf.as_mut_ptr(), buf.len() as u32);
-                let full_path = String::from_utf16_lossy(&buf[..len as usize]);
+                // 缓冲区不足时 SDK 返回所需长度而非已拷贝长度，钳制防止越界切片
+                let n = (len as usize).min(buf.len());
+                let full_path = String::from_utf16_lossy(&buf[..n]);
 
                 let size = {
                     let mut v: i64 = 0;
