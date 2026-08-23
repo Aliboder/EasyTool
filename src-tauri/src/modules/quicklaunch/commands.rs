@@ -293,7 +293,8 @@ pub struct ScannedApp {
     pub path: String,
 }
 
-const SCAN_EXTS: &[&str] = &[".lnk", ".url"];
+// 注意：Path::extension() 返回值不带前导点（"lnk" 而非 ".lnk"）
+const SCAN_EXTS: &[&str] = &["lnk", "url"];
 
 fn collect_apps(
     dir: &std::path::Path,
@@ -355,4 +356,36 @@ pub async fn quicklaunch_scan_apps() -> CmdResult<Vec<ScannedApp>> {
     })
     .await
     .map_err(|e| format!("扫描任务失败: {e}"))?
+}
+
+#[cfg(test)]
+mod scan_tests {
+    use super::*;
+
+    #[test]
+    fn scan_real_start_menu() {
+        let mut out: Vec<ScannedApp> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut roots: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(d) = std::env::var_os("APPDATA") {
+            let r = std::path::PathBuf::from(d).join(r"Microsoft\Windows\Start Menu\Programs");
+            println!("user root exists: {}", r.exists());
+            roots.push(r);
+        } else {
+            println!("APPDATA not set!");
+        }
+        if let Some(d) = std::env::var_os("ProgramData") {
+            let r = std::path::PathBuf::from(d).join(r"Microsoft\Windows\Start Menu\Programs");
+            println!("allusers root exists: {}", r.exists());
+            roots.push(r);
+        }
+        for r in &roots {
+            collect_apps(r, 0, &mut out, &mut seen);
+        }
+        println!("scanned count = {}", out.len());
+        for a in out.iter().take(5) {
+            println!("  e.g. {} -> {}", a.name, a.path);
+        }
+        assert!(!out.is_empty(), "scan found nothing");
+    }
 }

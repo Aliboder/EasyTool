@@ -24,6 +24,7 @@ export function AppPicker({
   onAdd: (paths: string[]) => void;
 }) {
   const [apps, setApps] = useState<ScannedApp[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const { icons, loadIcon } = useFileIcons();
@@ -31,12 +32,14 @@ export function AppPicker({
   useEffect(() => {
     if (!open) return;
     setApps(null);
+    setError(null);
     setPicked(new Set());
     setQ("");
     invoke<ScannedApp[]>("quicklaunch_scan_apps")
       .then(setApps)
       .catch((e) => {
         console.error("scan apps failed:", e);
+        setError(String(e));
         setApps([]);
       });
   }, [open]);
@@ -86,6 +89,8 @@ export function AppPicker({
             <div className="py-8 text-center text-xs text-muted-foreground">
               正在扫描开始菜单…
             </div>
+          ) : error ? (
+            <div className="py-8 text-center text-xs text-destructive">{error}</div>
           ) : filtered.length === 0 ? (
             <div className="py-8 text-center text-xs text-muted-foreground">
               没有匹配的应用
