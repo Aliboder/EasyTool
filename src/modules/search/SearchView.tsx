@@ -397,7 +397,6 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   // 列表行
   const rowNode = (r: SearchResultDto) => (
     <div
-      data-index={r.full_path}
       onClick={() => {
         if (cfg.clickToOpen) doOpen(r);
         else setSelected(r.full_path);
@@ -441,7 +440,6 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     const iconSize = Math.max(gs * 0.5, 24);
     return (
       <div
-        data-index={r.full_path}
         onClick={() => {
           if (cfg.clickToOpen) doOpen(r);
           else setSelected(r.full_path);

@@ -29,9 +29,6 @@ pub struct GoSnapshot {
 /// Go 重置周期
 #[derive(Debug, Clone)]
 pub struct GoCycle {
-    pub id: i64,
-    pub account_id: String,
-    pub window: String,
     pub cycle_start: i64, // unix ms
     pub cycle_end: Option<i64>,
     pub peak_utilization: f64,
@@ -309,19 +306,16 @@ impl QuotaDb {
     pub fn active_cycle(&self, account_id: &str, window: &str) -> DbResult<Option<GoCycle>> {
         self.conn
             .query_row(
-                "SELECT id, account_id, window, cycle_start, cycle_end, peak_utilization, total_delta
+                "SELECT cycle_start, cycle_end, peak_utilization, total_delta
                  FROM go_cycles WHERE account_id = ?1 AND window = ?2 AND cycle_end IS NULL
                  ORDER BY cycle_start DESC LIMIT 1",
                 params![account_id, window],
                 |r| {
                     Ok(GoCycle {
-                        id: r.get(0)?,
-                        account_id: r.get(1)?,
-                        window: r.get(2)?,
-                        cycle_start: r.get(3)?,
-                        cycle_end: r.get(4)?,
-                        peak_utilization: r.get(5)?,
-                        total_delta: r.get(6)?,
+                        cycle_start: r.get(0)?,
+                        cycle_end: r.get(1)?,
+                        peak_utilization: r.get(2)?,
+                        total_delta: r.get(3)?,
                     })
                 },
             )
@@ -361,7 +355,7 @@ impl QuotaDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, account_id, window, cycle_start, cycle_end, peak_utilization, total_delta
+                "SELECT cycle_start, cycle_end, peak_utilization, total_delta
                  FROM go_cycles WHERE account_id = ?1 AND window = ?2 AND cycle_end IS NOT NULL
                  ORDER BY cycle_start DESC LIMIT ?3",
             )
@@ -369,13 +363,10 @@ impl QuotaDb {
         let rows = stmt
             .query_map(params![account_id, window, limit], |r| {
                 Ok(GoCycle {
-                    id: r.get(0)?,
-                    account_id: r.get(1)?,
-                    window: r.get(2)?,
-                    cycle_start: r.get(3)?,
-                    cycle_end: r.get(4)?,
-                    peak_utilization: r.get(5)?,
-                    total_delta: r.get(6)?,
+                    cycle_start: r.get(0)?,
+                    cycle_end: r.get(1)?,
+                    peak_utilization: r.get(2)?,
+                    total_delta: r.get(3)?,
                 })
             })
             .map_err(|e| e.to_string())?;

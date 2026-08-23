@@ -1,17 +1,7 @@
 //! 文件存储层：图片原图/缩略图落盘与清理
 
-use super::cache::ImageCache;
 use super::models::Item;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-
-/// 全局图片缓存实例
-static IMAGE_CACHE: OnceLock<ImageCache> = OnceLock::new();
-
-/// 获取全局图片缓存
-fn get_image_cache() -> &'static ImageCache {
-    IMAGE_CACHE.get_or_init(|| ImageCache::new(100)) // 缓存100张图片
-}
 
 pub struct FileStore {
     root: PathBuf,
@@ -89,18 +79,6 @@ impl FileStore {
         if let Some(p) = &item.thumb_path {
             let _ = std::fs::remove_file(Path::new(p));
         }
-    }
-
-    /// 加载原图（使用缓存）
-    pub fn load_image(&self, id: i64) -> Option<Vec<u8>> {
-        let path = self.images_dir().join(format!("{id}.png"));
-        get_image_cache().get_or_load(&path.to_string_lossy())
-    }
-
-    /// 加载缩略图（使用缓存）
-    pub fn load_thumb(&self, id: i64) -> Option<Vec<u8>> {
-        let path = self.thumbs_dir().join(format!("{id}.png"));
-        get_image_cache().get_or_load(&path.to_string_lossy())
     }
 }
 

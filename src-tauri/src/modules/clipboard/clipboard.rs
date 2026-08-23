@@ -137,7 +137,7 @@ pub fn read_files() -> Option<Vec<String>> {
                 }
                 let start = cur;
                 let mut len = 0usize;
-                let mut hit_end = false;
+                let truncated;
                 if fwide {
                     let s16 = start as *const u16;
                     while start.add(len * 2) < end {
@@ -146,7 +146,7 @@ pub fn read_files() -> Option<Vec<String>> {
                         }
                         len += 1;
                     }
-                    hit_end = start.add(len * 2) >= end;
+                    truncated = start.add(len * 2) >= end;
                 } else {
                     while start.add(len) < end {
                         if *start.add(len) == 0 {
@@ -154,9 +154,9 @@ pub fn read_files() -> Option<Vec<String>> {
                         }
                         len += 1;
                     }
-                    hit_end = start.add(len) >= end;
+                    truncated = start.add(len) >= end;
                 }
-                if len == 0 || hit_end {
+                if len == 0 || truncated {
                     break; // 空串，或到缓冲区末尾仍无终止符（截断的畸形数据）
                 }
                 let s = if fwide {

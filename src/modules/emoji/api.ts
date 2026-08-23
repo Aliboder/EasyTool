@@ -64,7 +64,3 @@ async function doLoad(): Promise<Catalog> {
   });
   return { emoji, groups: dyn.groups, customs: dyn.customs };
 }
-
-export function invalidateStaticCache() {
-  staticCache = null;
-}

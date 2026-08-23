@@ -61,8 +61,7 @@ pub struct AccountStatus {
     pub error: Option<String>,
     pub go_windows: Vec<GoQuota>,
     pub last_balance: Option<f64>,
-    pub was_low: bool,
-    /// 是否已完成首次状态记录（首次不提醒）
+    /// 是否处于告警状态（首次不算，避免误报）
     pub initialized: bool,
     /// 最近一次消费突增提醒的日期（每天最多一次）
     pub last_surge_day: Option<chrono::NaiveDate>,
@@ -323,7 +322,6 @@ fn apply_deepseek(
         notify(app, "✅ 余额恢复", &msg);
         log::info!("alert: balance recovered, {msg}");
     }
-    status.was_low = b.amount < threshold;
 
     let db_guard = app.state::<Mutex<QuotaDb>>();
     let db = db_guard.lock().unwrap();
@@ -523,18 +521,6 @@ fn restore_from_db(app: &AppHandle) {
             }
         }
     }
-}
-
-/// 初始化额度监控模块：共享状态 + 轮询线程
-pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
-    let handle = app.handle().clone();
-    setup_db(&handle)?;
-    import_json_history(&handle);
-    app.manage(Mutex::new(QuotaState::default()));
-    restore_from_db(&handle);
-    std::thread::spawn(move || poll_loop(handle));
-    log::info!("quota module ready");
-    Ok(())
 }
 
 /// 从 AppHandle 初始化额度监控模块（用于并行初始化）

@@ -238,8 +238,6 @@ pub fn set_account_key(app: AppHandle, id: String, key: String) -> Result<(), St
 /// 测试密钥有效性（kind: deepseek / go）
 #[tauri::command]
 pub async fn test_key(kind: String, key: String) -> Result<String, String> {
-    let kind = kind.clone();
-    let key = key.clone();
     tauri::async_runtime::spawn_blocking(move || match kind.as_str() {
         "deepseek" => match super::api::fetch_balance(&key) {
             Ok(b) => Ok(format!("有效，当前余额 ¥{:.2}", b.amount)),

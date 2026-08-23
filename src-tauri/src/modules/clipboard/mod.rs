@@ -1,4 +1,3 @@
-pub mod cache;
 pub mod clipboard;
 pub mod commands;
 pub mod db;
@@ -30,24 +29,7 @@ pub fn max_items(app: &tauri::AppHandle) -> u64 {
         .unwrap_or(500)
 }
 
-/// 初始化剪贴板模块：数据库、状态、监听线程
-pub fn setup(app: &mut tauri::App) -> tauri::Result<()> {
-    let handle = app.handle();
-    let data_dir = app.path().app_data_dir()?;
-    std::fs::create_dir_all(&data_dir)?;
-    db::backup_database(&data_dir);
-    let state = AppState::new(data_dir.clone(), data_dir.join("clipboard.db"), max_items(handle))
-        .expect("failed to init clipboard state");
-    if let Ok(db) = state.db.lock() {
-        let _ = db.vacuum_if_large(8 * 1024 * 1024);
-    }
-    log::info!("clipboard module ready, data dir: {}", data_dir.display());
-    app.manage(state);
-    monitor::start(handle.clone());
-    Ok(())
-}
-
-/// 从 AppHandle 初始化剪贴板模块（用于并行初始化）
+/// 初始化剪贴板模块：数据库、状态、监听线程（从 AppHandle，用于并行初始化）
 pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     let data_dir = app.path().app_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
