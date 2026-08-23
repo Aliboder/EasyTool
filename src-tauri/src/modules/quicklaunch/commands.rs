@@ -4,6 +4,54 @@ use super::{QuicklaunchState, types::*};
 
 pub type CmdResult<T> = Result<T, String>;
 
+/// 解析 .lnk 快捷方式的目标路径（COM IShellLinkW）；失败返回 None
+fn resolve_lnk(path: &str) -> Option<String> {
+    use windows::core::{HSTRING, Interface};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED, IPersistFile, STGM_READ,
+    };
+    use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+
+    unsafe {
+        if CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_err() {
+            return None;
+        }
+        let result = (|| {
+            let link: IShellLinkW =
+                CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+            let pf: IPersistFile = link.cast().ok()?;
+            pf.Load(&HSTRING::from(path), STGM_READ).ok()?;
+            let mut buf = [0u16; 1024];
+            let mut find = WIN32_FIND_DATAW::default();
+            link.GetPath(&mut buf, &mut find, 0).ok()?;
+            let len = buf.iter().position(|&c| c == 0).unwrap_or(0);
+            let s = String::from_utf16_lossy(&buf[..len]);
+            (!s.is_empty()).then_some(s)
+        })();
+        CoUninitialize();
+        result
+    }
+}
+
+/// 解析条目的「真实目标」（判重键）：
+/// - .lnk → COM 解析目标程序；其余本地路径 → canonicalize（顺带解析符号链接）
+/// - URL 不解析；任何失败回退为小写化原路径
+fn resolve_target(path: &str) -> String {
+    let lower = path.to_lowercase();
+    if lower.ends_with(".lnk") {
+        if let Some(t) = resolve_lnk(path) {
+            return t.to_lowercase();
+        }
+    } else if !lower.starts_with("http://") && !lower.starts_with("https://") {
+        if let Ok(c) = std::fs::canonicalize(path) {
+            return c.to_string_lossy().to_lowercase();
+        }
+    }
+    lower
+}
+
 #[tauri::command]
 pub fn quicklaunch_create_item(
     state: State<'_, Mutex<QuicklaunchState>>,
@@ -182,11 +230,21 @@ pub fn quicklaunch_add_from_path(
 ) -> CmdResult<Item> {
     let st = state.lock().map_err(|e| format!("锁状态失败: {e}"))?;
     
-    // 检查文件是否已存在
+    // 检查文件是否已存在（路径完全一致，快速路径）
     if let Some(existing_id) = st.db.item_exists_by_path(&path).map_err(|e| format!("查询失败: {e}"))? {
         // 文件已存在，更新时间戳并返回现有记录
         st.db.touch_item(existing_id).map_err(|e| format!("更新失败: {e}"))?;
         return st.db.get_item(existing_id).map_err(|e| format!("获取项目失败: {e}"));
+    }
+
+    // 内容级判重：不同快捷方式/路径指向同一目标视为重复
+    // （开始菜单与公共桌面各有一份 .lnk 是常见场景）
+    let new_target = resolve_target(&path);
+    for (id, p) in st.db.list_item_paths().map_err(|e| format!("查询失败: {e}"))? {
+        if resolve_target(&p) == new_target {
+            st.db.touch_item(id).map_err(|e| format!("更新失败: {e}"))?;
+            return st.db.get_item(id).map_err(|e| format!("获取项目失败: {e}"));
+        }
     }
     
     // 判断文件类型
@@ -225,6 +283,76 @@ pub fn quicklaunch_create_folder_with_items(
     for item_id in item_ids.iter() {
         let _ = st.db.update_item(*item_id, None, Some(Some(folder.id)));
     }
-    
+
     Ok(folder)
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ScannedApp {
+    pub name: String,
+    pub path: String,
+}
+
+const SCAN_EXTS: &[&str] = &[".lnk", ".url"];
+
+fn collect_apps(
+    dir: &std::path::Path,
+    depth: u32,
+    out: &mut Vec<ScannedApp>,
+    seen: &mut std::collections::HashSet<String>,
+) {
+    if depth > 6 {
+        return;
+    }
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in rd.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            collect_apps(&p, depth + 1, out, seen);
+        } else if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+            if SCAN_EXTS.contains(&ext.to_lowercase().as_str()) {
+                // 路径去重 + 同名快捷方式去重（用户菜单/公共菜单各一份只留一个）
+                let path_key = p.to_string_lossy().to_lowercase();
+                let stem_key = format!(
+                    "stem:{}",
+                    p.file_stem().map(|s| s.to_string_lossy().to_lowercase())
+                        .unwrap_or_default()
+                );
+                if seen.insert(path_key) && seen.insert(stem_key) {
+                    out.push(ScannedApp {
+                        name: p
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        path: p.to_string_lossy().into_owned(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// 扫描开始菜单中的快捷方式，供「添加」选择器快速挑选已安装的应用
+#[tauri::command]
+pub async fn quicklaunch_scan_apps() -> CmdResult<Vec<ScannedApp>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let mut out: Vec<ScannedApp> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut roots: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(d) = std::env::var_os("APPDATA") {
+            roots.push(std::path::PathBuf::from(d).join(r"Microsoft\Windows\Start Menu\Programs"));
+        }
+        if let Some(d) = std::env::var_os("ProgramData") {
+            roots.push(std::path::PathBuf::from(d).join(r"Microsoft\Windows\Start Menu\Programs"));
+        }
+        for r in roots {
+            collect_apps(&r, 0, &mut out, &mut seen);
+        }
+        out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("扫描任务失败: {e}"))?
 }

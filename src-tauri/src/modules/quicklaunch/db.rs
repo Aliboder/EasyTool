@@ -60,6 +60,19 @@ impl QuicklaunchDb {
             |row| row.get(0),
         ).optional().map_err(|e| format!("查询失败: {e}"))
     }
+
+    /// 全部条目的 (id, path)：内容级判重时逐条解析目标比对
+    pub fn list_item_paths(&self) -> Result<Vec<(i64, String)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, path FROM items")
+            .map_err(|e| format!("查询失败: {e}"))?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| format!("查询失败: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读取失败: {e}"))
+    }
     
     /// 更新项目的时间戳（用于重复添加时刷新）
     pub fn touch_item(&self, id: i64) -> Result<(), String> {

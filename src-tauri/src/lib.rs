@@ -751,6 +751,7 @@ pub fn run() {
             modules::quicklaunch::commands::quicklaunch_open_item,
             modules::quicklaunch::commands::quicklaunch_open_item_as_admin,
             modules::quicklaunch::commands::quicklaunch_add_from_path,
+            modules::quicklaunch::commands::quicklaunch_scan_apps,
             modules::quicklaunch::commands::quicklaunch_create_folder_with_items,
             set_active_module,
         ])

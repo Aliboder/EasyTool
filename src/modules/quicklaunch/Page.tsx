@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   DndContext,
@@ -24,6 +23,7 @@ import { ItemCard, QuicklaunchItem } from "./ItemCard";
 import { GroupCard } from "./GroupCard";
 import { FolderOverlay } from "./FolderOverlay";
 import { QuicklaunchSettings } from "./Settings";
+import { AppPicker } from "./AppPicker";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { ContextMenu } from "@/components/ui/context-menu";
@@ -133,6 +133,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
     x: 0,
@@ -436,25 +437,19 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
     }
   };
 
-  const handleAddItem = async () => {
-    const picked = await open({
-      multiple: true,
-      filters: [
-        { name: "所有文件", extensions: ["*"] },
-      ],
-    });
-    if (picked) {
-      const paths = Array.isArray(picked) ? picked : [picked];
-      for (const path of paths) {
-        try {
-          await invoke("quicklaunch_add_from_path", { path });
-        } catch (e) {
-          toast(`添加失败：${e}`);
-          console.error("Failed to create item:", e);
-        }
+  const handleAddItem = () => setPickerOpen(true);
+
+  // 批量添加（选择器「添加所选」/「浏览文件」共用）；重复内容由后端判重拦截
+  const addPaths = async (paths: string[]) => {
+    for (const path of paths) {
+      try {
+        await invoke("quicklaunch_add_from_path", { path });
+      } catch (e) {
+        toast(`添加失败：${e}`);
+        console.error("Failed to create item:", e);
       }
-      fetchItems();
     }
+    fetchItems();
   };
 
   const handleAddFolder = async () => {
@@ -725,6 +720,12 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
           onUpdate={updateConfig}
         />
       </Drawer>
+
+      <AppPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onAdd={addPaths}
+      />
 
       <div
         ref={containerRef}
