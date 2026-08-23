@@ -127,6 +127,9 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const [preview, setPreview] = useState<{ src: string; name: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // 冷启动兜底：首批请求可能撞上后端模块未就绪的窗口期，自动重试跨越它
+  const bootRetry = useRef(3);
+
   const load = useCallback(async () => {
     try {
       const list = await invoke<ItemDto[]>("get_history", {
@@ -135,6 +138,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
         limit: 200,
         offset: 0,
       });
+      bootRetry.current = 3;
       setItems(list);
       setSelected((cur) => (list.some((i) => i.id === cur) ? cur : (list[0]?.id ?? null)));
       // 预载缩略图（图片条目 + 图片类文件）
@@ -155,6 +159,16 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       if (Object.keys(t).length) setThumbs((prev) => ({ ...prev, ...t }));
     } catch (e) {
       console.error("load history failed", e);
+      invoke("log_frontend", {
+        level: "warn",
+        msg: `get_history failed: ${e}`,
+      }).catch(() => {});
+      // 未就绪窗口期自动重试（0.5s/1s/1.5s），跨越后正常
+      if (bootRetry.current > 0) {
+        bootRetry.current -= 1;
+        const delay = 500 * (3 - bootRetry.current);
+        window.setTimeout(() => void load(), delay);
+      }
     }
   }, [search, filter]);
 
