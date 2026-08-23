@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
 import { ModuleHeader, HeaderButton, HeaderSort, type HeaderSortField } from "@/components/module-header";
@@ -320,6 +321,20 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   useEffect(() => {
     if (filter === APPS_TAB) ensureApps(true); // 切到应用 Tab 强制刷新频率数据
   }, [filter, ensureApps]);
+
+  // 后台监测计数后通知刷新：节流 5 秒，仅在应用 Tab 或有搜索词时拉取
+  useEffect(() => {
+    let last = 0;
+    const un = listen("search://apps_dirty", () => {
+      const now = Date.now();
+      if (now - last < 5000) return;
+      last = now;
+      if (filter === APPS_TAB || query.trim()) ensureApps(true);
+    });
+    return () => {
+      un.then((fn) => fn());
+    };
+  }, [filter, query, ensureApps]);
 
   const openApp = useCallback(
     (path: string) => {

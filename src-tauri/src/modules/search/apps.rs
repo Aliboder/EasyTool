@@ -199,6 +199,13 @@ pub fn scan_installed(app: &AppHandle) -> Result<Vec<ScannedApp>, String> {
     if let Some(d) = std::env::var_os("ProgramData") {
         roots.push(std::path::PathBuf::from(d).join(r"Microsoft\Windows\Start Menu\Programs"));
     }
+    // 桌面快捷方式也是常见启动入口，纳入扫描（重复目标由解析去重兜底）
+    if let Some(d) = std::env::var_os("USERPROFILE") {
+        roots.push(std::path::PathBuf::from(d).join("Desktop"));
+    }
+    if let Some(d) = std::env::var_os("PUBLIC") {
+        roots.push(std::path::PathBuf::from(d).join("Desktop"));
+    }
     for r in &roots {
         collect_apps(r, 0, &mut candidates, &mut seen_paths);
     }

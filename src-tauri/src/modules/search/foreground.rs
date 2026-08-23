@@ -3,7 +3,7 @@
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Mutex, OnceLock};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::Threading::{
@@ -20,6 +20,7 @@ use super::apps::{resolve_target, AppsState};
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static LAST_HWND: AtomicIsize = AtomicIsize::new(0);
+static FIRST_COUNT_LOGGED: AtomicIsize = AtomicIsize::new(0);
 
 /// 阻塞式启动：挂钩子后泵消息循环（在专用线程调用）
 pub fn start(app: AppHandle) {
@@ -94,7 +95,14 @@ unsafe extern "system" fn on_foreground(
         let st = state.lock().unwrap();
         st.db.increment(&target)
     };
-    if let Err(e) = res {
-        log::warn!("app usage increment failed: {e}");
+    match res {
+        Ok(()) => {
+            if FIRST_COUNT_LOGGED.swap(1, Ordering::Relaxed) == 0 {
+                log::info!("foreground monitor first count recorded: {target}");
+            }
+            // 通知前端数据有变（界面自行节流刷新）
+            let _ = app.emit("search://apps_dirty", ());
+        }
+        Err(e) => log::warn!("app usage increment failed: {e}"),
     }
 }
