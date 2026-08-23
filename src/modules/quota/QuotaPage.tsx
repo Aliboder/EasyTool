@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Settings2, RefreshCw } from "lucide-react";
 import { Drawer } from "@/components/ui/drawer";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
@@ -29,17 +30,25 @@ export function QuotaPage() {
   const dsAccounts = status?.accounts.filter((a) => a.kind === "deepseek") ?? [];
   const goAccounts = status?.accounts.filter((a) => a.kind === "go") ?? [];
 
-  const refresh = useCallback(() => {
+  // 状态走后端 fetch 后 emit 的 quota://updated 事件驱动；设置（含 keyring 读取）
+  // 只在挂载和手动/保存后拉取，不再固定 5 秒轮询
+  const refreshStatus = useCallback(() => {
     invoke<StatusPayload>("get_status").then(setStatus).catch(console.error);
-    invoke<Settings>("get_settings").then(setSettings).catch(console.error);
     setLastRefresh(Date.now());
   }, []);
 
+  const refreshAll = useCallback(() => {
+    refreshStatus();
+    invoke<Settings>("get_settings").then(setSettings).catch(console.error);
+  }, [refreshStatus]);
+
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 5000);
-    return () => clearInterval(t);
-  }, [refresh]);
+    refreshAll();
+    const un = listen("quota://updated", refreshStatus);
+    return () => {
+      un.then((fn) => fn());
+    };
+  }, [refreshAll, refreshStatus]);
 
   const threshold = settings?.warn_threshold ?? 10;
   const critical = settings?.critical_threshold ?? threshold / 2;
@@ -61,7 +70,7 @@ export function QuotaPage() {
         }
         actions={
           <>
-            <HeaderButton title="手动刷新" onClick={refresh}>
+            <HeaderButton title="手动刷新" onClick={refreshAll}>
               <RefreshCw className="size-4" />
             </HeaderButton>
             <HeaderButton
@@ -145,7 +154,7 @@ export function QuotaPage() {
         onClose={() => setShowSettings(false)}
         title="额度监控设置"
       >
-        <QuotaSettings onRefresh={refresh} />
+        <QuotaSettings onRefresh={refreshAll} />
       </Drawer>
     </div>
   );

@@ -11,7 +11,7 @@ import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { EMOJI_DEFAULTS } from "./config";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
-import { gridColumns, gridVerticalTarget } from "@/lib/grid";
+import { gridColumns } from "@/lib/grid";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
@@ -65,13 +65,23 @@ const TAB_ZH: Record<string, string> = {
 // 增量渲染：单批渲染数量，滚动到底部再加载下一批（避免一次性渲染 1900+ 节点与 SVG 请求）
 const BATCH = 240;
 
+interface PopupItem {
+  type: "custom" | "emoji";
+  id: string;
+  label: string;
+  thumb: string | null;
+  ts: number;
+  code?: string | null;
+}
+
 export function EmojiPopup() {
   const [cat, setCat] = useState<Catalog | null>(null);
   const [tab, setTab] = useState("favorite");
   const [q, setQ] = useState("");
   const [visible, setVisible] = useState(BATCH);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const gridRef = useRef<HTMLDivElement | null>(null);
+  const customGridRef = useRef<HTMLDivElement | null>(null);
+  const emojiGridRef = useRef<HTMLDivElement | null>(null);
   const listLenRef = useRef(0);
   const lastLoadRef = useRef(0);
 
@@ -121,22 +131,31 @@ export function EmojiPopup() {
       getCurrentWindow().hide();
       return;
     }
-    if (!shown.length) return;
+    const total = shownC.length + shownE.length;
+    if (!total) return;
     const dir = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
     if (dir !== 0) {
       e.preventDefault();
-      const cols = gridRef.current ? gridColumns(gridRef.current) : 1;
-      setActiveIdx((i) => gridVerticalTarget(i ?? -1, dir, shown.length, cols));
-    } else if (e.key === "Enter" && activeIdx != null && activeIdx < shown.length) {
+      // 双网格：按高亮所在网格的实际列数跨行步进，边界处钳制
+      const colsAt = (idx: number) => {
+        const ref = idx < shownC.length ? customGridRef : emojiGridRef;
+        return ref.current ? gridColumns(ref.current) : 1;
+      };
+      setActiveIdx((i) => {
+        const cur = i == null ? (dir === 1 ? -1 : total) : i;
+        const from = Math.min(Math.max(cur, 0), total - 1);
+        return Math.min(Math.max(cur + dir * colsAt(from), 0), total - 1);
+      });
+    } else if (e.key === "Enter" && activeIdx != null && activeIdx < total) {
       e.preventDefault();
-      const it = shown[activeIdx];
+      const it = activeIdx < shownC.length ? shownC[activeIdx] : shownE[activeIdx - shownC.length];
       pick(it.type, it.id);
       setActiveIdx(null);
     }
   };
 
   const list = useMemo(() => {
-    if (!cat) return [];
+    if (!cat) return { customs: [], emojis: [] };
     const ql = q.trim().toLowerCase();
     let emojis = cat.emoji;
     if (tab === "recent") {
@@ -158,27 +177,30 @@ export function EmojiPopup() {
         : tab === "recent"
           ? cat.customs.filter((c) => c.last_used_at != null)
           : [];
-    const items = [
-      ...customs.map((c) => ({
+    // 双网格分区展示（对齐主窗 Page），各自按最近使用排序
+    const cItems: PopupItem[] = customs
+      .map((c) => ({
         type: "custom" as const,
         id: String(c.id),
         label: c.name,
         thumb: c.thumb,
         ts: c.last_used_at ?? 0,
-      })),
-      ...emojis.map((e) => ({
+      }))
+      .sort((a, b) => b.ts - a.ts);
+    const eItems: PopupItem[] = emojis
+      .map((e) => ({
         type: "emoji" as const,
         id: e.char,
         label: e.name_en,
         thumb: null,
         ts: e.last_used_at ?? 0,
         code: e.code,
-      })),
-    ];
-    return items.sort((a, b) => b.ts - a.ts);
+      }))
+      .sort((a, b) => b.ts - a.ts);
+    return { customs: cItems, emojis: eItems };
   }, [cat, tab, q]);
 
-  listLenRef.current = list.length;
+  listLenRef.current = list.customs.length + list.emojis.length;
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -199,7 +221,38 @@ export function EmojiPopup() {
     });
   }, []);
 
-  const shown = list.slice(0, visible);
+  const shownC = list.customs.slice(0, visible);
+  const shownE = list.emojis.slice(0, Math.max(0, visible - shownC.length));
+
+  // 网格格子（双网格共用渲染；size 由所在网格决定）
+  const cell = (item: PopupItem, idx: number, size: number) => (
+    <button
+      key={item.type + item.id}
+      title={item.label}
+      onClick={() => pick(item.type, item.id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY, type: item.type, id: item.id });
+      }}
+      className={cn(
+        "flex items-center justify-center overflow-hidden rounded-md hover:bg-accent",
+        idx === activeIdx && "ring-2 ring-primary",
+      )}
+      style={{ width: size, height: size }}
+    >
+      {item.thumb ? (
+        <img
+          src={`data:image/png;base64,${item.thumb}`}
+          className="h-full w-full object-contain"
+          alt=""
+        />
+      ) : item.type === "emoji" ? (
+        <SmartEmoji char={item.id} code={item.code ?? null} size={Math.round(size * 0.7)} />
+      ) : (
+        item.id
+      )}
+    </button>
+  );
 
   const pick = async (type: "emoji" | "custom", key: string) => {
     try {
@@ -240,37 +293,23 @@ export function EmojiPopup() {
         </div>
       )}
       <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-2">
-        <div ref={gridRef} className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.emojiGridSize}px)` }}>
-          {shown.map((item, idx) => (
-            <button
-              key={item.type + item.id}
-              title={item.label}
-              onClick={() => pick(item.type, item.id)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setMenu({ x: e.clientX, y: e.clientY, type: item.type, id: item.id });
-              }}
-              className={cn(
-                "flex items-center justify-center overflow-hidden rounded-md hover:bg-accent",
-                idx === activeIdx && "ring-2 ring-primary",
-              )}
-              style={{ width: emojiCfg.emojiGridSize, height: emojiCfg.emojiGridSize }}
-            >
-              {item.thumb ? (
-                <img
-                  src={`data:image/png;base64,${item.thumb}`}
-                  className="h-full w-full object-contain"
-                  alt=""
-                />
-              ) : item.type === "emoji" ? (
-                <SmartEmoji char={item.id} code={item.code} size={Math.round(emojiCfg.emojiGridSize * 0.7)} />
-              ) : (
-                item.id
-              )}
-            </button>
-          ))}
+        {shownC.length > 0 && (
+          <div
+            ref={customGridRef}
+            className={cn("grid gap-1", shownE.length > 0 && "mb-2")}
+            style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.customGridSize}px)` }}
+          >
+            {shownC.map((item, idx) => cell(item, idx, emojiCfg.customGridSize))}
+          </div>
+        )}
+        <div
+          ref={emojiGridRef}
+          className="grid gap-1"
+          style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.emojiGridSize}px)` }}
+        >
+          {shownE.map((item, idx) => cell(item, shownC.length + idx, emojiCfg.emojiGridSize))}
         </div>
-        {list.length === 0 && (
+        {list.customs.length + list.emojis.length === 0 && (
           <div className="py-8 text-center text-xs text-muted-foreground">
             {cat ? "无匹配表情" : "加载中..."}
           </div>

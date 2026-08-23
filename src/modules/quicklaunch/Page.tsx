@@ -31,7 +31,7 @@ import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
 import { Plus, FolderPlus, Settings2, ClipboardPaste, LayoutList, LayoutGrid } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
-import { ModuleHeader, HeaderButton } from "@/components/module-header";
+import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-header";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 import { toast } from "@/lib/toast";
@@ -687,6 +687,19 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         tabs={QL_FILTERS.map((f) => ({ id: f.id, label: f.label }))}
         activeTab={filter}
         onTabChange={(id) => setFilter(id as FilterType)}
+        tabsTrailing={
+          <HeaderSort
+            fields={[
+              { id: "manual", label: "手动" },
+              { id: "name", label: "名称" },
+              { id: "created_at", label: "添加时间" },
+            ]}
+            value={cfg.sortBy}
+            onChange={(id) => updateConfig({ sortBy: id as QuicklaunchConfig["sortBy"] })}
+            desc={cfg.sortDesc}
+            onDescToggle={() => updateConfig({ sortDesc: !cfg.sortDesc })}
+          />
+        }
       />
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="快速启动设置">
