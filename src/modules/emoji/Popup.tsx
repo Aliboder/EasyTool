@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Search } from "lucide-react";
+import { Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { loadCatalog, type Catalog } from "./api";
 import { SmartEmoji } from "./SmartEmoji";
+import { EmojiSettings } from "./Settings";
 import { toast } from "@/lib/toast";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { EMOJI_DEFAULTS } from "./config";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 import { gridColumns, gridVerticalTarget } from "@/lib/grid";
+import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { Copy, Star } from "lucide-react";
@@ -74,9 +76,10 @@ export function EmojiPopup() {
   const lastLoadRef = useRef(0);
 
   // 统一配置（共享 Hook：focus 重读保证与主窗设置同步）
-  const { cfg: emojiCfg } = useModuleConfig("emoji", EMOJI_DEFAULTS);
-// 固定位置模式：记录移动后的位置（跟随鼠标模式下不记录，见 usePopupGeometry）
-usePopupGeometry("emoji", { trackPos: emojiCfg.followMouse === false });
+  const { cfg: emojiCfg, update: updateEmojiCfg } = useModuleConfig("emoji", EMOJI_DEFAULTS);
+  // 固定位置模式：记录移动后的位置（跟随鼠标模式下不记录，见 usePopupGeometry）
+  usePopupGeometry("emoji", { trackPos: emojiCfg.followMouse === false });
+  const [showSettings, setShowSettings] = useState(false);
   const entranceRef = useWindowEntrance(true, ["animate-in", "fade-in-0"]);
 
   useEffect(() => {
@@ -215,30 +218,27 @@ usePopupGeometry("emoji", { trackPos: emojiCfg.followMouse === false });
       onContextMenu={(e) => e.preventDefault()}
       className="flex h-screen flex-col bg-background text-foreground animate-in fade-in-0 duration-150"
     >
-      <div className="flex items-center gap-2 border-b p-2">
-        <Search className="size-4 shrink-0 text-muted-foreground" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="搜索表情…"
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          autoFocus
-        />
-      </div>
-      <div className="flex gap-1 overflow-x-auto border-b px-2 py-1">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              "shrink-0 rounded px-2 py-0.5 text-xs",
-              tab === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent",
-            )}
+      <ModuleHeader
+        search={{ value: q, onChange: setQ, placeholder: "搜索表情…", autoFocus: true }}
+        actions={
+          <HeaderButton
+            title="表情设置"
+            active={showSettings}
+            onClick={() => setShowSettings((v) => !v)}
           >
-            {TAB_ZH[t]}
-          </button>
-        ))}
-      </div>
+            <Settings2 className="size-4" />
+          </HeaderButton>
+        }
+        tabs={TABS.map((t) => ({ id: t, label: TAB_ZH[t] ?? t }))}
+        activeTab={tab}
+        onTabChange={setTab}
+      />
+
+      {showSettings && (
+        <div className="border-b p-3">
+          <EmojiSettings cfg={emojiCfg} onUpdate={updateEmojiCfg} />
+        </div>
+      )}
       <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-2">
         <div ref={gridRef} className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, ${emojiCfg.emojiGridSize}px)` }}>
           {shown.map((item, idx) => (

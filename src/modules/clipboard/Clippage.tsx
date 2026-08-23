@@ -3,12 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
+import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { CLIPBOARD_DEFAULTS } from "./config";
 import { Drawer } from "@/components/ui/drawer";
-import { Search, Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile } from "lucide-react";
+import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -567,60 +568,39 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="flex items-center gap-2 border-b p-2">
-        {popup && (
-          <div
-            data-tauri-drag-region
-            className="flex shrink-0 cursor-grab items-center self-stretch px-2 text-muted-foreground hover:text-foreground"
-            title="拖动窗口"
-          >
-            <GripVertical className="pointer-events-none size-4" />
-          </div>
-        )}
-        <Search className="size-4 shrink-0 text-muted-foreground" />
-        <input
-          id="search"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="搜索剪贴板历史…"
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          autoFocus
-        />
-        {!popup && (
-          <button
-            onClick={() => {
-              setShowSettings((v) => !v);
-            }}
-            aria-label="剪贴板设置"
-            className={cn(
-              "shrink-0 rounded p-1.5 transition-colors",
-              showSettings
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )}
+      <ModuleHeader
+        leading={
+          popup && (
+            <div
+              data-tauri-drag-region
+              className="flex shrink-0 cursor-grab items-center self-stretch px-2 text-muted-foreground hover:text-foreground"
+              title="拖动窗口"
+            >
+              <GripVertical className="pointer-events-none size-4" />
+            </div>
+          )
+        }
+        search={{
+          value: search,
+          onChange: onSearchChange,
+          placeholder: "搜索剪贴板历史…",
+          autoFocus: true,
+        }}
+        actions={
+          <HeaderButton
+            title="剪贴板设置"
+            active={showSettings}
+            onClick={() => setShowSettings((v) => !v)}
           >
             <Settings2 className="size-4" />
-          </button>
-        )}
-      </div>
+          </HeaderButton>
+        }
+        tabs={FILTERS.map((f) => ({ id: f.id, label: f.label }))}
+        activeTab={filter}
+        onTabChange={(id) => setFilter(id as Filter)}
+      />
 
       <>
-      <div className="flex gap-1 border-b px-2 py-1">
-        {FILTERS.map((f) => (
-          <button
-            key={f.id}
-            onClick={() => setFilter(f.id)}
-            className={cn(
-              "rounded px-2 py-0.5 text-xs transition-colors",
-              filter === f.id
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent",
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
 
       {composite ? (
         <div className="flex flex-1 flex-col overflow-hidden">

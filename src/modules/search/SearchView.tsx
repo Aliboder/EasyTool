@@ -1,12 +1,12 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
+import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import {
-  Search,
   FolderOpen,
   Copy,
   File,
@@ -540,166 +540,145 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="flex items-center gap-2 border-b p-2">
-        <Search className="size-4 shrink-0 text-muted-foreground" />
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="输入关键词搜索文件…"
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          autoFocus
-          autoComplete="off"
-        />
-        {loading && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />}
-        {cfg.showResultsCount && total > 0 && !loading && (
-          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-            共 {total} 项
-          </span>
-        )}
-        <button
-          onClick={toggleView}
-          aria-label="切换视图"
-          title={cfg.viewMode === "grid" ? "切换到列表" : "切换到网格"}
-          className="shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          {cfg.viewMode === "grid" ? <LayoutList className="size-4" /> : <LayoutGrid className="size-4" />}
-        </button>
-        {!popup && (
-          <button
-            onClick={() => {
-              setShowSettings((v) => !v);
-            }}
-            aria-label="搜索设置"
-            className={cn(
-              "shrink-0 rounded p-1.5 transition-colors",
-              showSettings
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )}
-          >
-            <Settings2 className="size-4" />
-          </button>
-        )}
-      </div>
+      <ModuleHeader
+        search={{
+          value: query,
+          onChange: onQueryChange,
+          placeholder: "输入关键词搜索文件…",
+          autoFocus: true,
+          inputRef: inputRef,
+          onKeyDown: onKeyDown,
+          trailing: (
+            <>
+              {loading && (
+                <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+              )}
+              {cfg.showResultsCount && total > 0 && !loading && (
+                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                  共 {total} 条
+                </span>
+              )}
+            </>
+          ),
+        }}
+        actions={
+          <>
+            <HeaderButton
+              title={cfg.viewMode === "grid" ? "切换到列表" : "切换到网格"}
+              onClick={toggleView}
+            >
+              {cfg.viewMode === "grid" ? (
+                <LayoutList className="size-4" />
+              ) : (
+                <LayoutGrid className="size-4" />
+              )}
+            </HeaderButton>
+            <HeaderButton
+              title="搜索设置"
+              active={showSettings}
+              onClick={() => setShowSettings((v) => !v)}
+            >
+              <Settings2 className="size-4" />
+            </HeaderButton>
+          </>
+        }
+        tabs={FILTERS.map((f) => ({ id: f.id, icon: f.icon, title: f.label }))}
+        activeTab={filter}
+        onTabChange={setFilter}
+        tabsTrailing={
+          <>
+            <div className="flex items-center gap-1 rounded-md border px-1.5 py-0.5">
+              <ArrowUpDown className="size-3 text-muted-foreground" />
+              <Select
+                value={cfg.sortBy}
+                onValueChange={(v) => setSort(v as SearchSettingsData["sortBy"], cfg.sortDesc)}
+              >
+                <SelectTrigger className="h-5 w-14 border-0 p-0 text-[11px] shadow-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(
+                    [
+                      ["name", "名称"],
+                      ["path", "路径"],
+                      ["size", "大小"],
+                      ["modified", "修改"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <SelectItem key={id} value={id}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={String(cfg.sortDesc)}
+                onValueChange={(v) => setSort(cfg.sortBy, v === "true")}
+              >
+                <SelectTrigger className="h-5 w-14 border-0 p-0 text-[11px] shadow-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="false">递增</SelectItem>
+                  <SelectItem value="true">递减</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-      {/* 过滤器 + 排序 + 搜索选项栏 */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b px-1 py-1">
-        <div className="flex shrink-0 items-center gap-0.5">
-          {FILTERS.map((f) => {
-            const Icon = f.icon;
-            const active = filter === f.id;
-            return (
+            {/* 匹配选项菜单 */}
+            <div ref={optsRef} className="relative">
               <button
-                key={f.id}
-                title={f.label}
-                onClick={() => setFilter(f.id)}
-                className={cn(
-                  "rounded-md p-1.5 transition-colors",
-                  active
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                )}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setOptsPos((cur) =>
+                    cur ? null : { x: r.right - 160, y: r.bottom + 4 },
+                  );
+                }}
+                aria-label="匹配选项"
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
-                <Icon className="size-4" />
+                <SlidersHorizontal className="size-3.5" />
               </button>
-            );
-          })}
-        </div>
-
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          <div className="flex items-center gap-1 rounded-md border px-1.5 py-0.5">
-            <ArrowUpDown className="size-3 text-muted-foreground" />
-            <Select
-              value={cfg.sortBy}
-              onValueChange={(v) => setSort(v as SearchSettingsData["sortBy"], cfg.sortDesc)}
-            >
-              <SelectTrigger className="h-5 w-14 border-0 p-0 text-[11px] shadow-none">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(
-                  [
-                    ["name", "名称"],
-                    ["path", "路径"],
-                    ["size", "大小"],
-                    ["modified", "修改时间"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <SelectItem key={id} value={id}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={String(cfg.sortDesc)}
-              onValueChange={(v) => setSort(cfg.sortBy, v === "true")}
-            >
-              <SelectTrigger className="h-5 w-14 border-0 p-0 text-[11px] shadow-none">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="false">升序</SelectItem>
-                <SelectItem value="true">降序</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* 搜索选项菜单 */}
-          <div ref={optsRef} className="relative">
-            <button
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                setOptsPos((cur) =>
-                  cur ? null : { x: r.right - 160, y: r.bottom + 4 },
-                );
-              }}
-              aria-label="搜索选项"
-              className="rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <SlidersHorizontal className="size-3.5" />
-            </button>
-            {optsPos && (
-              <div
-                className="fixed z-50 w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-                style={{ left: optsPos.x, top: optsPos.y }}
-              >
-                {(
-                  [
-                    ["matchCase", "区分大小写", options.matchCase],
-                    ["matchWholeWord", "整词匹配", options.matchWholeWord],
-                    ["matchPath", "匹配路径", options.matchPath],
-                    ["regex", "正则表达式", options.regex],
-                  ] as const
-                ).map(([key, label, on]) => (
-                  <button
-                    key={key}
-                    onClick={() => toggleOption(key)}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent",
-                      on ? "text-primary" : "text-foreground",
-                    )}
-                  >
-                    {key === "matchCase" ? (
-                      <Type className="size-3.5" />
-                    ) : key === "matchWholeWord" ? (
-                      <AlignJustify className="size-3.5" />
-                    ) : key === "matchPath" ? (
-                      <FolderSearch className="size-3.5" />
-                    ) : (
-                      <Regex className="size-3.5" />
-                    )}
-                    {label}
-                    {on && <span className="ml-auto">✓</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+              {optsPos && (
+                <div
+                  className="fixed z-50 w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                  style={{ left: optsPos.x, top: optsPos.y }}
+                >
+                  {(
+                    [
+                      ["matchCase", "区分大小写", options.matchCase],
+                      ["matchWholeWord", "全字匹配", options.matchWholeWord],
+                      ["matchPath", "匹配路径", options.matchPath],
+                      ["regex", "正则表达式", options.regex],
+                    ] as const
+                  ).map(([key, label, on]) => (
+                    <button
+                      key={key}
+                      onClick={() => toggleOption(key)}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent",
+                        on ? "text-primary" : "text-foreground",
+                      )}
+                    >
+                      {key === "matchCase" ? (
+                        <Type className="size-3.5" />
+                      ) : key === "matchWholeWord" ? (
+                        <AlignJustify className="size-3.5" />
+                      ) : key === "matchPath" ? (
+                        <FolderSearch className="size-3.5" />
+                      ) : (
+                        <Regex className="size-3.5" />
+                      )}
+                      {label}
+                      {on && <span className="ml-auto">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        }
+      />
 
       {notReady && (
         <div className="border-b bg-secondary/40 p-3">

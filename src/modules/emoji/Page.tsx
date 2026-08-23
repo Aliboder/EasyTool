@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-  Search,
   Upload,
   FolderPlus,
   Trash2,
@@ -10,7 +9,7 @@ import {
   Copy,
   Star,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
@@ -207,90 +206,56 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
     >
       {PromptDialog}
       <>
-      <div className="flex items-center gap-2 border-b pb-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="搜索表情（中文/英文）…"
-            className="w-full rounded-md border bg-background py-1.5 pl-8 pr-2 text-sm outline-none focus:border-primary"
-          />
-        </div>
-        <button
-          onClick={async () => {
-            const picked = await open({
-              multiple: true,
-              filters: [
-                { name: "图片", extensions: ["png", "jpg", "jpeg", "gif", "webp"] },
-              ],
-            });
-            if (picked) {
-              const paths = Array.isArray(picked) ? picked : [picked];
-              await invoke("import_emoji_files", { paths });
-              await refreshCustom();
-            }
-          }}
-          className="flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
-        >
-          <Upload className="size-3.5" /> 导入图片
-        </button>
-        <button
-          onClick={async () => {
-            const name = await prompt("新建分组", { placeholder: "请输入分组名称" });
-            if (name) {
-              await invoke("create_group", { name });
-              await refreshCustom();
-            }
-          }}
-          className="flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
-        >
-          <FolderPlus className="size-3.5" /> 新建分组
-        </button>
-        <button
-          onClick={() => setShowSettings((v) => !v)}
-          aria-label="表情设置"
-          className={cn(
-            "shrink-0 rounded p-1.5 transition-colors",
-            showSettings
-              ? "bg-accent text-foreground"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          <Settings2 className="size-4" />
-        </button>
-      </div>
-
-      <div className="mt-2 flex flex-wrap gap-1">
-        {GROUP_TABS.map((g) => (
-          <button
-            key={g.id}
-            onClick={() => setTab(g.id)}
-            className={cn(
-              "rounded px-2 py-0.5 text-xs",
-              tab === g.id
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent",
-            )}
-          >
-            {g.zh}
-          </button>
-        ))}
-        {customGroups.map((g) => (
-          <button
-            key={g.id}
-            onClick={() => setTab(String(g.id))}
-            className={cn(
-              "rounded px-2 py-0.5 text-xs",
-              tab === String(g.id)
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent",
-            )}
-          >
-            {g.name}
-          </button>
-        ))}
-      </div>
+      <ModuleHeader
+        search={{ value: q, onChange: setQ, placeholder: "搜索表情（中文/英文）…" }}
+        actions={
+          <>
+            <button
+              onClick={async () => {
+                const picked = await open({
+                  multiple: true,
+                  filters: [
+                    { name: "图片", extensions: ["png", "jpg", "jpeg", "gif", "webp"] },
+                  ],
+                });
+                if (picked) {
+                  const paths = Array.isArray(picked) ? picked : [picked];
+                  await invoke("import_emoji_files", { paths });
+                  await refreshCustom();
+                }
+              }}
+              className="flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
+            >
+              <Upload className="size-3.5" /> 导入图片
+            </button>
+            <button
+              onClick={async () => {
+                const name = await prompt("新建分组", { placeholder: "请输入分组名称" });
+                if (name) {
+                  await invoke("create_group", { name });
+                  await refreshCustom();
+                }
+              }}
+              className="flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs"
+            >
+              <FolderPlus className="size-3.5" /> 新建分组
+            </button>
+            <HeaderButton
+              title="表情设置"
+              active={showSettings}
+              onClick={() => setShowSettings((v) => !v)}
+            >
+              <Settings2 className="size-4" />
+            </HeaderButton>
+          </>
+        }
+        tabs={[
+          ...GROUP_TABS.map((g) => ({ id: g.id, label: g.zh })),
+          ...customGroups.map((g) => ({ id: String(g.id), label: g.name })),
+        ]}
+        activeTab={tab}
+        onTabChange={setTab}
+      />
 
       <div key={tab + "|" + q} ref={scrollRef} onScroll={onScroll} className="mt-3 flex-1 overflow-y-auto">
         {visibleEmoji.slice(0, visible).length > 0 && (

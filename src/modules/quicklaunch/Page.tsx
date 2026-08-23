@@ -23,15 +23,15 @@ import { CSS } from "@dnd-kit/utilities";
 import { ItemCard, QuicklaunchItem } from "./ItemCard";
 import { GroupCard } from "./GroupCard";
 import { FolderOverlay } from "./FolderOverlay";
-import { FilterBar, FilterType } from "./FilterBar";
 import { QuicklaunchSettings } from "./Settings";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
-import { Plus, FolderPlus, Settings2, ClipboardPaste } from "lucide-react";
+import { Plus, FolderPlus, Settings2, ClipboardPaste, LayoutList, LayoutGrid } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
+import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 import { toast } from "@/lib/toast";
@@ -40,6 +40,16 @@ import { gridColumns, gridIconSize, gridFontScale, gridVerticalTarget } from "@/
 import { cn } from "@/lib/utils";
 
 // ==================== 配置类型（对齐文件搜索模块） ====================
+
+export type FilterType = "all" | "app" | "file" | "folder" | "url";
+
+const QL_FILTERS: { id: FilterType; label: string }[] = [
+  { id: "all", label: "全部" },
+  { id: "app", label: "应用" },
+  { id: "file", label: "文件" },
+  { id: "folder", label: "文件夹" },
+  { id: "url", label: "URL" },
+];
 
 interface QuicklaunchConfig {
   viewMode: "grid" | "list";
@@ -144,7 +154,7 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
   const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<{ x: number; y: number } | null>(null);
 
-  // 切换视图（FilterBar 顶栏按钮用）
+  // 切换视图（面板头右侧按钮用）
   const toggleView = useCallback(() => {
     updateConfig({ viewMode: cfg.viewMode === "grid" ? "list" : "grid" });
   }, [updateConfig, cfg.viewMode]);
@@ -651,23 +661,33 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
           onClose={() => setExpandedFolder(null)}
         />
       )}
-      <div className="flex items-center border-b px-2 py-1.5">
-        <FilterBar
-          filter={filter}
-          onFilterChange={setFilter}
-          viewMode={cfg.viewMode}
-          onViewModeChange={toggleView}
-          search={search}
-          onSearchChange={setSearch}
-        />
-        <button
-          onClick={() => setShowSettings(true)}
-          aria-label="快速启动设置"
-          className="ml-1 shrink-0 rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <Settings2 className="size-4" />
-        </button>
-      </div>
+      <ModuleHeader
+        search={{ value: search, onChange: setSearch, placeholder: "搜索固定项…", autoFocus: true }}
+        actions={
+          <>
+            <HeaderButton
+              title={cfg.viewMode === "grid" ? "切换到列表" : "切换到网格"}
+              onClick={toggleView}
+            >
+              {cfg.viewMode === "grid" ? (
+                <LayoutList className="size-4" />
+              ) : (
+                <LayoutGrid className="size-4" />
+              )}
+            </HeaderButton>
+            <HeaderButton
+              title="快速启动设置"
+              active={showSettings}
+              onClick={() => setShowSettings(true)}
+            >
+              <Settings2 className="size-4" />
+            </HeaderButton>
+          </>
+        }
+        tabs={QL_FILTERS.map((f) => ({ id: f.id, label: f.label }))}
+        activeTab={filter}
+        onTabChange={(id) => setFilter(id as FilterType)}
+      />
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="快速启动设置">
         <QuicklaunchSettings
