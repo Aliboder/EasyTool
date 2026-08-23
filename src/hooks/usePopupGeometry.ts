@@ -24,6 +24,9 @@ export function usePopupGeometry(
     const un = win.onResized(({ payload }) => {
       if (t) window.clearTimeout(t);
       t = window.setTimeout(() => {
+        // 脏值过滤（与主窗口尺寸记忆同口径）：WebView2 在隐藏/最小化时会报 0x0，
+        // 写进配置会导致下次呼出弹窗极小；与 min_inner_size(400x300) 一致
+        if (payload.width < 400 || payload.height < 300) return;
         invoke("set_module_config", {
           moduleId,
           patch: { popup_size: { w: payload.width, h: payload.height } },

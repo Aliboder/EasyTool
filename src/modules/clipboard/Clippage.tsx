@@ -127,7 +127,9 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const [preview, setPreview] = useState<{ src: string; name: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const list = await invoke<ItemDto[]>("get_history", {
         filter: search,
@@ -135,6 +137,8 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
         limit: 200,
         offset: 0,
       });
+      // 迟到的旧响应：期间筛选/搜索已变，丢弃防止列表跳回旧状态
+      if (seq !== loadSeq.current) return;
       setItems(list);
       setSelected((cur) => (list.some((i) => i.id === cur) ? cur : (list[0]?.id ?? null)));
       // 预载缩略图（图片条目 + 图片类文件）
@@ -152,6 +156,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
         }
       }
       await Promise.all(pending);
+      if (seq !== loadSeq.current) return;
       if (Object.keys(t).length) setThumbs((prev) => ({ ...prev, ...t }));
     } catch (e) {
       console.error("load history failed", e);
@@ -190,7 +195,9 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
     try {
       await invoke("paste_item", { id });
     } catch (e) {
+      // 失败保留窗口：toast 渲染在本窗口内，先隐藏=错误完全不可见（表现为"点了没反应"）
       toast(String(e));
+      return;
     }
     hideWindow();
   };
@@ -515,6 +522,10 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       return;
     }
     if (e.key === "Escape") {
+      if (menu) {
+        setMenu(null); // 右键菜单开着时 Esc 只关菜单，不隐藏整窗
+        return;
+      }
       if (preview) {
         setPreview(null);
         return;

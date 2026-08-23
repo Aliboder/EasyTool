@@ -843,3 +843,25 @@
 **相关代码**：
 - `src-tauri/src/lib.rs` - `main_window_ready` 命令 + setup 移除 show + 15s 兜底
 - `src/App.tsx` - PAGE_IMPORTS 抽取共用 import + bootstrap 后双 rAF 发信号
+
+---
+
+## 2026-08-24
+
+### 全库审计修复（P1×6 + P2×12）：锁中毒、守卫误伤、竞态覆盖、主线程冻结
+
+**审计发现与修复要点**：
+
+1. **Mutex 中毒零恢复是系统性风险**：`.lock().unwrap()` 遍布 14 个文件 72 处，任意线程持锁 panic 后所有后续 `.lock()` 连环 panic——quota 轮询线程死亡、剪贴板命令全体报错，应用"活着但功能死"。修复：全部替换为 `.lock().unwrap_or_else(std::sync::PoisonError::into_inner)`（中毒时强行取回 guard 继续）。
+2. **时间窗守卫必须配内容指纹**：自写剪贴板守卫按 2000ms 一刀切，粘贴后用户快速复制的真实内容被吞且轮询签名已推进永不补录。修复：paste/copy 路径登记 `set_pending_ignore` 内容指纹，监听侧只跳过指纹一致的回声。
+3. **Win32 打包返回值要查文档**：EM_GETSEL 返回值 HIWORD=终点/LOWORD=起点且仅 16 位有效，直接取返回值得反序选区；改用指针出参拿完整 32 位 (start,end)。
+4. **非 async 命令跑在主线程**：同步 SDK 探测/缩略图解码/sleep(60ms) 都冻结 UI。async 化时 `State<'_,T>` 不能 move 进 spawn_blocking 闭包（E0521 borrowed data escapes），改传 AppHandle、闭包内 `app.state::<T>()`。
+5. **异步响应要防迟到覆盖**：Clippage/SearchView 列表加代序号 ref，`seq !== current` 直接丢弃旧响应。
+6. **失败路径不能跳过恢复动作**：换主热键 save_config 失败提前 return 时已 unregister_all 且不再 reapply=热键全灭；先恢复注册再返回错误。
+
+**教训**：
+1. 同类模式批量修复（如 72 处锁）用机械化替换一次到位；每处并发修复都要回答「谁在等这把锁」；
+2. toast 渲染在自己窗口里，窗口一隐藏提示即失效——错误反馈要保证存活到用户看到；
+3. 配置/历史类 JSON 写盘一律临时文件+rename 原子替换，崩溃半截文件的代价是静默全量重置。
+
+Aliboder

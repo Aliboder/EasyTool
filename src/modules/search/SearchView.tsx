@@ -140,23 +140,34 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   const optsRef = useRef<HTMLDivElement | null>(null);
   const debounce = useRef<number | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // 状态重试链：计数 + 定时器句柄（防叠加）
+  const statusRetries = useRef(0);
+  const statusTimer = useRef<number | null>(null);
+  // 搜索代序号：每次新搜索自增，迟到的旧响应不得覆盖新结果
+  const searchSeq = useRef(0);
 
   const refreshStatus = useCallback(async () => {
-    try {
-      const s = await invoke<SearchStatusDto>("search_get_status");
-      setStatus(s);
-      // 未运行：尝试自动启动（装到可定位路径时生效，便携版由用户手动启动）
-      if (!s.running) {
-        invoke("search_start_everything");
-        setTimeout(refreshStatus, 2500);
-      }
-    } catch (e) {
-      console.error("search status failed", e);
+    const s = await invoke<SearchStatusDto>("search_get_status");
+    setStatus(s);
+    // 未运行：尝试自动启动（装到可定位路径时生效，便携版由用户手动启动）。
+    // 限制总重试次数且同一时刻只保留一条重试链——否则未安装 Everything 的机器上
+    // 每次窗口聚焦都会叠加一条 2.5s 无限轮询链，长期挂机持续空转
+    if (s.running) {
+      statusRetries.current = 0;
+      return;
     }
+    if (statusRetries.current >= 5) return;
+    invoke("search_start_everything");
+    statusRetries.current += 1;
+    if (statusTimer.current) window.clearTimeout(statusTimer.current);
+    statusTimer.current = window.setTimeout(refreshStatus, 2500);
   }, []);
 
   useEffect(() => {
     refreshStatus();
+    return () => {
+      if (statusTimer.current) window.clearTimeout(statusTimer.current);
+    };
   }, [refreshStatus]);
 
   useEffect(() => {
@@ -175,6 +186,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       opts: SearchOptions,
       offset: number,
       isFirst: boolean,
+      seq: number,
     ): Promise<SearchResultDto[] | null> => {
       const parts = [filterQuery, q.trim()].filter(Boolean);
       const full = parts.join(" ");
@@ -196,6 +208,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
           matchPath: opts.matchPath,
           regex: opts.regex,
         });
+        // 迟到的旧响应：期间已发起新搜索，丢弃，防止列表跳回旧筛选/旧关键词
+        if (seq !== searchSeq.current) return null;
         if (isFirst) {
           setTotal(page.total);
           setResults(page.items);
@@ -243,7 +257,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     async (q: string, filterQuery: string, opts: SearchOptions) => {
       setLoading(true);
       setError(null);
-      const items = await fetchPage(q, filterQuery, opts, 0, true);
+      const seq = ++searchSeq.current;
+      const items = await fetchPage(q, filterQuery, opts, 0, true, seq);
       if (items) await preloadVisuals(items);
       setLoading(false);
     },
@@ -254,7 +269,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     if (loadingMore || loading) return;
     if (results.length >= total && total > 0) return; // 已全部加载
     setLoadingMore(true);
-    const items = await fetchPage(query, activeFilter.query, options, results.length, false);
+    const items = await fetchPage(query, activeFilter.query, options, results.length, false, searchSeq.current);
     if (items) await preloadVisuals(items);
     setLoadingMore(false);
   }, [loadingMore, loading, results.length, total, activeFilter.query, query, options, fetchPage, preloadVisuals]);
@@ -412,8 +427,19 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
 
   const setSort = (sortBy: SearchSettingsData["sortBy"], sortDesc: boolean) => {
     updateCfg({ sortBy, sortDesc });
-    doSearch(query, activeFilter.query, options);
   };
+
+  // 排序变化立即以新参数重搜：不能在 setSort 里直接 doSearch（闭包持旧 sortBy/sortDesc），
+  // 等 cfg 更新、fetchPage 重建后再触发
+  const sortKey = `${cfg.sortBy}|${cfg.sortDesc}`;
+  const lastSortRef = useRef(sortKey);
+  useEffect(() => {
+    if (lastSortRef.current === sortKey) return;
+    lastSortRef.current = sortKey;
+    if (filter === APPS_TAB) return;
+    doSearch(query, activeFilter.query, options);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortKey]);
 
   const toggleView = () => {
     updateCfg({ viewMode: cfg.viewMode === "grid" ? "list" : "grid" });
@@ -629,7 +655,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
                 : "未检测到 Everything，仅可浏览和启动已安装应用",
           autoFocus: true,
           inputRef: inputRef,
-          onKeyDown: onKeyDown,
+          // 注意：不要在这里再绑 onKeyDown——根容器已绑定同一处理器，
+          // 输入框按键冒泡后会执行两次（Enter 会把文件打开两遍）
           trailing: (
             <>
               {loading && (

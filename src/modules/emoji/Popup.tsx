@@ -98,6 +98,18 @@ export function EmojiPopup() {
       .catch(console.error);
   }, []);
 
+  // 弹窗隐藏常驻（不重挂载）：聚焦时刷新目录，
+  // 同步主窗与上次弹窗会话里的收藏/最近使用变更
+  useEffect(() => {
+    const onFocus = () => {
+      loadCatalog()
+        .then(setCat)
+        .catch(console.error);
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
   // 切换分类/搜索时：重置渲染批次（列表容器用 key 强制重建，滚动位置自然归零）
   useEffect(() => {
     setVisible(BATCH);
@@ -128,6 +140,10 @@ export function EmojiPopup() {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
+      if (menu) {
+        setMenu(null); // 右键菜单开着时 Esc 只关菜单，不隐藏整窗
+        return;
+      }
       getCurrentWindow().hide();
       return;
     }
@@ -142,9 +158,10 @@ export function EmojiPopup() {
         return ref.current ? gridColumns(ref.current) : 1;
       };
       setActiveIdx((i) => {
-        const cur = i == null ? (dir === 1 ? -1 : total) : i;
-        const from = Math.min(Math.max(cur, 0), total - 1);
-        return Math.min(Math.max(cur + dir * colsAt(from), 0), total - 1);
+        // 无高亮时：↓ 选第一项、↑ 选最后一项（与 lib/grid.ts 的 gridVerticalTarget 约定一致）
+        if (i == null) return dir === 1 ? 0 : total - 1;
+        const from = Math.min(Math.max(i, 0), total - 1);
+        return Math.min(Math.max(i + dir * colsAt(from), 0), total - 1);
       });
     } else if (e.key === "Enter" && activeIdx != null && activeIdx < total) {
       e.preventDefault();
@@ -339,6 +356,10 @@ export function EmojiPopup() {
                 try {
                   await invoke("toggle_favorite", { kind: "custom", key: menu.id, fav: true });
                   toast("已添加到收藏");
+                  // 立即刷新目录，收藏 Tab 马上可见新条目
+                  loadCatalog()
+                    .then(setCat)
+                    .catch(console.error);
                 } catch (e) {
                   toast(`收藏失败：${e}`);
                 }

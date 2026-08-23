@@ -49,11 +49,11 @@ export function useModuleConfig<T extends object>(moduleId: string, defaults: T)
   }, [moduleId]);
 
   const reload = useCallback(async () => {
-    // 有待落盘的本地修改时跳过重读：本地 state 即最新真值，
-    // 否则 focus 重读会用旧存储值覆盖刚改还没写盘的显示（滑块拖动中切窗口必现）
-    if (Object.keys(pendingRef.current).length > 0) return;
     try {
       const config = await invoke<{ modules?: Record<string, Record<string, unknown>> }>("get_config");
+      // IPC 往返期间可能又产生了新的本地修改：此时磁盘值仍落后于界面，
+      // 不能用旧存储值覆盖（否则滑块/开关短暂回跳，400ms 后防抖写盘又跳回来）
+      if (Object.keys(pendingRef.current).length > 0) return;
       const m = config?.modules?.[moduleId];
       if (m && typeof m === "object") {
         setCfg({ ...defaults, ...keysToCamel(m as Record<string, unknown>) } as T);
