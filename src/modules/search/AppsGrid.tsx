@@ -139,7 +139,8 @@ export function AppsGrid({
             key={a.path}
             title={`${a.name}\n${a.path}`}
             onClick={() => onOpen(a.path)}
-            className="flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border border-transparent transition-colors hover:bg-accent/50"
+            className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-transparent transition-colors hover:bg-accent/50"
+            style={{ padding: `${gridSize * 0.1}px` }}
           >
             {icon ? (
               <img

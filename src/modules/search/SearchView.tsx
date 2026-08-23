@@ -40,7 +40,7 @@ import { AppsGrid, AppsSection, type ScannedApp } from "./AppsGrid";
 import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { toast } from "@/lib/toast";
-import { gridColumns, gridVerticalTarget } from "@/lib/grid";
+import { gridColumns, gridVerticalTarget, gridIconSize, gridFontScale } from "@/lib/grid";
 
 const SORT_FIELDS: HeaderSortField[] = [
   { id: "name", label: "名称" },
@@ -469,7 +469,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   // 网格单元
   const gridNode = (r: SearchResultDto) => {
     const gs = cfg.gridSize;
-    const iconSize = Math.max(gs * 0.5, 24);
+        const iconSize = gridIconSize(gs);
     return (
       <div
         onClick={() => {
@@ -493,7 +493,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         style={{ width: gs, height: gs, padding: `${gs * 0.1}px` }}
       >
         {visualNode(r, iconSize)}
-        <span className="w-full truncate text-center leading-tight" style={{ fontSize: `${Math.max(gs * 0.15, 10)}px` }} title={r.name}>
+        <span className="w-full truncate text-center leading-tight" style={{ fontSize: `${gridFontScale(gs)}px` }} title={r.name}>
           {r.name}
         </span>
       </div>
@@ -639,14 +639,28 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         activeTab={filter}
         onTabChange={setFilter}
         tabsTrailing={
-          <>
+          filter === APPS_TAB ? (
             <HeaderSort
-              fields={SORT_FIELDS}
-              value={cfg.sortBy}
-              onChange={(id) => setSort(id as SearchSettingsData["sortBy"], cfg.sortDesc)}
-              desc={cfg.sortDesc}
-              onDescToggle={() => setSort(cfg.sortBy, !cfg.sortDesc)}
+              fields={[
+                { id: "name", label: "名称" },
+                { id: "usage", label: "频率" },
+              ]}
+              value={cfg.appSortBy}
+              onChange={(id) =>
+                updateCfg({ appSortBy: id as "name" | "usage" })
+              }
+              desc={cfg.appSortDesc}
+              onDescToggle={() => updateCfg({ appSortDesc: !cfg.appSortDesc })}
             />
+          ) : (
+            <>
+              <HeaderSort
+                fields={SORT_FIELDS}
+                value={cfg.sortBy}
+                onChange={(id) => setSort(id as SearchSettingsData["sortBy"], cfg.sortDesc)}
+                desc={cfg.sortDesc}
+                onDescToggle={() => setSort(cfg.sortBy, !cfg.sortDesc)}
+              />
 
             {/* 匹配选项菜单 */}
             <div ref={optsRef} className="relative">
@@ -692,16 +706,17 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
                       ) : (
                         <Regex className="size-3.5" />
                       )}
-                      {label}
-                      {on && <span className="ml-auto">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
+                       {label}
+                       {on && <span className="ml-auto">✓</span>}
+                     </button>
+                   ))}
+                 </div>
+               )}
+             </div>
+            </>
+          )
         }
-      />
+       />
 
       {notReady && (
         <div className="border-b bg-secondary/40 p-3">
