@@ -593,9 +593,12 @@ pub fn run() {
                     }
                 }
             }
-            // 窗口初始为隐藏（tauri.conf.json visible:false），恢复尺寸后再显示，避免先闪默认尺寸
+            // 窗口初始为隐藏（tauri.conf.json visible:false），恢复尺寸后再显示，避免先闪默认尺寸。
+            // show 必须伴随 set_focus：前端入场动画靠焦点事件解除透明态，
+            // 否则自动呼出的窗口会保持 opacity=0 直到用户手动点击
             if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 let _ = win.show();
+                let _ = win.set_focus();
             }
 
             build_tray(app)?;
