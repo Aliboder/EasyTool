@@ -220,13 +220,13 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
           if (item.item_type !== "url") loadFileIcon(item.path);
         }
       } else {
-        // 非手动排序：前端用 localeCompare 做中文拼音排序
+        // 非手动排序：前端用 localeCompare 做中文拼音重排；方向系数使升降序生效
         const sorted = [...result].sort((a, b) => {
-          if (cfg.sortBy === "name") {
-            return a.name.localeCompare(b.name, "zh-CN-u-co-pinyin");
-          }
-          // created_at: 字符串时间比较（ISO 格式，直接比较即可）
-          return a.created_at.localeCompare(b.created_at);
+          const cmp =
+            cfg.sortBy === "name"
+              ? a.name.localeCompare(b.name, "zh-CN-u-co-pinyin")
+              : a.created_at.localeCompare(b.created_at);
+          return cfg.sortDesc ? -cmp : cmp;
         });
         setItems(sorted);
         for (const item of sorted) {
