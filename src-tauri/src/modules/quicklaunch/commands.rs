@@ -291,6 +291,8 @@ pub fn quicklaunch_create_folder_with_items(
 pub struct ScannedApp {
     pub name: String,
     pub path: String,
+    /// 该应用与某个已固定条目指向同一目标
+    pub fixed: bool,
 }
 
 // 注意：Path::extension() 返回值不带前导点（"lnk" 而非 ".lnk"）
@@ -328,6 +330,7 @@ fn collect_apps(
                             .map(|s| s.to_string_lossy().into_owned())
                             .unwrap_or_default(),
                         path: p.to_string_lossy().into_owned(),
+                        fixed: false,
                     });
                 }
             }
@@ -335,10 +338,13 @@ fn collect_apps(
     }
 }
 
-/// 扫描开始菜单中的快捷方式，供「添加」选择器快速挑选已安装的应用
+/// 扫描开始菜单中的快捷方式，供「系统应用」Tab 与添加选择器使用。
+/// 传入已固定条目的路径列表时，返回结果会标记与固定项同目标的应用（fixed=true）
 #[tauri::command]
-pub async fn quicklaunch_scan_apps() -> CmdResult<Vec<ScannedApp>> {
-    tauri::async_runtime::spawn_blocking(|| {
+pub async fn quicklaunch_scan_apps(
+    fixed_paths: Option<Vec<String>>,
+) -> CmdResult<Vec<ScannedApp>> {
+    tauri::async_runtime::spawn_blocking(move || {
         let mut out: Vec<ScannedApp> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         let mut roots: Vec<std::path::PathBuf> = Vec::new();
@@ -348,14 +354,33 @@ pub async fn quicklaunch_scan_apps() -> CmdResult<Vec<ScannedApp>> {
         if let Some(d) = std::env::var_os("ProgramData") {
             roots.push(std::path::PathBuf::from(d).join(r"Microsoft\Windows\Start Menu\Programs"));
         }
-        for r in roots {
-            collect_apps(&r, 0, &mut out, &mut seen);
+        for r in &roots {
+            collect_apps(r, 0, &mut out, &mut seen);
+        }
+        // 已固定条目的目标集合：扫描项命中即标记 fixed
+        let fixed_targets: std::collections::HashSet<String> = fixed_paths
+            .unwrap_or_default()
+            .iter()
+            .map(|p| resolve_target(p))
+            .collect();
+        for a in out.iter_mut() {
+            a.fixed = !fixed_targets.is_empty() && fixed_targets.contains(&resolve_target(&a.path));
         }
         out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         Ok(out)
     })
     .await
     .map_err(|e| format!("扫描任务失败: {e}"))?
+}
+
+/// 直接打开任意路径（系统应用 Tab 点击启动用；.lnk 由 shell 解析目标）
+#[tauri::command]
+pub fn quicklaunch_open_path(path: String) -> CmdResult<()> {
+    std::process::Command::new("explorer")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("打开失败: {e}"))?;
+    Ok(())
 }
 
 #[cfg(test)]

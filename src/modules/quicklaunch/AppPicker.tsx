@@ -5,24 +5,33 @@ import { Search, FileQuestion } from "lucide-react";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { useFileIcons } from "@/hooks/useFileIcons";
+import { gridIconSize, gridFontScale } from "@/lib/grid";
 import { cn } from "@/lib/utils";
 
-interface ScannedApp {
+export interface ScannedApp {
   name: string;
   path: string;
+  /** 与某个已固定条目指向同一目标 */
+  fixed: boolean;
 }
 
-/** 已安装应用选择器：扫描开始菜单快捷方式，勾选后批量走既有添加流程 */
+/** 已安装应用选择器：网格展示扫描结果，已固定的置灰禁选，勾选后批量走既有添加流程 */
 export function AppPicker({
   open,
   onClose,
   onAdd,
+  gridSize,
+  fixedPaths,
 }: {
   open: boolean;
   onClose: () => void;
   /** 返回选中的路径（可能多条），由父组件执行 quicklaunch_add_from_path */
   onAdd: (paths: string[]) => void;
+  gridSize?: number;
+  /** 当前固定项路径：后端据此标记哪些应用已固定 */
+  fixedPaths: string[];
 }) {
+  const cell = Math.max(gridSize ?? 72, 56);
   const [apps, setApps] = useState<ScannedApp[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
@@ -35,7 +44,7 @@ export function AppPicker({
     setError(null);
     setPicked(new Set());
     setQ("");
-    invoke<ScannedApp[]>("quicklaunch_scan_apps")
+    invoke<ScannedApp[]>("quicklaunch_scan_apps", { fixedPaths })
       .then(setApps)
       .catch((e) => {
         console.error("scan apps failed:", e);
@@ -84,7 +93,7 @@ export function AppPicker({
             className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
         </div>
-        <div className="flex-1 overflow-y-auto p-1">
+        <div className="flex-1 overflow-y-auto p-2">
           {apps === null ? (
             <div className="py-8 text-center text-xs text-muted-foreground">
               正在扫描开始菜单…
@@ -96,37 +105,62 @@ export function AppPicker({
               没有匹配的应用
             </div>
           ) : (
-            filtered.map((a) => {
-              if (!icons[a.path]) loadIcon(a.path);
-              const on = picked.has(a.path);
-              return (
-                <button
-                  key={a.path}
-                  onClick={() => toggle(a.path)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50",
-                    on && "bg-accent",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    readOnly
-                    className="pointer-events-none accent-primary"
-                  />
-                  {icons[a.path] ? (
-                    <img
-                      src={`data:image/png;base64,${icons[a.path]}`}
-                      className="size-5 shrink-0 object-contain"
-                      alt=""
-                    />
-                  ) : (
-                    <FileQuestion className="size-5 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate text-sm">{a.name}</span>
-                </button>
-              );
-            })
+            <div
+              className="grid gap-1"
+              style={{ gridTemplateColumns: `repeat(auto-fill, ${cell}px)` }}
+            >
+              {filtered.map((a) => {
+                if (!icons[a.path]) loadIcon(a.path);
+                const selected = picked.has(a.path);
+                return (
+                  <button
+                    key={a.path}
+                    title={a.fixed ? `${a.name}（已固定）` : a.name}
+                    onClick={() => !a.fixed && toggle(a.path)}
+                    disabled={a.fixed}
+                    className={cn(
+                      "relative flex flex-col items-center justify-center gap-0.5 rounded-md border border-transparent p-1 transition-colors",
+                      a.fixed
+                        ? "cursor-not-allowed opacity-45"
+                        : "cursor-pointer hover:bg-accent/50",
+                      selected && "border-primary bg-accent ring-2 ring-primary/40",
+                    )}
+                    style={{ height: cell }}
+                  >
+                    {icons[a.path] ? (
+                      <img
+                        src={`data:image/png;base64,${icons[a.path]}`}
+                        className="object-contain"
+                        style={{
+                          width: gridIconSize(cell),
+                          height: gridIconSize(cell),
+                        }}
+                        alt=""
+                      />
+                    ) : (
+                      <FileQuestion
+                        className="text-muted-foreground"
+                        style={{
+                          width: gridIconSize(cell),
+                          height: gridIconSize(cell),
+                        }}
+                      />
+                    )}
+                    <span
+                      className="w-full truncate text-center leading-tight text-muted-foreground"
+                      style={{ fontSize: `${gridFontScale(cell)}px` }}
+                    >
+                      {a.name}
+                    </span>
+                    {a.fixed && (
+                      <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 rounded bg-black/60 px-1 text-[8px] leading-3 text-white">
+                        ✓ 已固定
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           )}
         </div>
         <div className="flex items-center justify-between gap-2 border-t p-2">

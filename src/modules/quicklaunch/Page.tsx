@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   DndContext,
   closestCenter,
@@ -23,13 +23,13 @@ import { ItemCard, QuicklaunchItem } from "./ItemCard";
 import { GroupCard } from "./GroupCard";
 import { FolderOverlay } from "./FolderOverlay";
 import { QuicklaunchSettings } from "./Settings";
-import { AppPicker } from "./AppPicker";
+import { AppPicker, type ScannedApp } from "./AppPicker";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
-import { Plus, FolderPlus, Settings2, ClipboardPaste, LayoutList, LayoutGrid } from "lucide-react";
+import { Plus, FolderPlus, Settings2, ClipboardPaste, LayoutList, LayoutGrid, FileQuestion } from "lucide-react";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-header";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
@@ -41,7 +41,13 @@ import { cn } from "@/lib/utils";
 
 // ==================== 配置类型（对齐文件搜索模块） ====================
 
-export type FilterType = "all" | "app" | "file" | "folder" | "url";
+export type FilterType =
+  | "all"
+  | "app"
+  | "file"
+  | "folder"
+  | "url"
+  | "sysapps";
 
 const QL_FILTERS: { id: FilterType; label: string }[] = [
   { id: "all", label: "全部" },
@@ -49,6 +55,7 @@ const QL_FILTERS: { id: FilterType; label: string }[] = [
   { id: "file", label: "文件" },
   { id: "folder", label: "文件夹" },
   { id: "url", label: "URL" },
+  { id: "sysapps", label: "系统应用" },
 ];
 
 interface QuicklaunchConfig {
@@ -123,6 +130,101 @@ export interface FolderWithItems {
   id: number;
   name: string;
   items: QuicklaunchItem[];
+}
+
+/** 系统应用网格（「系统应用」Tab 与顶栏搜索结果共用） */
+function SysAppGrid({
+  apps,
+  search,
+  gridSize,
+  icons,
+  loadIcon,
+  onOpen,
+}: {
+  apps: ScannedApp[] | null;
+  search: string;
+  gridSize: number;
+  icons: Record<string, string>;
+  loadIcon: (path: string) => Promise<void>;
+  onOpen: (path: string) => void;
+}) {
+  const list = useMemo(
+    () =>
+      (apps ?? []).filter((a) =>
+        a.name.toLowerCase().includes(search.trim().toLowerCase()),
+      ),
+    [apps, search],
+  );
+  if (apps === null) {
+    return (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        正在扫描系统应用…
+      </div>
+    );
+  }
+  if (list.length === 0) {
+    return (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        没有匹配的应用
+      </div>
+    );
+  }
+  return (
+    <div
+      className="grid gap-2"
+      style={{
+        gridAutoRows: `${gridSize}px`,
+        gridTemplateColumns: `repeat(auto-fill, ${gridSize}px)`,
+      }}
+    >
+      {list.map((a) => {
+        if (!icons[a.path]) loadIcon(a.path);
+        const icon = icons[a.path];
+        return (
+          <button
+            key={a.path}
+            title={`${a.name}\n${a.path}`}
+            onClick={() => onOpen(a.path)}
+            className={cn(
+              "relative flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-md border border-transparent transition-colors hover:bg-accent/50",
+              a.fixed && "opacity-50",
+            )}
+          >
+            {icon ? (
+              <img
+                src={`data:image/png;base64,${icon}`}
+                className="object-contain"
+                style={{
+                  width: gridIconSize(gridSize),
+                  height: gridIconSize(gridSize),
+                }}
+                alt=""
+              />
+            ) : (
+              <FileQuestion
+                className="text-muted-foreground"
+                style={{
+                  width: gridIconSize(gridSize),
+                  height: gridIconSize(gridSize),
+                }}
+              />
+            )}
+            <span
+              className="w-full truncate text-center leading-tight text-muted-foreground"
+              style={{ fontSize: `${gridFontScale(gridSize)}px` }}
+            >
+              {a.name}
+            </span>
+            {a.fixed && (
+              <span className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded bg-black/60 px-1 text-[8px] leading-3 text-white">
+                已固定
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
@@ -273,6 +375,30 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
     fetchFolders();
   }, [fetchItems, fetchFolders]);
 
+  // 系统应用库：进入页面与固定项变化后重新扫描（后台线程，带 fixed 标记）
+  const [sysApps, setSysApps] = useState<ScannedApp[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    invoke<ScannedApp[]>("quicklaunch_scan_apps", {
+      fixedPaths: items.map((i) => i.path),
+    })
+      .then((res) => {
+        if (!cancelled) setSysApps(res);
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
+
+  const openSysApp = async (path: string) => {
+    try {
+      await invoke("quicklaunch_open_path", { path });
+    } catch (e) {
+      toast(`打开失败：${e}`);
+    }
+  };
+
 
 
   const handleOpen = async (item: QuicklaunchItem) => {
@@ -316,6 +442,8 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
       else if (popup) getCurrentWindow().hide();
       return;
     }
+    // 系统应用 Tab 是启动器网格，暂不支持键盘导航
+    if (filter === "sysapps") return;
     const total = kbGroupCount + items.length;
     if (!total) return;
     const dir = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
@@ -725,13 +853,15 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onAdd={addPaths}
+        gridSize={cfg.gridSize}
+        fixedPaths={items.map((i) => i.path)}
       />
 
       <div
         ref={containerRef}
         className={cn(
           "flex-1 overflow-auto p-2 relative select-none",
-          isSelecting && "cursor-crosshair"
+          isSelecting && "cursor-crosshair",
         )}
         onContextMenu={handlePanelContextMenu}
         onMouseDown={handleMouseDown}
@@ -743,6 +873,15 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             加载中...
           </div>
+        ) : filter === "sysapps" ? (
+          <SysAppGrid
+            apps={sysApps}
+            search={search}
+            gridSize={cfg.gridSize}
+            icons={fileIcons}
+            loadIcon={loadFileIcon}
+            onOpen={openSysApp}
+          />
         ) : items.length === 0 && !search ? (
           <div className="flex h-full flex-col items-center justify-center gap-4">
             <div className="text-sm text-muted-foreground">拖拽文件到此处固定</div>
@@ -961,6 +1100,23 @@ export function QuicklaunchPage({ popup = false }: { popup?: boolean }) {
               </button>
             </div>
           )
+        )}
+
+        {/* 顶栏搜索扩展：固定项结果下方追加「系统中的应用」，点击直接启动 */}
+        {search && filter !== "sysapps" && sysApps !== null && (
+          <div className="mt-3 border-t pt-2">
+            <div className="mb-1.5 px-1 text-xs font-medium text-muted-foreground">
+              系统中的应用
+            </div>
+            <SysAppGrid
+              apps={sysApps}
+              search={search}
+              gridSize={cfg.gridSize}
+              icons={fileIcons}
+              loadIcon={loadFileIcon}
+              onOpen={openSysApp}
+            />
+          </div>
         )}
       </div>
 
