@@ -14,8 +14,7 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 - `clipboard` 剪贴板：监听系统剪贴板，记录文本/图片/文件，固定/拖拽排序/搜索/跟手粘贴；独立弹窗（延迟创建）
 - `quota` 额度监控：DeepSeek / OpenCode Go **多账户**，各账户独立密钥/余额/消费历史/告警；后台轮询
 - `emoji` 表情面板：1900+ 表情分类检索，中文/英文/shortcode 搜索，收藏置顶，SendInput 直输；独立弹窗
-- `search` 文件搜索：Everything 全文搜索（**需用户安装 Everything**），Everything64.dll 随应用打包；独立弹窗 + 模块页双入口
-- `quicklaunch` 快速启动：固定软件/文件/文件夹/URL，支持文件夹分组、拖拽排序、网格/列表视图切换；独立弹窗
+- `search` 文件搜索：Everything 全文搜索（**需用户安装 Everything**），Everything64.dll 随应用打包；独立弹窗 + 模块页双入口。第一个「应用」Tab = **已安装应用中心**（扫描开始菜单，点击即启动，前台频率排序），搜索时匹配应用置顶显示
 
 ## 技术栈
 
@@ -35,15 +34,14 @@ src-tauri/src/
 ├── lib.rs         # 壳：托盘、全局热键、窗口事件、模块 setup、日志
 ├── config.rs      # AppConfig + ConfigState(Mutex)、config 读写命令
 ├── migrate.rs     # 旧数据一次性迁移
-└── modules/       # 模块注册表 mod.rs + clipboard/ + quota/ + emoji/ + search/ + quicklaunch/
+└── modules/       # 模块注册表 mod.rs + clipboard/ + quota/ + emoji/ + search/
 src-tauri/modules/  # 模块 manifest.json 目录
 src/
 ├── App.tsx        # 壳 UI：底部导航 + 模块页 + 设置页
 ├── lib/           # api(ipc封装)/theme/use-horizontal-wheel/use-window-entrance/context-menu
 ├── components/    # ui 组件 + hotkey-recorder + LazyImage + context-menu
 ├── clipboard_popup.tsx   # 剪贴板弹窗入口（延迟创建）
-├── quicklaunch_popup.tsx # 快速启动弹窗入口（延迟创建）
-└── modules/       # clipboard/ + quota/ + emoji/ + search/ + quicklaunch/ 前端
+├── └── modules/       # clipboard/ + quota/ + emoji/ + search/ 前端
 website/           # 官网（独立工程，详见 docs/website-guide.md）
 ```
 
@@ -54,21 +52,20 @@ website/           # 官网（独立工程，详见 docs/website-guide.md）
 - `clipboard_popup` 剪贴板弹窗：跟随鼠标或固定位置，失焦自动隐藏；**延迟创建**（首次呼出才建窗，避免启动闪现）
 - `emoji_popup` 表情弹窗：复用剪贴板弹窗模式（跟随鼠标/失焦隐藏/延迟创建）
 - `search_popup` 文件搜索弹窗：复用剪贴板弹窗模式，Everything64.dll 动态加载
-- `quicklaunch_popup` 快速启动弹窗：复用剪贴板弹窗模式
 - **坑**：Windows 下透明窗口（`.transparent(true)`）hide 后再 show 会崩溃，已放弃透明方案
 
 ### 全局热键与统一呼出
 - `unified_hotkey=true`（默认）：只注册主窗口热键（默认 Ctrl+Shift+E），各模块独立热键禁用；关闭则反之
 - **热键匹配必须用 `Shortcut::from_str(&cfg).map(|s| s == *shortcut)` 对象比较**
 - 录制格式：`Ctrl/Shift/Alt/Super + 键名`（Windows 键用 **Super** 不是 Win），见 `HotkeyRecorder`
-- 默认热键：主面板 Ctrl+Shift+E / 剪贴板 Ctrl+Shift+V / 表情 Ctrl+Shift+J / 搜索 Ctrl+Shift+F / 快速启动 Ctrl+Shift+Q
+- 默认热键：主面板 Ctrl+Shift+E / 剪贴板 Ctrl+Shift+V / 表情 Ctrl+Shift+J / 搜索 Ctrl+Shift+F
 
 ### 配置与数据
-- 数据目录 `%APPDATA%\com.aliboder.easytool\`：`config.json`、`clipboard.db`（SQLite WAL，含 `pin_order` 列）、`quicklaunch.db`（SQLite WAL）、`images/`、`thumbs/`
+- 数据目录 `%APPDATA%\com.aliboder.easytool\`：`config.json`、`clipboard.db`（SQLite WAL，含 `pin_order` 列）、`apps.db`（已安装应用频率计数）、`images/`、`thumbs/`
 - 额度历史按账户分文件 `balance_history_<account_id>.json`
 - 密钥存 keyring（service `com.aliboder.easytool`），**每账户独立槽位**；新账户绝不回退旧槽位
 - search 模块：`Everything64.dll` 打包在 `src-tauri/modules/search/`；查询须持全局互斥锁且放后台线程
-- quicklaunch 模块：`quicklaunch.db` 存储固定项和文件夹；支持文件夹分组、拖拽排序
+- search 模块：`apps.db` 存储已安装应用的使用频率（前台事件钩子累计）；`quicklaunch.db` 为已退役模块的历史遗留文件
 
 ### 额度轮询（多账户）
 - `poll_loop` 后台线程按 `refresh_interval_sec`（≥5s）调 `fetch_once`
