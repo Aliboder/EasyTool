@@ -21,6 +21,7 @@ src/modules/<id>/                      # React 前端组件
   - `usePopupGeometry`（`src/hooks/usePopupGeometry.ts`）——弹窗位置/尺寸记忆：移动/缩放停止 400ms 后写回模块配置 `fixed_pos` / `popup_size` 键
   - `mountPopup(<XxxPage />)`（`src/lib/popup-entry.tsx`）——独立弹窗窗口统一挂载入口：主题跟随 + createRoot 样板全内置（见 Step 5）
   - 网格公式库（`src/lib/grid.ts`）——`gridIconSize` / `gridFontScale` / `gridColumns` / `gridVerticalTarget`（见「5. 网格实现标准」）
+  - 面板头三件套（`src/components/module-header.tsx`）——`ModuleHeader` / `HeaderButton` / `HeaderSort`，全模块顶栏唯一实现（见「6. 面板头标准」，**必用**）
   - `toast()`（`src/lib/toast.ts`）——操作反馈提示（规范见第 4 节「操作反馈」条目）
   - 其他场景件：`applyTheme`（主题跟随）/ `useHorizontalWheel`（滚轮→横向滚动）/ `useWindowEntrance`（呼出入场动画，失焦置透明+聚焦重放防闪烁）/ `HotkeyRecorder`（热键录制）/ `LazyImage`（懒加载图片）/ 右键菜单三件套 `ui/context-menu(-item/-divider).tsx`
 
@@ -288,7 +289,41 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 5. **数据量策略不强制统一**（search 分页 / emoji 批渲染 / clipboard 上限拉取 / quicklaunch 全量），按各自数据规模选择
 6. 剪贴板的横向胶卷条（`grid-flow-col grid-rows-1`）是刻意的横向流设计，不属于本规范约束范围
 
-## 6. 关键坑（新增模块时必须遵守）
+## 6. 面板头标准（ModuleHeader，新模块必须遵守）
+
+所有模块的顶栏（搜索行 + Tab 行）一律由 `src/components/module-header.tsx` 渲染，**禁止手写两行式头部 JSX**：
+
+```tsx
+import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-header";
+
+<ModuleHeader
+  leading={popup && <拖拽把手 />}                       // 可选：弹窗拖拽把手
+  search={{ value, onChange, placeholder, autoFocus }}  // 第一行：无边框输入框占满
+  searchTrailing={<>加载圈/计数</>}                      // 搜索框行内右侧附属
+  actions={                                             // 第一行右端按钮组（HeaderButton 统一样式）
+    <>
+      <HeaderButton title="切换视图" onClick={toggleView}>…</HeaderButton>
+      <HeaderButton title="xx设置" active={showSettings} onClick={…}>
+        <Settings2 className="size-4" />
+      </HeaderButton>
+    </>
+  }
+  tabs={TABS.map((t) => ({ id: t.id, label: t.label }))}  // 第二行 Tab（放不下自动换行）
+  activeTab={tab}
+  onTabChange={setTab}
+  tabsTrailing={<HeaderSort … />}                        // 第二行右端次要控件（可选）
+/>
+```
+
+规则：
+1. **无搜索框的模块**（如额度监控）第一行用 `title=` + `meta=` 占据搜索框位置，结构不变
+2. **设置齿轮全模式显示**（主窗与弹窗一致），且必须是该行最后一个按钮
+3. **Tab 放不下自动换行**（flex-wrap 已内置），不要为省高度隐藏或滚动 Tab
+4. **排序控件用 `HeaderSort`**：字段按钮点击按 fields 顺序循环、方向按钮翻转升降；字段集由模块自定义（参考 SearchView 的 `SORT_FIELDS`）
+5. 视觉规格已内置（border-b、p-2、Tab 选中态 bg-primary 等），调用方不要再叠样式
+6. 参考实现：`SearchView.tsx`（功能最全：search + trailing + actions + 图标 tabs + HeaderSort）
+
+## 7. 关键坑（新增模块时必须遵守）
 
 > **最易翻车五条**：坑 1（PowerShell 写文件变 GBK 乱码）、坑 2（Mutex 重入死锁）、坑 4（透明窗口崩溃）、坑 7（keyring 缺 feature 直接 panic）、坑 20（invoke 参数 snake_case **静默失败无报错**）。其余为场景性陷阱，用到对应功能时再查。
 
@@ -313,7 +348,7 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 19. **SQLite 建索引必须在列添加之后**：索引引用的列若在版本迁移中才添加（如 `pin_order`），索引创建要放在迁移之后，否则新库建表直接失败
 20. **Tauri v2 invoke 参数 JS 侧必须 camelCase**：Rust 参数 `follow_mouse` ↔ JS 键名 `followMouse`。用 snake_case 键名调用会反序列化失败且**静默无报错**（emoji 曾因此所有设置存不上）。配置读写走 useModuleConfig 可天然避开；手写 invoke 其他命令时务必注意
 
-## 7. 完成清单
+## 8. 完成清单
 
 新增模块后逐项自检：
 
@@ -325,6 +360,7 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 - [ ] **模块设置走统一地基**：config.ts + useModuleConfig + 受控 Settings（第 3 节），未自写 save_xxx_settings 纯配置命令
 - [ ] **用户操作有反馈**：失败必提示（toast/内联），成功无可见变化时补 toast；不得只 console.error
 - [ ] **弹窗**：入口用 mountPopup；几何记忆用 usePopupGeometry；图标/缩略图经 useFileIcons（未手写缓存、未新增重复命令）
+- [ ] **面板头用 ModuleHeader**（第 6 节）：未手写两行式头部；齿轮为最后一个按钮且全模式显示；Tab 溢出依赖内置换行；排序用 HeaderSort
 - [ ] Slider 用 onValueChange 直连 onUpdate（Hook 防抖落盘）；手写 invoke 的参数键名为 camelCase
 - [ ] 网络/耗时操作在后台线程
 - [ ] 拖拽排序：小条目用 @dnd-kit；大卡片注意坑 9（不加 opacity、will-change、禁 transition）
@@ -333,10 +369,11 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 - [ ] 手动验收清单已给用户（启动命令 + 验证点）
 - [ ] `codegraph init` 重建索引后提交
 
-## 8. 参考实现
+## 9. 参考实现
 
 新增模块时对照这些现成模块：
 
+- **search** 的 `SearchView.tsx` 同时是**面板头参照实现**（ModuleHeader 全功能：search + searchTrailing + actions + 图标 tabs + HeaderSort，见第 6 节）
 - **clipboard**：独立弹窗窗口（延迟创建）+ 系统剪贴板监听 + 文件存储（缩略图/图标）+ 固定板块拖拽排序（小条目 @dnd-kit）+ 弹窗位置/尺寸记忆 + 监听规则，最完整的模块参照
 - **quota**：后台轮询线程 + **多账户支持**（账户增删改 + 独立密钥槽位 key_ref + 独立余额/历史）+ 告警通知 + 消费历史按账户分文件 + 完整时间线（横向滚动）+ 面板卡片拖拽排序（@dnd-kit + will-change），后台任务/数据可视化/多实例类模块参照
 - **search**：动态加载第三方 DLL（`Everything64.dll`，MIT，从官方 SDK 下载打包进 `modules/search/`）+ SDK 全局状态用互斥锁串行 + 查询放后台线程 + 复用剪贴板图标/缩略图命令 + 弹窗模式复用，外部依赖/FFI 类模块参照。⚠️ Tauri 命令若与其他模块同名，**函数名须带模块前缀**（`search_get_status`），`#[tauri::command(rename=...)]` 无法解决宏符号冲突
