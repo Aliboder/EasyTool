@@ -86,7 +86,8 @@ export function ModuleHeader({
       </div>
 
       {tabs && tabs.length > 0 && (
-        <div className="flex items-center gap-1 overflow-x-auto border-b px-2 py-1">
+        <div className="flex flex-wrap items-center gap-1 border-b px-2 py-1">
+          {/* 行内放不下时自动换行（表情等 Tab 较多的模块），tabsTrailing 始终右对齐 */}
           {tabs.map((t) => {
             const Icon = t.icon;
             const active = t.id === activeTab;
