@@ -52,3 +52,4 @@ windows = { version = "0.61", features = [
     "Win32_System_Threading",
 ] }
 tauri-plugin-updater = "2.10.1"
+lru = "0.12"

@@ -1,7 +1,8 @@
 //! 文件类型图标（Windows Shell，与资源管理器一致）与图片缩略图提取
 
 use super::monitor::base64_encode;
-use std::collections::HashMap;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::sync::{Mutex, OnceLock};
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Gdi::{
@@ -14,22 +15,26 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
 
 /// 按路径缓存图标 base64（None = 提取失败，不再重试）
-static ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+static ICON_CACHE: OnceLock<Mutex<LruCache<String, Option<String>>>> = OnceLock::new();
 /// 按路径缓存缩略图/大预览 base64（避免同一文件反复解码，上限 200 防内存膨胀）
-static THUMB_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
-static PREVIEW_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
-const CACHE_MAX: usize = 200;
+static THUMB_CACHE: OnceLock<Mutex<LruCache<String, Option<String>>>> = OnceLock::new();
+static PREVIEW_CACHE: OnceLock<Mutex<LruCache<String, Option<String>>>> = OnceLock::new();
 
-/// 带容量上限的缓存读取/写入（超出删最旧，迭代顺序 = 插入顺序）
+const ICON_CACHE_MAX: usize = 200;
+const THUMB_CACHE_MAX: usize = 200;
+const PREVIEW_CACHE_MAX: usize = 100; // 大预览图更占内存，上限更低
+
+/// 带容量上限的缓存读取/写入（LRU 策略）
 fn cache_get_or_insert(
-    cache: &OnceLock<Mutex<HashMap<String, Option<String>>>>,
+    cache: &OnceLock<Mutex<LruCache<String, Option<String>>>>,
     key: &str,
+    max_size: usize,
     compute: impl FnOnce() -> Option<String>,
 ) -> Option<String> {
     // 先查缓存
     {
-        let map = cache
-            .get_or_init(|| Mutex::new(HashMap::new()))
+        let mut map = cache
+            .get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(max_size).unwrap())))
             .lock()
             .unwrap();
         if let Some(v) = map.get(key) {
@@ -42,15 +47,10 @@ fn cache_get_or_insert(
     // 二次加锁写入
     {
         let mut map = cache
-            .get_or_init(|| Mutex::new(HashMap::new()))
+            .get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(max_size).unwrap())))
             .lock()
             .unwrap();
-        if map.len() >= CACHE_MAX {
-            if let Some(old) = map.keys().next().cloned() {
-                map.remove(&old);
-            }
-        }
-        map.insert(key.to_string(), v.clone());
+        map.put(key.to_string(), v.clone());
     }
     v
 }
@@ -59,7 +59,7 @@ fn cache_get_or_insert(
 /// 优先访问真实文件取「格式专属图标」（如 txt/图片/exe 各自独立图标）；
 /// 文件不存在时回退按扩展名取关联图标，保证始终有图标显示
 pub fn file_icon_png(path: &str) -> Option<String> {
-    cache_get_or_insert(&ICON_CACHE, path, || {
+    cache_get_or_insert(&ICON_CACHE, path, ICON_CACHE_MAX, || {
         let png = unsafe { extract_icon(path, false) }
             .or_else(|| unsafe { extract_icon(path, true) })?;
         Some(base64_encode(&png))
@@ -171,7 +171,7 @@ unsafe fn read_icon_pixels(
 
 /// 图片文件缩略图（PNG base64，最长边 256，保持比例；按路径缓存）
 pub fn file_thumb_png(path: &str) -> Option<String> {
-    cache_get_or_insert(&THUMB_CACHE, path, || {
+    cache_get_or_insert(&THUMB_CACHE, path, THUMB_CACHE_MAX, || {
         let img = image::open(path).ok()?;
         let thumb = img.thumbnail(256, 256);
         let mut buf = Vec::new();
@@ -184,7 +184,7 @@ pub fn file_thumb_png(path: &str) -> Option<String> {
 
 /// 图片文件大预览（PNG base64，最长边 1024，保持比例；悬停预览用，按路径缓存）
 pub fn file_preview_png(path: &str) -> Option<String> {
-    cache_get_or_insert(&PREVIEW_CACHE, path, || {
+    cache_get_or_insert(&PREVIEW_CACHE, path, PREVIEW_CACHE_MAX, || {
         let img = image::open(path).ok()?;
         let preview = img.thumbnail(1024, 1024);
         let mut buf = Vec::new();

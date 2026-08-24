@@ -36,6 +36,7 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     db::backup_database(&data_dir);
     // 开库失败（典型：库损坏）→ 隔离损坏文件重建空库，应用照常启动
     let db_path = data_dir.join("clipboard.db");
+    
     let state = match AppState::new(data_dir.clone(), db_path.clone(), max_items(app)) {
         Ok(s) => s,
         Err(e) => {

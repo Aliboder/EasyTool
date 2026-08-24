@@ -2,7 +2,7 @@ mod config;
 mod migrate;
 mod modules;
 
-use config::ConfigState;
+use config::{AppConfig, ConfigState};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -13,6 +13,45 @@ use std::sync::{Mutex, OnceLock};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
+
+/// 共享 SQLite 连接池（避免各模块独立创建连接的开销）
+/// 注意：rusqlite::Connection 不是 Clone 的，所以每个模块仍然独立打开连接
+/// 但共享 WAL 模式和 busy_timeout 配置
+pub struct SqlitePool {
+    data_dir: std::path::PathBuf,
+}
+
+impl SqlitePool {
+    pub fn open(data_dir: &std::path::Path) -> Result<Self, String> {
+        // 预创建数据库文件并设置 WAL 模式
+        let clip_path = data_dir.join("clipboard.db");
+        let quota_path = data_dir.join("quota.db");
+        let apps_path = data_dir.join("apps.db");
+        
+        // 预创建数据库文件（如果不存在）
+        for path in &[&clip_path, &quota_path, &apps_path] {
+            if !path.exists() {
+                let conn = rusqlite::Connection::open(path)
+                    .map_err(|e| format!("Failed to create {}: {e}", path.display()))?;
+                conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;").ok();
+            }
+        }
+        
+        Ok(Self { data_dir: data_dir.to_path_buf() })
+    }
+    
+    pub fn clip_path(&self) -> std::path::PathBuf {
+        self.data_dir.join("clipboard.db")
+    }
+    
+    pub fn quota_path(&self) -> std::path::PathBuf {
+        self.data_dir.join("quota.db")
+    }
+    
+    pub fn apps_path(&self) -> std::path::PathBuf {
+        self.data_dir.join("apps.db")
+    }
+}
 
 /// 极简日志器：输出到 stderr + 日志文件（%APPDATA%/com.aliboder.easytool/easytool.log）
 struct SimpleLogger {
@@ -480,71 +519,83 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            // 并行加载配置和 manifests
-            let app_handle = app.handle().clone();
-            let cfg_handle = app_handle.clone();
-            let manifests_handle = app_handle.clone();
+            // 1. 先用默认配置快速启动
+            let mut cfg = AppConfig::default();
             
-            let cfg_thread = std::thread::spawn(move || {
-                config::load_config(&cfg_handle)
-            });
-            
+            // 2. 异步加载 manifests（不阻塞 setup）
+            let manifests_handle = app.handle().clone();
             let manifests_thread = std::thread::spawn(move || {
                 modules::load_manifests(&manifests_handle)
             });
             
-            // 等待配置和 manifests 加载完成
-            let mut cfg = cfg_thread.join().unwrap_or_else(|e| {
-                log::error!("config load thread panicked: {:?}", e);
-                config::load_config(app.handle())
-            });
-            
+            // 3. 等待 manifests 加载完成（快速，通常 <50ms）
             let manifests = manifests_thread.join().unwrap_or_else(|e| {
                 log::error!("manifests load thread panicked: {:?}", e);
                 modules::load_manifests(app.handle())
             });
             
+            // 4. 合并 manifests 到默认配置
             modules::merge_manifests(&mut cfg, &manifests);
             let _ = config::save_config(app.handle(), &cfg);
             app.manage(ConfigState(std::sync::Mutex::new(cfg)));
+            
+            // 5. 异步加载实际配置（不阻塞 setup，加载完成后自动更新 ConfigState）
+            config::load_config_async(app.handle().clone());
+            
+            // 6. 创建共享 SQLite 连接池
+            let data_dir = app.path().app_data_dir().unwrap();
+            if let Ok(pool) = SqlitePool::open(&data_dir) {
+                app.manage(pool);
+                log::info!("[setup] SQLite connection pool initialized");
+            } else {
+                log::error!("[setup] failed to initialize SQLite connection pool");
+            }
 
             // 旧数据一次性迁移（在模块 setup 之前，避免与剪贴板模块同时打开新库）
             migrate::run_migration(app.handle());
 
             // 并行初始化模块
             let clipboard_handle = if clipboard_enabled(app.handle()) {
+                log::info!("[setup] initializing clipboard module");
                 let app_clone = app.handle().clone();
                 Some(std::thread::spawn(move || {
                     modules::clipboard::setup_from_handle(&app_clone)
                 }))
             } else {
+                log::info!("[setup] clipboard module disabled, skipping");
                 None
             };
 
             let quota_handle = if quota_enabled(app.handle()) {
+                log::info!("[setup] initializing quota module");
                 let app_clone = app.handle().clone();
                 Some(std::thread::spawn(move || {
                     modules::quota::setup_from_handle(&app_clone)
                 }))
             } else {
+                log::info!("[setup] quota module disabled, skipping");
                 None
             };
 
             let search_handle = if search_enabled(app.handle()) {
+                log::info!("[setup] initializing search module");
                 let app_clone = app.handle().clone();
                 Some(std::thread::spawn(move || {
                     modules::search::setup_from_handle(&app_clone)
                 }))
             } else {
+                log::info!("[setup] search module disabled, skipping");
                 None
             };
 
             let emoji_handle = if emoji_enabled(app.handle()) {
+                log::info!("[setup] initializing emoji module");
                 let app_clone = app.handle().clone();
                 Some(std::thread::spawn(move || {
                     modules::emoji::setup_from_handle(&app_clone)
                 }))
             } else {
+                log::info!("[setup] emoji module disabled, skipping");
                 None
             };
 

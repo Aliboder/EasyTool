@@ -262,6 +262,18 @@ pub fn set_main_follow_mouse(
     save_config(&app, &cfg)
 }
 
+/// 异步加载配置并更新 ConfigState（不阻塞调用方）
+pub fn load_config_async(app: AppHandle) {
+    std::thread::spawn(move || {
+        let loaded = load_config(&app);
+        let state = app.state::<ConfigState>();
+        *state.0.lock().unwrap() = loaded;
+        // 配置加载完成后触发热键重新注册
+        crate::reapply_hotkeys(&app);
+        log::info!("[config] async config loaded and applied");
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
