@@ -14,18 +14,6 @@ use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
 
-/// 当前活动的模块（前端切换时更新）
-static ACTIVE_MODULE: OnceLock<Mutex<String>> = OnceLock::new();
-
-/// 设置当前活动的模块
-#[tauri::command]
-fn set_active_module(module: String) {
-    *ACTIVE_MODULE
-        .get_or_init(|| Mutex::new("clipboard".into()))
-        .lock()
-        .unwrap() = module;
-}
-
 /// 极简日志器：输出到 stderr + 日志文件（%APPDATA%/com.aliboder.easytool/easytool.log）
 struct SimpleLogger {
     file: std::sync::Mutex<std::fs::File>,
@@ -723,7 +711,6 @@ pub fn run() {
             modules::emoji::commands::get_emoji_thumb,
             modules::emoji::commands::apply_emoji,
             modules::emoji::commands::copy_custom_emoji,
-            set_active_module,
         ])
         .on_window_event(|window, event| {
             match event {

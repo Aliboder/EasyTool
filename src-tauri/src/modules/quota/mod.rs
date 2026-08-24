@@ -219,28 +219,37 @@ pub fn fetch_once(app: &AppHandle) {
 
     let accounts = account_configs(app);
 
-    // 阶段 1：锁外执行网络请求（每个账户独立，失败不影响其它账户）
-    let outcomes: Vec<(AccountConfig, FetchOutcome)> = accounts
-        .iter()
-        .map(|acc| {
-            let key = get_account_key(acc);
-            let outcome = if key.trim().is_empty() {
-                FetchOutcome::Failed("未配置密钥".into())
-            } else {
-                match acc.kind {
-                    AccountKind::Deepseek => match api::fetch_balance(&key) {
-                        Ok(b) => FetchOutcome::Deepseek(b),
-                        Err(e) => FetchOutcome::Failed(e.to_string()),
-                    },
-                    AccountKind::Go => match api::fetch_go_quota(&key) {
-                        Ok(w) => FetchOutcome::Go(w),
-                        Err(e) => FetchOutcome::Failed(e.to_string()),
-                    },
-                }
-            };
-            (acc.clone(), outcome)
-        })
-        .collect();
+    // 阶段 1：并行执行网络请求（每个账户独立，坏账户不再拖慢全部）
+    let outcomes: Vec<(AccountConfig, FetchOutcome)> = std::thread::scope(|s| {
+        let handles: Vec<_> = accounts
+            .iter()
+            .map(|acc| {
+                let acc = acc.clone();
+                s.spawn(move || {
+                    let key = get_account_key(&acc);
+                    let outcome = if key.trim().is_empty() {
+                        FetchOutcome::Failed("未配置密钥".into())
+                    } else {
+                        match acc.kind {
+                            AccountKind::Deepseek => match api::fetch_balance(&key) {
+                                Ok(b) => FetchOutcome::Deepseek(b),
+                                Err(e) => FetchOutcome::Failed(e.to_string()),
+                            },
+                            AccountKind::Go => match api::fetch_go_quota(&key) {
+                                Ok(w) => FetchOutcome::Go(w),
+                                Err(e) => FetchOutcome::Failed(e.to_string()),
+                            },
+                        }
+                    };
+                    (acc, outcome)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().ok())
+            .collect()
+    });
 
     // 阶段 2：锁内应用结果
     let st_guard = app.state::<Mutex<QuotaState>>();
@@ -409,6 +418,8 @@ fn track_go_cycle(db: &QuotaDb, account_id: &str, window: &str, snap: &GoSnapsho
 }
 
 fn poll_loop(app: AppHandle) {
+    let mut cached_interval: u64 = 30;
+    let mut cfg_tick: u32 = 0;
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
 
@@ -417,15 +428,17 @@ fn poll_loop(app: AppHandle) {
             continue;
         }
 
-        let interval = {
+        // 每 5 秒重读一次配置（替代原来每秒都读，减少无谓的 JSON clone/查找）
+        cfg_tick += 1;
+        if cfg_tick % 5 == 0 {
             let cfg = crate::config::module_cfg(&app, "quota");
-            cfg_f64(&cfg, "refresh_interval_sec", 30.0).max(5.0) as u64
-        };
+            cached_interval = cfg_f64(&cfg, "refresh_interval_sec", 30.0).max(5.0) as u64;
+        }
         let due = {
             let st_guard = app.state::<Mutex<QuotaState>>();
-            let st = st_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let st = st_guard.lock().unwrap_or_else(|p| p.into_inner());
             match st.last_fetch {
-                Some(t) => t.elapsed().as_secs() >= interval,
+                Some(t) => t.elapsed().as_secs() >= cached_interval,
                 None => true,
             }
         };

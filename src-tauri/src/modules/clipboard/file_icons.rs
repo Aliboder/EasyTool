@@ -26,20 +26,32 @@ fn cache_get_or_insert(
     key: &str,
     compute: impl FnOnce() -> Option<String>,
 ) -> Option<String> {
-    let mut map = cache
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .unwrap();
-    if let Some(v) = map.get(key) {
-        return v.clone();
-    }
-    let v = compute();
-    if map.len() >= CACHE_MAX {
-        if let Some(old) = map.keys().next().cloned() {
-            map.remove(&old);
+    // 先查缓存
+    {
+        let map = cache
+            .get_or_init(|| Mutex::new(HashMap::new()))
+            .lock()
+            .unwrap();
+        if let Some(v) = map.get(key) {
+            return v.clone();
         }
     }
-    map.insert(key.to_string(), v.clone());
+    // 锁外执行耗时计算（image::open 大图解码可达秒级），
+    // 避免不同文件的解码被同一把锁串行化导致缩略图渐次出图变慢
+    let v = compute();
+    // 二次加锁写入
+    {
+        let mut map = cache
+            .get_or_init(|| Mutex::new(HashMap::new()))
+            .lock()
+            .unwrap();
+        if map.len() >= CACHE_MAX {
+            if let Some(old) = map.keys().next().cloned() {
+                map.remove(&old);
+            }
+        }
+        map.insert(key.to_string(), v.clone());
+    }
     v
 }
 

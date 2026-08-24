@@ -16,6 +16,7 @@ import {
   type Manifest,
 } from "@/lib/api";
 import { SettingsView } from "@/components/settings-view";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { applyTheme } from "@/lib/theme";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 
@@ -74,8 +75,6 @@ function App() {
     setActive(id);
     if (id !== "settings") {
       setVisited((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
-      // 通知 Rust 侧当前活动的模块
-      invoke("set_active_module", { module: id }).catch(console.error);
     }
   }, []);
   const [notice, setNotice] = useState<string | null>(null);
@@ -258,28 +257,33 @@ function App() {
               </button>
             </div>
           )}
-          {active === "settings" ? (
-            <SettingsView
-              config={config}
-              manifests={orderedManifests}
-              onToggle={toggleModule}
-              onReorder={reorderModules}
-              onThemeChange={changeTheme}
-              onUnifiedChange={changeUnified}
-              onMainHotkey={changeMainHotkey}
-              onMainFollowMouse={changeMainFollowMouse}
-            />
-          ) : (
-            <Suspense
+          <Suspense
               fallback={
                 <div className="flex h-full items-center justify-center">
                   <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
                 </div>
               }
             >
-              {renderModules()}
+              {/* 模块 DOM 常驻（keep-alive）：切换到设置页时隐藏但不卸载，
+                  回来时不重新挂载、不重拉数据、不丢滚动位置 */}
+              <div className={active === "settings" ? "hidden" : "h-full"}>
+                <ErrorBoundary>
+                  {renderModules()}
+                </ErrorBoundary>
+              </div>
             </Suspense>
-          )}
+            {active === "settings" && (
+              <SettingsView
+                config={config}
+                manifests={orderedManifests}
+                onToggle={toggleModule}
+                onReorder={reorderModules}
+                onThemeChange={changeTheme}
+                onUnifiedChange={changeUnified}
+                onMainHotkey={changeMainHotkey}
+                onMainFollowMouse={changeMainFollowMouse}
+              />
+            )}
         </main>
         <Sidebar modules={enabledModules} active={active} onSelect={selectModule} />
       </div>

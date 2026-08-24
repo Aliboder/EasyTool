@@ -210,13 +210,25 @@ pub fn scan_installed(app: &AppHandle) -> Result<Vec<ScannedApp>, String> {
         collect_apps(r, 0, &mut candidates, &mut seen_paths);
     }
 
+    // 一次性解析所有候选的目标路径（每个 .lnk 需要 COM 解析，耗时），
+    // 缓存结果供 sync_targets 和过滤循环共用，避免每个候选解析两遍
+    let resolved: Vec<(String, String, String)> = candidates
+        .iter()
+        .map(|(p, n)| (p.clone(), n.clone(), resolve_target(p)))
+        .collect();
+
     let usage_map: std::collections::HashMap<String, i64> =
         match app.try_state::<Mutex<AppsState>>() {
             Some(state) => state
                 .lock()
                 .unwrap()
                 .db
-                .sync_targets(&candidates.iter().map(|(p, _)| resolve_target(p)).collect::<Vec<_>>())
+                .sync_targets(
+                    &resolved
+                        .iter()
+                        .map(|(_, _, t)| t.clone())
+                        .collect::<Vec<_>>(),
+                )
                 .unwrap_or_default()
                 .into_iter()
                 .collect(),
@@ -225,8 +237,7 @@ pub fn scan_installed(app: &AppHandle) -> Result<Vec<ScannedApp>, String> {
 
     let mut out: Vec<ScannedApp> = Vec::new();
     let mut seen_targets: std::collections::HashSet<String> = Default::default();
-    for (path, name) in candidates {
-        let target = resolve_target(&path);
+    for (path, name, target) in resolved {
         if !target.ends_with(".exe") {
             continue; // 文档/帮助/文件夹/网站/失效链接
         }

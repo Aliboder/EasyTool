@@ -287,13 +287,13 @@ impl Db {
             return Ok(vec![]);
         }
         let mut removed = Vec::new();
-        loop {
-            let count: i64 = self
-                .conn
-                .query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))?;
-            if count <= max_items {
-                break;
-            }
+        // 一次计算超出量，替代原来每次循环重复 COUNT(*) 查询
+        let excess: i64 = self.conn.query_row(
+            "SELECT MAX(0, COUNT(*) - ?1) FROM items",
+            params![max_items],
+            |r| r.get(0),
+        )?;
+        for _ in 0..excess {
             let id: Option<i64> = self
                 .conn
                 .query_row(
