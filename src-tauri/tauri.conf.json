@@ -49,7 +49,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://api.github.com/repos/Aliboder/EasyTool/releases/latest"
+        "https://github.com/Aliboder/EasyTool/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4NjkyNEU3QzdBRDNGOEQKUldTTlA2M0g1eVJwbU84cjdSSHJpQTZTalAxMGtOV1dCMjF6Qk0yUEU3NUlzQ01acTlndjBacncK"
     }
