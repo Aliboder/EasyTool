@@ -77,9 +77,10 @@ pub async fn get_history(
                 offset.unwrap_or(0),
             )?
         };
-        // 实时检测：图片原图被手动删除后不再显示（恢复文件后自动重新出现）
+        // 磁盘探测只在图片 Tab / 固定 Tab 时执行（搜索文本时无需验证图片文件是否存在）
+        let need_image_check = matches!(kind.as_deref(), Some("image") | Some("pinned"));
         items.retain(|it| match it.kind {
-            ItemKind::Image => it
+            ItemKind::Image if need_image_check => it
                 .image_path
                 .as_deref()
                 .map(|p| std::path::Path::new(p).exists())
@@ -96,11 +97,26 @@ pub async fn get_history(
     })?
 }
 
+/// 全量历史列表（前端本地搜索用；一次性加载全部条目）
+#[tauri::command]
+pub fn get_all_history(state: State<'_, AppState>) -> CmdResult<Vec<ItemDto>> {
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let items = db.list_items("", None, 10000, 0)?;
+    Ok(items.iter().map(|i| to_dto(&state, i)).collect())
+}
+
 /// 固定 / 取消固定
 #[tauri::command]
 pub fn pin_item(state: State<'_, AppState>, id: i64, pinned: bool) -> CmdResult<bool> {
     let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     Ok(db.set_pinned(id, pinned)?)
+}
+
+/// 设置条目备注
+#[tauri::command]
+pub fn set_item_note(state: State<'_, AppState>, id: i64, note: Option<String>) -> CmdResult<bool> {
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    Ok(db.set_note(id, note)?)
 }
 
 /// 保存固定条目拖拽排序（按传入 id 顺序）
@@ -149,12 +165,12 @@ pub fn clear_all_history(app: AppHandle, state: State<'_, AppState>) -> CmdResul
     Ok(n)
 }
 
-/// 粘贴条目到上一窗口（核心动作；内含焦点恢复等待，放后台线程）
+/// 粘贴条目到上一窗口（核心动作；隐藏窗口后发送 Ctrl+V，放后台线程）
 #[tauri::command]
 pub async fn paste_item(app: AppHandle, id: i64) -> CmdResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        super::paste::paste_item(&state, id).map_err(|m| CommandError { message: m })
+        super::paste::paste_item(&state, &app, id).map_err(|m| CommandError { message: m })
     })
     .await
     .map_err(|e| CommandError {
@@ -429,6 +445,7 @@ mod tests {
             hash: "h".into(),
             pinned: false,
             created_at: 0,
+            note: None,
         }
     }
 

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -9,7 +10,7 @@ import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { CLIPBOARD_DEFAULTS } from "./config";
 import { Drawer } from "@/components/ui/drawer";
-import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile } from "lucide-react";
+import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile, MessageSquare, StickyNote, SearchX, ClipboardList, ImageOff, FileQuestion } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -45,6 +46,7 @@ interface ItemDto {
   file_count: number;
   pinned: boolean;
   created_at: number;
+  note: string | null;
 }
 
 type Filter = "all" | "pinned" | "text" | "image" | "files";
@@ -88,6 +90,36 @@ function fmtTime(ts: number): string {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+function highlight(text: string, q: string): React.ReactNode {
+  if (!q) return text;
+  const kw = q.trim().toLowerCase();
+  if (!kw) return text;
+  const lower = text.toLowerCase();
+  const idx = lower.indexOf(kw);
+  if (idx < 0) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="rounded-sm bg-emerald-500/25 px-0.5 text-inherit">
+        {text.slice(idx, idx + q.length)}
+      </mark>
+      {text.slice(idx + q.length)}
+    </>
+  );
+}
+
+function EmptyState({ icon: Icon, title, description }: { icon: React.ComponentType<{ className?: string }>; title: string; description?: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+      <Icon className="size-10 opacity-40" />
+      <div className="text-center">
+        <div className="text-sm">{title}</div>
+        {description && <div className="mt-1 text-xs opacity-60">{description}</div>}
+      </div>
+    </div>
+  );
+}
+
 // 固定板块内可拖拽排序的小条目包装（小尺寸元素，transform 不会触发大卡片渲染问题）
 function PinnedSortable({ id, children }: { id: string; children: React.ReactNode }) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
@@ -112,7 +144,7 @@ function PinnedSortable({ id, children }: { id: string; children: React.ReactNod
 
 export function Clippage({ popup = true }: { popup?: boolean }) {
   const entranceRef = useWindowEntrance(popup, ["animate-in", "fade-in-0"]);
-  const [items, setItems] = useState<ItemDto[]>([]);
+  const [allItems, setAllItems] = useState<ItemDto[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
@@ -123,51 +155,49 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
   const { cfg: clipCfg, update: updateClipCfg, reload: refreshClipCfg } = useModuleConfig("clipboard", CLIPBOARD_DEFAULTS);
-  const debounce = useRef<number | null>(null);
   const [preview, setPreview] = useState<{ src: string; name: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editingNoteValue, setEditingNoteValue] = useState("");
 
-  const loadSeq = useRef(0);
+  // 本地搜索：根据 search + filter 内存过滤（纳秒级，无需 IPC）
+  const items = useMemo(() => {
+    let result = allItems;
+    // 按类型过滤
+    if (filter === "pinned") {
+      result = result.filter((it) => it.pinned);
+    } else if (filter === "text") {
+      result = result.filter((it) => it.kind === "text");
+    } else if (filter === "image") {
+      result = result.filter(isImageItem);
+    } else if (filter === "files") {
+      result = result.filter((it) => it.kind === "files" && !isImageItem(it));
+    }
+    // 按关键词过滤（内容 + 文件路径 + 备注）
+    const kw = search.trim().toLowerCase();
+    if (kw) {
+      result = result.filter(
+        (it) =>
+          it.preview.toLowerCase().includes(kw) ||
+          (it.full ?? "").toLowerCase().includes(kw) ||
+          (it.note ?? "").toLowerCase().includes(kw),
+      );
+    }
+    return result;
+  }, [allItems, search, filter]);
+
+  // 加载全部数据（一次性，不再每次搜索都调用）
   const load = useCallback(async () => {
-    const seq = ++loadSeq.current;
     try {
-      const list = await invoke<ItemDto[]>("get_history", {
-        filter: search,
-        kind: filter === "all" ? null : filter,
-        limit: 200,
-        offset: 0,
-      });
-      // 迟到的旧响应：期间筛选/搜索已变，丢弃防止列表跳回旧状态
-      if (seq !== loadSeq.current) return;
-      setItems(list);
+      const list = await invoke<ItemDto[]>("get_all_history");
+      setAllItems(list);
       setSelected((cur) => (list.some((i) => i.id === cur) ? cur : (list[0]?.id ?? null)));
-      // 预载缩略图（图片条目 + 图片类文件）
-      const t: Record<number, string> = {};
-      const pending: Promise<void>[] = [];
-      for (const it of list) {
-        if (it.kind === "image" && !thumbs[it.id]) {
-          pending.push(
-            invoke<string | null>("get_thumb", { id: it.id }).then((b) => {
-              if (b) t[it.id] = b;
-            }),
-          );
-        } else if (it.kind === "files" && isImageItem(it)) {
-          pending.push(fileThumbOf(it.preview));
-        }
-      }
-      await Promise.all(pending);
-      if (seq !== loadSeq.current) return;
-      if (Object.keys(t).length) setThumbs((prev) => ({ ...prev, ...t }));
     } catch (e) {
       console.error("load history failed", e);
     }
-  }, [search, filter]);
+  }, []);
 
   useEffect(() => {
-    invoke("log_frontend", {
-      level: "info",
-      msg: "[diag] clippage mounted",
-    }).catch(() => {});
     load();
   }, [load]);
 
@@ -178,6 +208,21 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
     };
   }, [load]);
 
+  // 缩略图预载：独立 effect，只在 items 变化时执行，不阻塞搜索
+  useEffect(() => {
+    for (const it of items) {
+      if (it.kind === "image" && !thumbs[it.id]) {
+        invoke<string | null>("get_thumb", { id: it.id }).then((b) => {
+          if (b) {
+            setThumbs((prev) => ({ ...prev, [it.id]: b! }));
+          }
+        });
+      } else if (it.kind === "files" && isImageItem(it)) {
+        fileThumbOf(it.preview);
+      }
+    }
+  }, [items]);
+
   // 弹窗位置/尺寸记忆（固定位置模式下才记录移动；共享 Hook 内置防抖）
   usePopupGeometry("clipboard", {
     trackSize: popup,
@@ -185,10 +230,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   });
 
   const onSearchChange = (v: string) => {
-    if (debounce.current) window.clearTimeout(debounce.current);
-    debounce.current = window.setTimeout(() => {
-      setSearch(v);
-    }, 200);
+    setSearch(v);
   };
 
   const doPaste = async (id: number) => {
@@ -268,6 +310,25 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
     }
   };
 
+  const startEditNote = (item: ItemDto) => {
+    setMenu(null);
+    setEditingNoteId(item.id);
+    setEditingNoteValue(item.note ?? "");
+  };
+
+  const saveNote = async () => {
+    if (editingNoteId === null) return;
+    try {
+      const note = editingNoteValue.trim() || null;
+      await invoke("set_item_note", { id: editingNoteId, note });
+      await load();
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setEditingNoteId(null);
+    }
+  };
+
   const composite = filter === "all" || filter === "pinned";
   const pinned = filter === "pinned";
   const cellSize = clipCfg.cellSize;
@@ -300,7 +361,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           ? imgItems.length
           : imgItems.length + fileItems.length;
     const next = arrayMove([...imgItems, ...fileItems, ...textItems], start + oldIdx, start + newIdx);
-    setItems(next);
+    setAllItems(next);
     invoke("set_pin_order", { ids: next.map((it) => it.id) }).catch(console.error);
   };
 
@@ -321,6 +382,18 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const { ref: imgScrollRef } = useHorizontalWheel<HTMLDivElement>();
   const { ref: fileScrollRef } = useHorizontalWheel<HTMLDivElement>();
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const textListRef = useRef<HTMLDivElement | null>(null);
+
+  // 虚拟列表：仅用于非固定模式的文本列表（"全部"和"文本"Tab）
+  const textRowHeight = 56; // 估算文本卡片高度（含间距）
+  const useTextVirtualList = !pinned && (filter === "all" || filter === "text");
+  const textVirtualizer = useVirtualizer({
+    count: useTextVirtualList ? textItems.length : 0,
+    getScrollElement: () => textListRef.current,
+    estimateSize: () => textRowHeight,
+    overscan: 5,
+  });
+
   const gridStep = () => {
     const el = gridRef.current;
     const cell = el?.querySelector<HTMLElement>("[data-cell]");
@@ -467,14 +540,37 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           : "border-border bg-card hover:border-accent",
       )}
     >
-      <div
-        className={cn(
-          "min-w-0 flex-1 whitespace-pre-wrap break-words text-xs leading-relaxed",
-          LINE_CLAMP[textLines] ?? "line-clamp-2",
-        )}
-        title={item.full ?? item.preview}
-      >
-        {item.preview}
+      <div className="min-w-0 flex-1">
+        <div
+          className={cn(
+            "whitespace-pre-wrap break-words text-xs leading-relaxed",
+            LINE_CLAMP[textLines] ?? "line-clamp-2",
+          )}
+          title={item.full ?? item.preview}
+        >
+          {highlight(item.preview, search)}
+        </div>
+        {editingNoteId === item.id ? (
+          <input
+            type="text"
+            value={editingNoteValue}
+            onChange={(e) => setEditingNoteValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveNote();
+              if (e.key === "Escape") setEditingNoteId(null);
+            }}
+            onBlur={saveNote}
+            placeholder="输入备注（可选）"
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+            className="mt-1 w-full rounded border bg-muted px-2 py-1 text-[10px] outline-none focus:border-primary"
+          />
+        ) : item.note ? (
+          <div className="mt-1 flex items-center gap-1 truncate text-[10px] text-muted-foreground" title={item.note}>
+            <StickyNote className="size-3 shrink-0" />
+            <span className="truncate">{highlight(item.note, search)}</span>
+          </div>
+        ) : null}
       </div>
       <div className="flex shrink-0 flex-col items-center gap-0.5 border-l pl-2">
           {showTimestamps && (
@@ -601,6 +697,11 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           onChange: onSearchChange,
           placeholder: "搜索剪贴板历史…",
           autoFocus: true,
+          trailing: search.trim() ? (
+            <span className="shrink-0 text-[10px] text-muted-foreground">
+              {items.length} 条结果
+            </span>
+          ) : null,
         }}
         actions={
           <HeaderButton
@@ -690,11 +791,13 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           )}
           <div className="flex-1 overflow-y-auto p-1">
             {ordered.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                {search ? "无匹配记录" : "暂无剪贴板记录"}
-              </div>
+              <EmptyState
+                icon={search ? SearchX : ClipboardList}
+                title={search ? `未找到匹配「${search}」的记录` : "暂无剪贴板记录"}
+                description={!search ? "复制内容后会自动出现在这里" : undefined}
+              />
             ) : textItems.length === 0 ? (
-              <div className="p-4 text-center text-xs text-muted-foreground">无文本记录</div>
+              <EmptyState icon={ClipboardList} title="无文本记录" />
             ) : pinned ? (
               <DndContext
                 sensors={sensors}
@@ -726,9 +829,11 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       ) : filter === "image" ? (
         <div ref={gridRef} className="flex-1 overflow-y-auto p-2">
           {items.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              {search ? "无匹配记录" : "暂无图片记录"}
-            </div>
+            <EmptyState
+              icon={search ? SearchX : ImageOff}
+              title={search ? `未找到匹配「${search}」的记录` : "暂无图片记录"}
+              description={!search ? "复制图片后会自动出现在这里" : undefined}
+            />
           ) : (
             <div
               className="grid gap-2"
@@ -744,9 +849,11 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       ) : filter === "files" ? (
         <div ref={gridRef} className="flex-1 overflow-y-auto p-2">
           {items.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              {search ? "无匹配记录" : "暂无文件记录"}
-            </div>
+            <EmptyState
+              icon={search ? SearchX : FileQuestion}
+              title={search ? `未找到匹配「${search}」的记录` : "暂无文件记录"}
+              description={!search ? "复制文件后会自动出现在这里" : undefined}
+            />
           ) : (
             <div
               className="grid gap-2"
@@ -760,10 +867,33 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
           )}
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto p-1">
+        <div ref={textListRef} className="flex-1 overflow-y-auto p-1">
           {items.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              {search ? "无匹配记录" : "暂无文本记录"}
+            <EmptyState
+              icon={search ? SearchX : ClipboardList}
+              title={search ? `未找到匹配「${search}」的记录` : "暂无文本记录"}
+              description={!search ? "复制文本后会自动出现在这里" : undefined}
+            />
+          ) : useTextVirtualList && textItems.length > 0 ? (
+            <div
+              className="relative w-full"
+              style={{ height: `${textVirtualizer.getTotalSize()}px` }}
+            >
+              {textVirtualizer.getVirtualItems().map((virtualRow) => {
+                const item = textItems[virtualRow.index];
+                return (
+                  <div
+                    key={item.id}
+                    className="absolute left-0 top-0 w-full"
+                    style={{
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {textRow(item, virtualRow.index)}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <ul className="space-y-2">{items.map((item, i) => textRow(item, i))}</ul>
@@ -816,6 +946,11 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
         )}
         <ContextMenuDivider />
         <ContextMenuItem
+          icon={<MessageSquare className="size-3.5" />}
+          label="编辑备注"
+          onClick={() => menu && startEditNote(menu.item)}
+        />
+        <ContextMenuItem
           icon={<Trash2 className="size-3.5" />}
           label="删除"
           onClick={() => menu && del(menu.item.id)}
@@ -861,12 +996,10 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="剪贴板设置">
         <ClipSettings
-          maxItems={clipCfg.maxItems}
           hotkey={clipCfg.hotkey}
           followMouse={clipCfg.followMouse}
           cfg={clipCfg}
           onUpdate={updateClipCfg}
-          onMaxItems={refreshClipCfg}
           onHotkey={refreshClipCfg}
           onFollowMouse={refreshClipCfg}
         />

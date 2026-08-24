@@ -45,15 +45,15 @@ const MODULES: ModuleInfo[] = [
   {
     id: "emoji", name: "表情面板", icon: Smile,
     tagline: "1900+ 表情，一按即出",
-    desc: "分类浏览、收藏置顶、多语言搜索。右键自定义操作，网格大小可调。",
+    desc: "分类浏览、收藏置顶、多语言搜索。文本表情直输不污染剪贴板。",
     features: [
       { icon: "⭐", text: "分类浏览 + 收藏置顶，常用表情一步直达" },
       { icon: "🔎", text: "中文名 / 英文名 / shortcode 三种方式搜索" },
       { icon: "⌨️", text: "文本表情经 SendInput 直输，不污染剪贴板" },
       { icon: "🎨", text: "系统字体优先渲染，缺失时 Twemoji 兜底" },
-      { icon: "📋", text: "右键菜单自定义操作，网格大小可调（40-60px）" },
+      { icon: "✨", text: "图片表情自动写入并粘贴，全流程无感" },
     ],
-    meta: ["Ctrl+Shift+J", "跟随鼠标", "SendInput", "右键菜单"],
+    meta: ["Ctrl+Shift+J", "跟随鼠标", "SendInput", "Twemoji"],
   },
   {
     id: "search", name: "文件秒搜", icon: Search,
@@ -71,15 +71,15 @@ const MODULES: ModuleInfo[] = [
   {
     id: "quicklaunch", name: "快速启动", icon: AppWindow,
     tagline: "常用工具，一键直达",
-    desc: "应用、文件、文件夹、网址的快捷启动面板，支持多选批量操作和文件拖拽。",
+    desc: "应用、文件、文件夹、网址的快捷启动面板，支持拖拽排序和分组管理。",
     features: [
       { icon: "🚀", text: "支持应用、文件、文件夹、网址四种快捷方式" },
-      { icon: "🔀", text: "多选批量操作 + 框选橡皮筋选择" },
-      { icon: "📥", text: "文件直接拖入添加，剪贴板粘贴路径" },
-      { icon: "📁", text: "文件夹分组管理，右键上下文菜单" },
+      { icon: "🔀", text: "拖拽排序 + 分组管理，自定义布局" },
       { icon: "📐", text: "网格 / 列表双视图，格子大小可调（48-96px）" },
+      { icon: "📥", text: "支持文件拖入添加、剪贴板粘贴路径" },
+      { icon: "📋", text: "右键菜单：打开 / 复制路径 / 重命名 / 删除" },
     ],
-    meta: ["主面板内", "多选拖拽", "SQLite", "@dnd-kit"],
+    meta: ["主面板内", "拖拽排序", "SQLite", "@dnd-kit"],
   },
 ];
 

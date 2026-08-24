@@ -14,7 +14,7 @@ export interface ClipboardConfig {
 }
 
 export const CLIPBOARD_DEFAULTS: ClipboardConfig = {
-  maxItems: 500,
+  maxItems: 2000,
   hotkey: "Ctrl+Shift+V",
   followMouse: true,
   recordText: true,

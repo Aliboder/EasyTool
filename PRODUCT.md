@@ -26,7 +26,7 @@ Windows 10/11 x64 桌面环境；托盘驻留 + 全局热键（Ctrl+Shift+E 主�
 
 - 模块：clipboard（WM_CLIPBOARDUPDATE + 500ms 轮询兜底、指纹去重、2s 自写守卫、256px 缩略图、pin_order 固定排序）、quota（后台线程轮询、预警/告警双阈值、5000 条历史、消费突增提醒）、emoji（系统字体优先 + canvas 像素检测 + Twemoji 兜底、SendInput 直输）、search（Everything64.dll 动态加载、全局互斥锁、后台线程查询）
 - 技术：Tauri 2 / Rust / React 19 / TS / Tailwind v4 / shadcn / Vite MPA / SQLite WAL / keyring / reqwest / chrono
-- 版本：v0.4.4（2026-08-20），MIT 许可，36+ 后端单元测试
+- 版本：v0.4.5（2026-08-25），MIT 许可，51 后端单元测试
 - 依赖：搜索模块需要用户安装 Everything（免费，MIT）
 
 ## Brand Commitments
@@ -38,10 +38,10 @@ Windows 10/11 x64 桌面环境；托盘驻留 + 全局热键（Ctrl+Shift+E 主�
 
 ## Evidence on Hand
 
-- 代码仓库：D:\SystemFiles\Documents\Project\EasyTool（git tag v0.4.4）
+- 代码仓库：D:\SystemFiles\Documents\Project\EasyTool（git tag v0.4.5）
 - 落地页现状：easytool.html（瑞士编辑排版风，已 6 轮迭代，用户认可方向但要求更强视觉/交互）
 - 模块细节均来自源码（config.rs、modules/*/mod.rs、SmartEmoji.tsx 等）
-- 版本历史来自 git log（v0.4.0 → v0.4.4，2026-08-20）
+- 版本历史来自 git log（v0.4.0 → v0.4.5，2026-08-25）
 - 不存在：真实产品截图、用户评价、下载量数据、winget 已发布事实（均不得虚构）
 
 ## Product Principles

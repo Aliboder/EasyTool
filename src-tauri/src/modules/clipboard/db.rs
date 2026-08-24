@@ -95,6 +95,19 @@ impl Db {
             }
             self.set_setting("schema_version", "2")?;
         }
+        if version < 3 {
+            // v3：用户备注（0.9.0 引入）；搜索时同时匹配内容、文件路径和备注
+            let cols = self
+                .conn
+                .prepare("PRAGMA table_info(items)")?
+                .query_map([], |r| r.get::<_, String>(1))?
+                .collect::<Result<Vec<_>, _>>()?;
+            if !cols.iter().any(|c| c == "note") {
+                self.conn
+                    .execute_batch("ALTER TABLE items ADD COLUMN note TEXT")?;
+            }
+            self.set_setting("schema_version", "3")?;
+        }
         // pin_order 列在 v2 迁移后才存在，索引须在其后创建（旧库无此列）
         self.conn
             .execute_batch("CREATE INDEX IF NOT EXISTS idx_items_pinned_order ON items(pinned, pin_order)")?;
@@ -166,7 +179,7 @@ impl Db {
         let item = self
             .conn
             .query_row(
-                "SELECT id, kind, content, file_paths, image_path, thumb_path, hash, pinned, created_at, html
+                "SELECT id, kind, content, file_paths, image_path, thumb_path, hash, pinned, created_at, html, note
                  FROM items WHERE id = ?1",
                 params![id],
                 row_to_item,
@@ -175,7 +188,7 @@ impl Db {
         Ok(item)
     }
 
-    /// 查询历史；keyword 非空时对文本内容/文件路径做 LIKE 过滤；kind 非空时按类型过滤，
+    /// 查询历史；keyword 非空时对文本内容/文件路径/备注做 LIKE 过滤；kind 非空时按类型过滤，
     /// kind == "pinned" 时仅返回固定条目（"固定" Tab，不限制类型）
     pub fn list_items(
         &self,
@@ -185,7 +198,7 @@ impl Db {
         offset: i64,
     ) -> Result<Vec<Item>, DbError> {
         let mut sql = String::from(
-            "SELECT id, kind, content, file_paths, image_path, thumb_path, hash, pinned, created_at, html
+            "SELECT id, kind, content, file_paths, image_path, thumb_path, hash, pinned, created_at, html, note
              FROM items WHERE 1=1",
         );
         let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -198,8 +211,9 @@ impl Db {
                 .replace('_', "\\_");
             let pattern = format!("%{esc}%");
             sql.push_str(
-                " AND (content LIKE ? ESCAPE '\\' OR file_paths LIKE ? ESCAPE '\\')",
+                " AND (content LIKE ? ESCAPE '\\' OR file_paths LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')",
             );
+            args.push(Box::new(pattern.clone()));
             args.push(Box::new(pattern.clone()));
             args.push(Box::new(pattern));
         }
@@ -255,6 +269,15 @@ impl Db {
             )?;
         }
         Ok(())
+    }
+
+    /// 设置条目备注（None 清空备注）
+    pub fn set_note(&self, id: i64, note: Option<String>) -> Result<bool, DbError> {
+        let n = self.conn.execute(
+            "UPDATE items SET note = ?1 WHERE id = ?2",
+            params![note, id],
+        )?;
+        Ok(n > 0)
     }
 
     /// 图片落盘后回填路径
@@ -458,6 +481,7 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<Item> {
         pinned: row.get::<_, i64>(7)? != 0,
         created_at: row.get(8)?,
         html: row.get(9)?,
+        note: row.get(10)?,
     })
 }
 
@@ -487,6 +511,7 @@ mod tests {
             hash: hash.to_string(),
             pinned,
             created_at,
+            note: None,
         }
     }
 

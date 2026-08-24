@@ -26,7 +26,7 @@ pub fn max_items(app: &tauri::AppHandle) -> u64 {
     crate::config::module_cfg(app, "clipboard")
         .get("max_items")
         .and_then(|v| v.as_u64())
-        .unwrap_or(500)
+        .unwrap_or(2000)
 }
 
 /// 初始化剪贴板模块：数据库、状态、监听线程（从 AppHandle，用于并行初始化）

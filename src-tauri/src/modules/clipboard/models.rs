@@ -46,6 +46,8 @@ pub struct Item {
     pub pinned: bool,
     /// Unix 毫秒
     pub created_at: i64,
+    /// 用户备注（可选）
+    pub note: Option<String>,
 }
 
 /// 文本预览截断长度（列表显示用，全文保留在 DB）
@@ -65,6 +67,8 @@ pub struct ItemDto {
     pub file_count: u32,
     pub pinned: bool,
     pub created_at: i64,
+    /// 用户备注（可选）
+    pub note: Option<String>,
 }
 
 impl Item {
@@ -103,6 +107,7 @@ impl Item {
             file_count,
             pinned: self.pinned,
             created_at: self.created_at,
+            note: self.note.clone(),
         }
     }
 }
@@ -123,6 +128,7 @@ mod tests {
             hash: "h".into(),
             pinned: false,
             created_at: 0,
+            note: None,
         }
     }
 

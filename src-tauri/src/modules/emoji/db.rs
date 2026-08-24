@@ -44,32 +44,32 @@ impl Db {
     }
 
     pub fn create_group(&self, name: &str) -> Result<i64, rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute("INSERT INTO groups (name) VALUES (?1)", params![name])?;
         Ok(conn.last_insert_rowid())
     }
 
     pub fn rename_group(&self, id: i64, name: &str) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute("UPDATE groups SET name = ?1 WHERE id = ?2", params![name, id])?;
         Ok(())
     }
 
     pub fn delete_group(&self, id: i64) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute("DELETE FROM groups WHERE id = ?1", params![id])?;
         Ok(())
     }
 
     pub fn list_groups(&self) -> Result<Vec<(i64, String)>, rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut stmt = conn.prepare("SELECT id, name FROM groups ORDER BY sort_order, id")?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
     pub fn insert_custom(&self, file_path: &str, name: &str) -> Result<i64, rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = now_ms();
         conn.execute(
             "INSERT INTO custom_emojis (file_path, name, created_at) VALUES (?1, ?2, ?3)",
@@ -79,7 +79,7 @@ impl Db {
     }
 
     pub fn set_custom_path(&self, id: i64, path: &str) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             "UPDATE custom_emojis SET file_path = ?1 WHERE id = ?2",
             params![path, id],
@@ -88,13 +88,13 @@ impl Db {
     }
 
     pub fn delete_custom(&self, id: i64) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute("DELETE FROM custom_emojis WHERE id = ?1", params![id])?;
         Ok(())
     }
 
     pub fn rename_custom(&self, id: i64, name: &str) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             "UPDATE custom_emojis SET name = ?1 WHERE id = ?2",
             params![name, id],
@@ -103,7 +103,7 @@ impl Db {
     }
 
     pub fn move_custom(&self, id: i64, group_id: Option<i64>) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             "UPDATE custom_emojis SET group_id = ?1 WHERE id = ?2",
             params![group_id, id],
@@ -113,7 +113,7 @@ impl Db {
 
     pub fn get_custom(&self, id: i64) -> Result<Option<(String, String)>, rusqlite::Error> {
         // 返回 (file_path, name)
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut stmt =
             conn.prepare("SELECT file_path, name FROM custom_emojis WHERE id = ?1")?;
         let mut rows = stmt.query_map(params![id], |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -121,7 +121,7 @@ impl Db {
     }
 
     pub fn list_custom(&self) -> Result<Vec<CustomRow>, rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut stmt = conn.prepare(
             "SELECT id, file_path, name, group_id, is_favorite, use_count, last_used_at, created_at
              FROM custom_emojis ORDER BY is_favorite DESC, use_count DESC, id DESC",
@@ -142,7 +142,7 @@ impl Db {
     }
 
     pub fn record_use_custom(&self, id: i64) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             "UPDATE custom_emojis SET use_count = use_count + 1, last_used_at = ?1 WHERE id = ?2",
             params![now_ms(), id],
@@ -151,7 +151,7 @@ impl Db {
     }
 
     pub fn toggle_fav_custom(&self, id: i64, fav: bool) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             "UPDATE custom_emojis SET is_favorite = ?1 WHERE id = ?2",
             params![fav as i64, id],
@@ -160,7 +160,7 @@ impl Db {
     }
 
     pub fn record_use_builtin(&self, char_key: &str) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             "INSERT INTO emoji_usage (char, use_count, last_used_at) VALUES (?1, 1, ?2)
              ON CONFLICT(char) DO UPDATE SET
@@ -171,7 +171,7 @@ impl Db {
     }
 
     pub fn toggle_fav_builtin(&self, char_key: &str, fav: bool) -> Result<(), rusqlite::Error> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         conn.execute(
             "INSERT INTO emoji_usage (char, is_favorite) VALUES (?1, ?2)
              ON CONFLICT(char) DO UPDATE SET is_favorite = excluded.is_favorite",
@@ -184,7 +184,7 @@ impl Db {
         &self,
     ) -> Result<std::collections::HashMap<String, (i64, i64, i64)>, rusqlite::Error> {
         // char -> (is_favorite, use_count, last_used_at)
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut stmt =
             conn.prepare("SELECT char, is_favorite, use_count, last_used_at FROM emoji_usage")?;
         let rows = stmt.query_map([], |r| {

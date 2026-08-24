@@ -24,6 +24,7 @@ EasyTool 是一款开源免费的 Windows 效率工具箱，用 Tauri 2 + Rust +
 - **本地优先**：数据存本机 SQLite，密钥进 Windows 凭据管理器，无服务器、无遥测
 - **模块化架构**：manifest.json 壳驱动，新增模块只需 3 个文件
 - **全局热键**：全局热键一键呼出，弹窗跟随鼠标，失焦自动隐藏
+- **自动更新**：通过 GitHub Releases 自动检查更新，签名验证确保安全
 - **开源免费**：MIT 许可，永久免费，无广告无账号
 
 ---
@@ -110,7 +111,8 @@ src/
 ```
 ├── config.json               # 应用配置
 ├── clipboard.db              # 剪贴板历史（SQLite WAL）
-├── balance_history_*.json    # 额度消费历史（按账户分文件）
+├── quota.db                  # 额度监控数据（SQLite WAL）
+├── balance_history_*.json    # 额度消费历史（旧格式，已迁移到 quota.db）
 ├── images/                   # 图片原文
 ├── thumbs/                   # 缩略图缓存
 └── easytool.log              # 运行日志

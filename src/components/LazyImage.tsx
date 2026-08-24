@@ -31,16 +31,20 @@ export function LazyImage({ src, alt, className }: LazyImageProps) {
 
   return (
     <div ref={ref} className={className}>
+      {!loaded && (
+        <div className="h-full w-full animate-pulse bg-muted" />
+      )}
       {loaded && !error && (
         <img
           src={src}
           alt={alt}
+          loading="lazy"
           onError={() => setError(true)}
-          className="w-full h-full object-cover"
+          className="h-full w-full object-cover"
         />
       )}
       {loaded && error && (
-        <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
           加载失败
         </div>
       )}

@@ -120,6 +120,7 @@ mod tests {
             hash: "h".into(),
             pinned: false,
             created_at: 0,
+            note: None,
         };
         store.remove_files(&item);
         assert!(!ip.exists());

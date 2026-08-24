@@ -58,12 +58,12 @@ impl AppState {
 
     /// 登记一次自身写入的剪贴板内容指纹（供监听侧比对跳过记录）
     pub fn set_pending_ignore(&self, signature: String) {
-        *self.pending_ignore.lock().unwrap() = Some((signature, now_ms()));
+        *self.pending_ignore.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((signature, now_ms()));
     }
 
     /// 检查并消费待忽略指纹：内容指纹一致且在时间窗口内则命中
     pub fn check_pending_ignore(&self, signature: &str, window_ms: i64, now: i64) -> bool {
-        let mut guard = self.pending_ignore.lock().unwrap();
+        let mut guard = self.pending_ignore.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         match guard.as_ref() {
             Some((sig, ts)) if now - *ts < window_ms => *sig == signature,
             Some(_) => {

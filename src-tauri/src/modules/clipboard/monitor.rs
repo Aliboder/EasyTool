@@ -278,6 +278,7 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
             hash,
             pinned: false,
             created_at: now,
+            note: None,
         };
         let Some(id) = db.insert_item(&item)? else {
             return Ok(None);
@@ -356,6 +357,7 @@ pub(crate) fn save_files_batch(
             hash,
             pinned: false,
             created_at: ts,
+            note: None,
         };
         let Some(id) = db.insert_item(&item)? else {
             continue;

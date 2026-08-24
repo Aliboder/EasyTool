@@ -65,59 +65,31 @@ function Segmented<T extends number | string>({  value,
 }
 
 export function ClipSettings({
-  maxItems,
   hotkey,
   followMouse,
   cfg,
   onUpdate,
-  onMaxItems,
   onHotkey,
   onFollowMouse,
 }: {
-  maxItems: number;
   hotkey: string;
   followMouse: boolean;
   cfg: ClipboardConfig;
   onUpdate: (patch: Partial<ClipboardConfig>) => void;
-  onMaxItems: () => void;
   onHotkey: () => void;
   onFollowMouse: () => void;
 }) {
-  const [maxInput, setMaxInput] = useState(String(maxItems));
   const [stats, setStats] = useState<StatsDto | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
-  const [pendingLimit, setPendingLimit] = useState<number | null>(null);
 
   // 纯配置（监听规则/弹窗显示）由父组件 Clippage 的共享 Hook 持有，此处受控
   const adv = cfg;
   const saveAdv = onUpdate;
 
-  useEffect(() => setMaxInput(String(maxItems)), [maxItems]);
-
   useEffect(() => {
     invoke<StatsDto>("get_stats").then(setStats).catch(console.error);
   }, []);
-
-  const saveMax = async (v?: string) => {
-    const n = parseInt(v ?? maxInput, 10);
-    if (Number.isNaN(n) || n < 200 || n > 2000) return;
-    // 先取最新条数：低于当前条数时需用户确认，避免静默清理
-    const st = await invoke<StatsDto>("get_stats").catch(() => null);
-    if (st) setStats(st);
-    if (n < (st?.total ?? 0)) {
-      setPendingLimit(n);
-      return;
-    }
-    await applyMax(n);
-  };
-
-  const applyMax = async (n: number) => {
-    await invoke("set_max_items", { maxItems: n });
-    setMaxInput(String(n));
-    setStats(await invoke<StatsDto>("get_stats"));
-    onMaxItems();
-  };
 
   const saveHotkey = async (combo: string): Promise<string | void> => {
     try {
@@ -156,34 +128,6 @@ export function ClipSettings({
           <CardTitle className="text-base">基础设置</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <Label>历史上限（条）</Label>
-            <div className="flex items-center gap-3">
-              <Slider
-                min={200}
-                max={2000}
-                step={50}
-                value={[Number(maxInput) || 500]}
-                onValueChange={([v]) => setMaxInput(String(v))}
-                onValueCommit={([v]) => saveMax(String(v))}
-                className="flex-1"
-              />
-              <Input
-                type="number"
-                min={200}
-                max={2000}
-                value={maxInput}
-                onChange={(e) => setMaxInput(e.target.value)}
-                onBlur={() => saveMax()}
-                onKeyDown={(e) => e.key === "Enter" && saveMax()}
-                className="w-28"
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              达到上限时自动清理最旧条目，固定条目永不清理。
-            </p>
-          </div>
-
           <div className="space-y-1">
             <Label>全局呼出热键</Label>
             <HotkeyRecorder
@@ -413,33 +357,6 @@ export function ClipSettings({
             </Button>
             <Button variant="destructive" onClick={clearAllHistory}>
               全部清空
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={pendingLimit != null} onOpenChange={(open) => !open && setPendingLimit(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>降低历史上限</DialogTitle>
-            <DialogDescription>
-              当前共有 {stats?.total ?? 0} 条记录，新上限 {pendingLimit ?? 0} 条，将超出{" "}
-              {Math.max(0, (stats?.total ?? 0) - (pendingLimit ?? 0))} 条。保存后将自动清理最旧的普通记录
-              （固定条目保留），此操作不可撤销。确定继续？
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingLimit(null)}>
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (pendingLimit != null) applyMax(pendingLimit);
-                setPendingLimit(null);
-              }}
-            >
-              确定
             </Button>
           </DialogFooter>
         </DialogContent>

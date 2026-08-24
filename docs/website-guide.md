@@ -88,9 +88,9 @@ App.tsx 中的组件顺序 = 页面从上到下的顺序。编号在各组件的
 需要改的地方：
 
 ```
-1. hero.tsx          → masthead 中的版本号 "0.4.4" → "0.5.0"
-2. version-bar.tsx   → FACTS 数组中的 "v0.4.4"
-3. download.tsx      → "v0.4.4 · 2026-08-20 发布"
+1. hero.tsx          → masthead 中的版本号 "0.4.5" → "0.5.0"
+2. version-bar.tsx   → FACTS 数组中的 "v0.4.5"
+3. download.tsx      → "v0.4.5 · 2026-08-25 发布"
 4. changelog.tsx     → LOG 数组头部新增版本条目
 5. stats-ticker.tsx  → 如有新数字（测试数/表情数等）
 ```

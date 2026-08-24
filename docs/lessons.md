@@ -864,4 +864,136 @@
 2. toast 渲染在自己窗口里，窗口一隐藏提示即失效——错误反馈要保证存活到用户看到；
 3. 配置/历史类 JSON 写盘一律临时文件+rename 原子替换，崩溃半截文件的代价是静默全量重置。
 
+## 45. 新增数据库列时的完整修改清单
+
+**场景**：给剪贴板模块添加备注（note）字段
+
+**涉及文件**：
+1. `db.rs`：schema 迁移（version 3）、SQL 查询加 note、row_to_item 解析 note、set_note 方法
+2. `models.rs`：Item/ItemDto 加 note 字段、to_dto 透传
+3. `commands.rs`：新增 set_item_note 命令
+4. `lib.rs`：注册新命令到 generate_handler
+5. `monitor.rs`：所有 Item 初始化加 note: None
+6. `store.rs`：测试中 Item 初始化加 note: None
+7. `Clippage.tsx`：ItemDto 接口、右键菜单、编辑 UI、显示备注
+
+**易漏点**：
+- monitor.rs/store.rs 中构造 Item 的地方（只搜 grep `Item {` 不够，要搜 `ItemKind::`）
+- 测试中的辅助函数（test_item/file_item/text_item）
+- lib.rs 的 generate_handler 注册
+
+## 46. 磁盘探测不要每次搜索都执行
+
+**场景**：剪贴板搜索框输入卡顿
+
+**根因**：`get_history` 每次调用都会对所有图片条目执行 `Path::exists` 磁盘探测（网络盘/U盘可能秒级延迟），搜索时频繁触发导致卡顿。
+
+**修复**：只在 `kind == "image" || kind == "pinned"` 时才执行图片磁盘探测（这两种 Tab 需要精确过滤）。普通搜索（kind = "all" / "text"）跳过探测，因为图片文件不存在不影响搜索结果的显示（用户可以搜索图片的内容/备注）。
+
+**教训**：磁盘 I/O 操作要尽可能减少，尤其是网络盘/慢盘场景。不需要实时检测时用缓存或跳过探测。
+
+## 47. 小数据量搜索用本地过滤，不要每次 IPC
+
+**场景**：剪贴板搜索框输入卡顿（字符延迟出现）
+
+**根因**：每次 search 变化都触发 IPC 调用后端 SQL LIKE 查询，快速输入时多个 IPC 往返堆积，异步回调连续 setState 导致重渲染风暴，输入框被卡住。
+
+**修复**：改为本地搜索架构：
+1. 后端新增 `get_all_history` 命令（返回全部条目，无 filter/limit）
+2. 前端挂载时一次性加载全部数据到 `allItems` state
+3. 用 `useMemo` 内存过滤出 `displayItems`（search + filter，纳秒级）
+4. 移除 debounce（本地过滤不需要）
+5. `clipboard://changed` 触发全量刷新
+
+**教训**：
+- 小数据量（<1000 条）搜索用本地过滤，比每次 IPC 快 1000 倍
+- IPC 有开销（序列化/反序列化、跨进程通信），避免高频调用
+- `useMemo` 内存过滤纳秒级，输入即时响应
+- 数据变更时（固定/删除/备注）重新加载全量数据即可
+
+## 48. 粘贴到原窗口不要用 SetForegroundWindow，隐藏窗口即可
+
+**场景**：剪贴板统一模式下，选择条目后文本没有粘贴到原输入框
+
+**根因**：使用 `SetForegroundWindow` 还原焦点，但 Windows 对前台窗口有严格限制——只有当前前台进程才能调用 `SetForegroundWindow`。EasyTool 执行 `paste_item` 时已经不是前台进程，所以 `SetForegroundWindow` 静默失败，Ctrl+V 发送到了 EasyTool 自身。
+
+**修复**：参考 PowerToys Advanced Paste 的做法：
+1. 隐藏 EasyTool 窗口（`win.hide()`）
+2. 等待 100ms（窗口隐藏完成，焦点自动返回到原窗口）
+3. 直接发送 Ctrl+V
+
+**教训**：
+- Windows 对 `SetForegroundWindow` 有严格限制，不要依赖它
+- 窗口隐藏后，Windows 会自动把焦点返回到原窗口（默认行为）
+- PowerToys Advanced Paste 和 CmdPal 都遇到过同样的问题
+- `SetForegroundWindow` 是异步的，调用后不能立即检查 `GetForegroundWindow`
+
+---
+
+## 2026-08-25
+
+### 自动更新实现：GitHub Releases + 签名验证
+
+**问题描述**：需要实现应用自动更新功能，让用户能方便地获取新版本。
+
+**解决方案**：
+1. **Tauri 插件集成**：使用 `tauri-plugin-updater`，配置 GitHub Releases 端点
+2. **签名验证**：生成 ed25519 密钥对（`updater.key` + `updater.key.pub`），私钥存 GitHub Secret，公钥内置应用
+3. **CI/CD 工作流**：GitHub Actions 自动构建 → 用私钥签名 → 发布到 Releases
+4. **用户端体验**：
+   - 设置页「检查更新」按钮
+   - 启动时自动检查，有新版本显示横幅提示
+   - 下载签名安装包 → 重启完成更新
+
+**关键点**：
+- 签名私钥**绝不提交到代码仓库**（已在 .gitignore）
+- 端点格式：`https://api.github.com/repos/{owner}/{repo}/releases/latest`
+- 公钥需 base64 编码后放入 `tauri.conf.json`
+
+**教训**：
+1. 自动更新必须有签名验证，防止中间人攻击
+2. CI/CD 流程要确保签名密钥安全（GitHub Secrets）
+3. 用户端要有明确的更新提示和手动检查入口
+
+**相关代码**：
+- `src-tauri/tauri.conf.json` - updater 配置
+- `src-tauri/updater.key` / `updater.key.pub` - 签名密钥
+- `.github/workflows/release.yml` - CI/CD 工作流
+- `src/modules/settings/` - 设置页更新按钮
+
+---
+
+### CI/CD 发布工作流：自动构建 + 签名 + 发布
+
+**问题描述**：手动构建发布流程繁琐，容易出错，需要自动化。
+
+**解决方案**：
+1. **触发条件**：推送 `v*` tag 时自动触发
+2. **构建环境**：Windows latest，Node.js 22，Rust stable
+3. **构建步骤**：
+   - 安装依赖（npm ci）
+   - 构建 Tauri 应用（`npm run tauri build`）
+   - 用签名私钥签名安装包
+   - 上传 artifacts 到 GitHub Release
+4. **签名流程**：
+   - 私钥从 GitHub Secret 读取
+   - 签名后生成 `.sig` 文件
+   - 安装包和签名文件一起发布
+
+**关键点**：
+- 使用 `tauri-apps/tauri-action` 官方 GitHub Action
+- 签名私钥通过环境变量传递，不落盘
+- 构建产物自动附带在 Release 中
+
+**教训**：
+1. CI/CD 要确保构建环境一致性（固定 Node.js/Rust 版本）
+2. 签名密钥管理是安全关键，必须用 Secrets
+3. 发布流程要幂等，重复运行不会创建重复 Release
+
+**相关代码**：
+- `.github/workflows/release.yml` - CI/CD 工作流
+- `package.json` - build 脚本
+
+---
+
 Aliboder

@@ -8,12 +8,14 @@ use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
-    VK_CONTROL, VK_V,
+    VK_CONTROL, VK_MENU, VK_V,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, SendMessageW,
     SetForegroundWindow, GUITHREADINFO,
 };
+
+use tauri::Manager;
 
 /// 标准编辑控件消息：获取/设置选中范围
 const EM_GETSEL: u32 = 0x00B0;
@@ -128,7 +130,7 @@ pub fn write_item_clipboard(state: &AppState, item: &Item) -> Result<(), String>
 }
 
 /// 把条目写回剪贴板并粘贴到唤起前的窗口
-pub fn paste_item(state: &AppState, id: i64) -> Result<(), String> {
+pub fn paste_item(state: &AppState, app: &tauri::AppHandle, id: i64) -> Result<(), String> {
     // 1. 读取条目
     let item = {
         let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -140,34 +142,52 @@ pub fn paste_item(state: &AppState, id: i64) -> Result<(), String> {
     // 2. 写剪贴板
     write_item_clipboard(state, &item)?;
 
-    // 3. 还原前台窗口与焦点控件，恢复输入状态
-    let win_hwnd = state.prev_foreground.load(Ordering::SeqCst);
-    let focus_hwnd = state.prev_focus.load(Ordering::SeqCst);
-    let sel_start = state.prev_sel_start.load(Ordering::SeqCst);
-    let sel_end = state.prev_sel_end.load(Ordering::SeqCst);
-    if win_hwnd == 0 {
-        log::warn!("no previous foreground window, only copied to clipboard");
-        return Ok(());
+    // 3. 隐藏 EasyTool 窗口（焦点自动返回到原窗口）
+    // 统一模式：隐藏主窗口；独立弹窗：隐藏弹窗
+    let main_win = app.get_webview_window(crate::MAIN_WINDOW_LABEL);
+    let popup_win = app.get_webview_window("clipboard_popup");
+    if let Some(win) = popup_win {
+        let _ = win.hide();
+    } else if let Some(win) = main_win {
+        let _ = win.hide();
     }
-    let focus = HWND(focus_hwnd as *mut core::ffi::c_void);
-    let restored = restore_focus(HWND(win_hwnd as *mut core::ffi::c_void), focus);
-    if !restored {
-        return Err("无法还原原窗口焦点，内容已复制到剪贴板，请手动粘贴".into());
-    }
-    // 恢复选中范围（光标/选中文本回到原位置）
-    restore_selection(focus, sel_start, sel_end);
 
-    // 4. 等待窗口处理激活事件后再模拟 Ctrl+V
-    std::thread::sleep(std::time::Duration::from_millis(60));
+    // 4. 等待窗口隐藏完成，焦点返回到原窗口
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    // 5. 模拟 Ctrl+V
     send_ctrl_v();
-    log::info!("pasted item {id} to hwnd={win_hwnd}");
+    log::info!("pasted item {id}");
     Ok(())
 }
 
 /// 还原前台窗口；成功把焦点交给目标窗口则返回 true
 fn restore_focus(target: HWND, focus_control: HWND) -> bool {
     unsafe {
-        // 1. 窗口回到前台（当前进程处于前台，允许切换）
+        // 模拟 Alt 键按下/释放：骗过 Windows 前台窗口限制
+        // 只有前台进程才能调用 SetForegroundWindow，Alt 按键可临时解锁
+        let alt_input_down = INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VK_MENU,
+                    ..Default::default()
+                },
+            },
+        };
+        let alt_input_up = INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VK_MENU,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    ..Default::default()
+                },
+            },
+        };
+        let _ = SendInput(&[alt_input_down, alt_input_up], std::mem::size_of::<INPUT>() as i32);
+
+        // 1. 窗口回到前台
         let activated = SetForegroundWindow(target).as_bool();
 
         // 2. 焦点精确给回原焦点控件（跨线程需 AttachThreadInput）
