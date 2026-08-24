@@ -94,8 +94,34 @@ cargo test             # Rust 测试（在 src-tauri/ 下）
 npx tsc --noEmit       # 前端类型检查
 ```
 
-- 打包只支持 `msi/nsis`（**不支持 portable**）。发版流程：改版本号（**三处同步**：package.json / tauri.conf.json / Cargo.toml）→ build → git tag → `gh release create`
-- 后端 36 个单元测试；前端无测试框架，验证靠人工
+- 打包只支持 `msi/nsis`（**不支持 portable**）
+- 后端 51 个单元测试；前端无测试框架，验证靠人工
+
+## 发版流程（AI 代发版时必须按此执行）
+
+发版由 GitHub Actions 自动构建+签名+发布，**不要手动 build 和上传**。步骤：
+
+1. **三处版本号同步**（必须同时改，漏一个会导致构建失败或版本不一致）：
+   - `package.json` → `"version": "x.y.z"`
+   - `src-tauri/tauri.conf.json` → `"version": "x.y.z"`
+   - `src-tauri/Cargo.toml` → `version = "x.y.z"`
+
+2. **提交并打 tag**：
+   ```bash
+   git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+   git commit -m "release: vX.Y.Z"
+   git tag vX.Y.Z
+   git push --tags
+   ```
+
+3. **GitHub Actions 自动执行**：推送 `v*` tag 后，`.github/workflows/release.yml` 自动在 Windows 环境构建 NSIS 安装包 → 用 `TAURI_SIGNING_PRIVATE_KEY`（GitHub Secret）签名 → 创建 GitHub Release 并附带 `.nsis.exe`。
+
+4. **用户端更新**：用户打开 EasyTool → 设置页点「检查更新」（或启动时自动横幅提示）→ 下载签名安装包 → 重启完成更新。
+
+**注意事项**：
+- 签名私钥存在 GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`，**绝不提交到代码仓库**（已在 .gitignore）
+- 构建产物路径：`src-tauri/target/release/bundle/nsis/*.nsis.exe`
+- 如需本地构建测试：`$env:TAURI_SIGNING_PRIVATE_KEY_PATH = "src-tauri/updater.key"; npm run tauri build`
 
 ## 代码查询规则（必须遵守）
 
