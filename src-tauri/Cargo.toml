@@ -1,7 +1,7 @@
 [package]
 name = "easytool"
-version = "0.4.5"
-description = "EasyTool 工具箱"
+version = "0.5.0"
+description = "EasyTool 工具�?
 authors = ["Yuan Jiawei"]
 edition = "2021"
 
@@ -11,9 +11,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [profile.release]
 opt-level = "s"      # 优化大小
-lto = true           # 链接时优化
-codegen-units = 1    # 单线程代码生成（更优优化）
-strip = true         # 去除调试符号
+lto = true           # 链接时优�?codegen-units = 1    # 单线程代码生成（更优优化�?strip = true         # 去除调试符号
 panic = "abort"      # 终止而非展开
 
 [build-dependencies]
