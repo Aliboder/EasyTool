@@ -3,6 +3,7 @@
 
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
@@ -22,9 +23,64 @@ static APP: OnceLock<AppHandle> = OnceLock::new();
 static LAST_HWND: AtomicIsize = AtomicIsize::new(0);
 static FIRST_COUNT_LOGGED: AtomicIsize = AtomicIsize::new(0);
 
+struct ForegroundState {
+    target: String,
+    since: Instant,
+    counted: bool,
+}
+static FOREGROUND: OnceLock<Mutex<ForegroundState>> = OnceLock::new();
+
 /// 阻塞式启动：挂钩子后泵消息循环（在专用线程调用）
 pub fn start(app: AppHandle) {
     let _ = APP.set(app);
+    let _ = FOREGROUND.set(Mutex::new(ForegroundState {
+        target: String::new(),
+        since: Instant::now(),
+        counted: true, // 初始无目标，不触发计数
+    }));
+    // 计时线程：每秒检查当前前台应用是否已停留 ≥10 秒
+    std::thread::spawn(|| loop {
+        std::thread::sleep(Duration::from_secs(1));
+        let Some(app) = APP.get() else { continue };
+        let Some(state) = app.try_state::<Mutex<AppsState>>() else {
+            continue;
+        };
+        // 读取并判断：无目标 / 已计数 / 未满 10 秒 → 跳过
+        let target = {
+            let fg = FOREGROUND
+                .get()
+                .unwrap()
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            if fg.target.is_empty() || fg.counted {
+                continue;
+            }
+            if fg.since.elapsed() < Duration::from_secs(10) {
+                continue;
+            }
+            fg.target.clone()
+        };
+        // 判断通过：累计 +1（不再持有 FOREGROUND 锁）
+        let res = {
+            let st = state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            st.db.increment(&target)
+        };
+        if let Ok(()) = res {
+            if FIRST_COUNT_LOGGED.swap(1, Ordering::Relaxed) == 0 {
+                log::info!("foreground monitor first count recorded: {target}");
+            }
+            let _ = app.emit("search://apps_dirty", ());
+            // 标记本次前台会话已计数（同一会话只 +1，切走再来重新计时）
+            if let Some(fg) = FOREGROUND.get() {
+                let mut guard = fg.lock().unwrap_or_else(|p| p.into_inner());
+                if guard.target == target && !guard.counted {
+                    guard.counted = true;
+                }
+            }
+        }
+    });
     unsafe {
         let hook = SetWinEventHook(
             EVENT_SYSTEM_FOREGROUND,
@@ -87,22 +143,10 @@ unsafe extern "system" fn on_foreground(
     let Some(exe_path) = exe_path else { return };
 
     let target = resolve_target(&exe_path);
-    let Some(app) = APP.get() else { return };
-    let Some(state) = app.try_state::<Mutex<AppsState>>() else {
-        return;
-    };
-    let res = {
-        let st = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        st.db.increment(&target)
-    };
-    match res {
-        Ok(()) => {
-            if FIRST_COUNT_LOGGED.swap(1, Ordering::Relaxed) == 0 {
-                log::info!("foreground monitor first count recorded: {target}");
-            }
-            // 通知前端数据有变（界面自行节流刷新）
-            let _ = app.emit("search://apps_dirty", ());
-        }
-        Err(e) => log::warn!("app usage increment failed: {e}"),
-    }
+    // 更新共享状态：新目标重置计时（不立即计数，计时线程在 10 秒后决定是否 +1）
+    let Some(fg) = FOREGROUND.get() else { return };
+    let mut guard = fg.lock().unwrap_or_else(|p| p.into_inner());
+    guard.target = target;
+    guard.since = Instant::now();
+    guard.counted = false;
 }
