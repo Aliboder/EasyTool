@@ -40,5 +40,5 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            src-tauri/target/release/bundle/nsis/*.nsis.exe
+            src-tauri/target/release/bundle/nsis/*-setup.exe
             src-tauri/target/release/bundle/nsis/*.sig
