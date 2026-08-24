@@ -133,7 +133,12 @@ function App() {
 
   useEffect(() => {
     if (!config) return;
-    const prev: string[] = JSON.parse(localStorage.getItem("easytool_migrated") || "[]");
+    let prev: string[] = [];
+    try {
+      prev = JSON.parse(localStorage.getItem("easytool_migrated") || "[]");
+    } catch {
+      // localStorage 被写入非法 JSON 时不再中断渲染
+    }
     const cur = config.migrated ?? [];
     if (cur.includes("clipboard") && !prev.includes("clipboard")) {
       setNotice("已从旧版 PasteBoard 导入剪贴板历史记录");

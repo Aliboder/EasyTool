@@ -314,6 +314,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
                 </button>
                 <button
                   onClick={async () => {
+                    if (!window.confirm("确定要删除这个表情吗？")) return;
                     await invoke("delete_custom_emoji", { id: c.id });
                     await refreshCustom();
                   }}
@@ -392,6 +393,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
               label="删除"
               onClick={async () => {
                 if (contextMenu.customId) {
+                  if (!window.confirm("确定要删除这个表情吗？")) return;
                   await invoke("delete_custom_emoji", { id: contextMenu.customId });
                   await refreshCustom();
                 }

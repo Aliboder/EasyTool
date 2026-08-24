@@ -214,6 +214,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   };
 
   const del = async (id: number) => {
+    if (!window.confirm("确定要删除这条记录吗？")) return;
     try {
       await invoke("delete_item", { id });
       await load();

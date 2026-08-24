@@ -308,7 +308,7 @@ fn apply_deepseek(
 
     if status.initialized && critical && notify_low {
         let msg = format!(
-            "{} 余额已跌破紧急线 ¥{:.2}（当前 ¥{:.2}）",
+            "{} 余额已跌破紧急线 {:.2}（当前 {:.2}）",
             acc.name, critical_threshold, b.amount
         );
         notify(app, "🚨 余额告急", &msg);
@@ -316,7 +316,7 @@ fn apply_deepseek(
     }
     if status.initialized && warn && !critical && notify_low {
         let msg = format!(
-            "{} 余额仅剩 ¥{:.2}（预警阈值: ¥{:.2}）",
+            "{} 余额仅剩 {:.2}（预警阈值: {:.2}）",
             acc.name, b.amount, threshold
         );
         notify(app, "⚠ 余额不足", &msg);
@@ -324,7 +324,7 @@ fn apply_deepseek(
     }
     if status.initialized && recover && notify_low {
         let msg = format!(
-            "{} 余额已恢复至 ¥{:.2}（阈值: ¥{:.2}）",
+            "{} 余额已恢复至 {:.2}（阈值: {:.2}）",
             acc.name, b.amount, threshold
         );
         notify(app, "✅ 余额恢复", &msg);
@@ -341,7 +341,7 @@ fn apply_deepseek(
         && alerts::is_spike(today_spend, avg7)
     {
         let msg = format!(
-            "{} 今日消费 ¥{:.2}，超过近 7 天日均消费（¥{:.2}）的 3 倍",
+            "{} 今日消费 {:.2}，超过近 7 天日均消费（{:.2}）的 3 倍",
             acc.name, today_spend, avg7
         );
         notify(app, "🔥 消费突增", &msg);

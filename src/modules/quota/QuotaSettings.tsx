@@ -282,11 +282,15 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
 
   const set = (patch: Partial<QuotaSettings>) => {
     if (!s) return;
+    const prev = s;
     const next = { ...s, ...patch };
     setS(next);
     invoke("save_settings", { settings: next })
       .then(onRefresh)
-      .catch((e) => toast(`保存设置失败：${e}`));
+      .catch((e) => {
+        setS(prev); // 落盘失败回滚到修改前的值
+        toast(`保存设置失败：${e}`);
+      });
   };
 
   const addAccount = async () => {

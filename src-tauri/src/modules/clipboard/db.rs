@@ -311,16 +311,15 @@ impl Db {
     }
 
     pub fn clear_unpinned(&self) -> Result<Vec<Item>, DbError> {
-        let items = self.list_items("", None, 100000, 0)?;
-        let mut removed = Vec::new();
-        for it in items {
-            if !it.pinned {
-                if let Some(deleted) = self.delete_item(it.id)? {
-                    removed.push(deleted);
-                }
-            }
+        let items = self.list_items("", None, i64::MAX, 0)?;
+        let unpinned: Vec<Item> = items.into_iter().filter(|it| !it.pinned).collect();
+        if unpinned.is_empty() {
+            return Ok(vec![]);
         }
-        Ok(removed)
+        // 一条 SQL 批量删除（替代逐条 DELETE + 循环）
+        self.conn
+            .execute("DELETE FROM items WHERE pinned = 0", [])?;
+        Ok(unpinned)
     }
 
     /// 清空全部条目（含固定），返回被删条目供文件清理

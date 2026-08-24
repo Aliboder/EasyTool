@@ -150,10 +150,16 @@ pub fn add_account(app: AppHandle, kind: String, name: String) -> Result<Account
         "go" => AccountKind::Go,
         _ => return Err("未知账户类型".into()),
     };
+    // 用纳秒后 5 位作盐值防同一毫秒并发添加撞 id
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
     let id = format!(
-        "{}-{}",
+        "{}-{}-{:05}",
         kind.as_str(),
-        chrono::Utc::now().timestamp_millis()
+        chrono::Utc::now().timestamp_millis(),
+        nanos % 100000
     );
     // 名称留空时自动编号（如 OpenCode Go 2）；用户自定义名直接使用
     let existing = account_configs(&app);

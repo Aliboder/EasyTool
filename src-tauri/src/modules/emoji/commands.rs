@@ -207,7 +207,11 @@ pub fn import_emoji_files(
         }
         state
             .set_custom_path(id, dst.to_string_lossy().as_ref())
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                // 路径写入失败时清理已复制的文件，避免目录遗留无引用孤儿文件
+                let _ = std::fs::remove_file(&dst);
+                e.to_string()
+            })?;
         ids.push(id);
     }
     Ok(ids)
