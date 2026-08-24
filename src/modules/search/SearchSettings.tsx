@@ -26,6 +26,7 @@ export interface SearchSettingsData {
   /** 「应用」Tab 独立排序记忆 */
   appSortBy: "name" | "usage";
   appSortDesc: boolean;
+  searchHistory: string[];
 }
 
 export const SEARCH_DEFAULTS: SearchSettingsData = {
@@ -41,6 +42,7 @@ export const SEARCH_DEFAULTS: SearchSettingsData = {
   clickToOpen: false,
   appSortBy: "name",
   appSortDesc: false,
+  searchHistory: [],
 };
 
 const SORT_BY_OPTIONS: { value: SearchSettingsData["sortBy"]; label: string }[] = [

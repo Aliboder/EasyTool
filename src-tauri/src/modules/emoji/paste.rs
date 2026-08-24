@@ -1,139 +1,64 @@
-//! 粘贴到唤起前窗口：文本 Emoji 用 SendInput 直接输入（不碰剪贴板）；图片走剪贴板 + 模拟 Ctrl+V
-use std::sync::atomic::{AtomicIsize, Ordering};
-use std::sync::OnceLock;
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+//! 粘贴到唤起前窗口：与剪贴板模块对齐的简化流程
+//! 隐藏弹窗/主窗口 → 等待 Windows 自然恢复焦点 → 直接发送键盘事件
+use tauri::Manager;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
-    KEYEVENTF_UNICODE, VIRTUAL_KEY, VK_CONTROL, VK_V,
-};
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, SendMessageW,
-    SetForegroundWindow, GUITHREADINFO,
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+    VIRTUAL_KEY, VK_CONTROL, VK_V,
 };
 
-const EM_GETSEL: u32 = 0x00B0;
-const EM_SETSEL: u32 = 0x00B1;
+/// 记录唤起前窗口上下文（当前为 no-op，保留接口供 mod.rs 调用）
+pub fn record_foreground_state(_app: &tauri::AppHandle) {}
 
-pub struct ForegroundState {
-    pub hwnd: AtomicIsize,
-    pub focus: AtomicIsize,
-    pub sel_start: AtomicIsize,
-    pub sel_end: AtomicIsize,
+/// 隐藏窗口并等待焦点恢复（与剪贴板模块 paste_item 完全对齐）
+fn hide_and_wait(app: &tauri::AppHandle) {
+    // 与剪贴板模块一致：隐藏弹窗或主窗口，焦点自动返回到唤起前窗口
+    let popup_win = app.get_webview_window(super::POPUP_WINDOW_LABEL);
+    let main_win = app.get_webview_window(crate::MAIN_WINDOW_LABEL);
+    if let Some(win) = popup_win {
+        let _ = win.hide();
+    } else if let Some(win) = main_win {
+        let _ = win.hide();
+    }
+    // 与剪贴板模块一致：100ms 等待 Windows 自然把焦点还给上一个窗口
+    std::thread::sleep(std::time::Duration::from_millis(100));
 }
 
-impl Default for ForegroundState {
-    fn default() -> Self {
-        ForegroundState {
-            hwnd: AtomicIsize::new(0),
-            focus: AtomicIsize::new(0),
-            sel_start: AtomicIsize::new(0),
-            sel_end: AtomicIsize::new(0),
-        }
+/// 写剪贴板并粘贴到唤起前窗口（图片表情用）
+pub fn apply_to_foreground(
+    app: &tauri::AppHandle,
+    write: impl FnOnce() -> bool,
+) -> Result<(), String> {
+    if !write() {
+        return Err("写入剪贴板失败".into());
     }
+    hide_and_wait(app);
+    send_ctrl_v();
+    log::info!("pasted emoji via clipboard");
+    Ok(())
 }
 
-static FOREGROUND: OnceLock<ForegroundState> = OnceLock::new();
-
-fn record_foreground() -> (isize, isize, u32, u32) {
-    unsafe {
-        let hwnd = GetForegroundWindow().0 as isize;
-        let focus = get_focus_control(HWND(hwnd as *mut core::ffi::c_void));
-        let (s, e) = get_selection(focus);
-        (hwnd, focus.0 as isize, s, e)
-    }
+/// 文本 Emoji 直接输入到唤起前窗口（不碰剪贴板）
+pub fn apply_text_to_foreground(app: &tauri::AppHandle, text: &str) -> Result<(), String> {
+    hide_and_wait(app);
+    send_unicode_text(text);
+    log::info!("typed emoji");
+    Ok(())
 }
 
-fn get_selection(hwnd: HWND) -> (u32, u32) {
-    if hwnd.0.is_null() {
-        return (0, 0);
-    }
-    unsafe {
-        // EM_GETSEL 返回值打包为 (HIWORD=终点, LOWORD=起点) 且仅 16 位有效，
-        // 直接取返回值会得到反序选区、大文档尾部回绕错位；用指针出参拿完整 32 位 (start, end)
-        let (mut start, mut end) = (0u32, 0u32);
-        SendMessageW(
-            hwnd,
-            EM_GETSEL,
-            Some(WPARAM(&mut start as *mut u32 as usize)),
-            Some(LPARAM(&mut end as *mut u32 as isize)),
-        );
-        (start, end)
-    }
-}
-
-fn restore_selection(hwnd: HWND, start: u32, end: u32) {
-    if hwnd.0.is_null() {
-        return;
-    }
-    unsafe {
-        let _ = SendMessageW(
-            hwnd,
-            EM_SETSEL,
-            Some(WPARAM(start as usize)),
-            Some(LPARAM(end as isize)),
-        );
-    }
-}
-
-fn get_focus_control(hwnd: HWND) -> HWND {
-    unsafe {
-        if hwnd.0.is_null() {
-            return HWND(std::ptr::null_mut());
-        }
-        let thread_id = GetWindowThreadProcessId(hwnd, None);
-        if thread_id == 0 {
-            return HWND(std::ptr::null_mut());
-        }
-        let mut gui = GUITHREADINFO {
-            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
-            ..Default::default()
-        };
-        if GetGUIThreadInfo(thread_id, &mut gui).is_ok() {
-            gui.hwndFocus
-        } else {
-            HWND(std::ptr::null_mut())
-        }
-    }
-}
-
-fn restore_focus(target: HWND, focus_control: HWND) -> bool {
-    unsafe {
-        let activated = SetForegroundWindow(target).as_bool();
-        let target_thread = GetWindowThreadProcessId(target, None);
-        let current_thread = GetCurrentThreadId();
-        let focus_ok = if !focus_control.0.is_null() {
-            if target_thread != 0 && target_thread != current_thread {
-                if AttachThreadInput(current_thread, target_thread, true).as_bool() {
-                    let ok = SetFocus(Some(focus_control)).is_ok();
-                    let _ = AttachThreadInput(current_thread, target_thread, false);
-                    ok
-                } else {
-                    false
-                }
-            } else {
-                SetFocus(Some(focus_control)).is_ok()
-            }
-        } else {
-            activated
-        };
-        activated || focus_ok
-    }
-}
-
+/// 模拟 Ctrl+V
 fn send_ctrl_v() {
+    let inputs = [
+        key_input(VK_CONTROL, false),
+        key_input(VK_V, false),
+        key_input(VK_V, true),
+        key_input(VK_CONTROL, true),
+    ];
     unsafe {
-        let inputs = [
-            key_input(VK_CONTROL, false),
-            key_input(VK_V, false),
-            key_input(VK_V, true),
-            key_input(VK_CONTROL, true),
-        ];
         let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
     }
 }
 
-/// 直接向目标窗口输入 Unicode 文本（不写剪贴板）：逐 UTF-16 单元发送 KEYEVENTF_UNICODE
+/// 直接输入 Unicode 文本（不写剪贴板）：逐 UTF-16 单元发送 KEYEVENTF_UNICODE
 fn send_unicode_text(text: &str) {
     let units: Vec<u16> = text.encode_utf16().collect();
     let mut inputs: Vec<INPUT> = Vec::with_capacity(units.len() * 2);
@@ -175,62 +100,4 @@ fn key_input(key: VIRTUAL_KEY, keyup: bool) -> INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 { ki },
     }
-}
-
-/// 记录唤起前窗口上下文（呼出悬浮面板前调用）
-pub fn record_foreground_state(_app: &tauri::AppHandle) {
-    let (hwnd, focus, s, e) = record_foreground();
-    let st = FOREGROUND.get_or_init(ForegroundState::default);
-    st.hwnd.store(hwnd, Ordering::SeqCst);
-    st.focus.store(focus, Ordering::SeqCst);
-    st.sel_start.store(s as isize, Ordering::SeqCst);
-    st.sel_end.store(e as isize, Ordering::SeqCst);
-}
-
-/// 写剪贴板内容并粘贴到唤起前窗口；write 为写入剪贴板的闭包（返回是否成功）
-pub fn apply_to_foreground(write: impl FnOnce() -> bool) -> Result<(), String> {
-    if !write() {
-        return Err("写入剪贴板失败".into());
-    }
-    let st = FOREGROUND.get_or_init(ForegroundState::default);
-    let win_hwnd = st.hwnd.load(Ordering::SeqCst);
-    let focus_hwnd = st.focus.load(Ordering::SeqCst);
-    let sel_start = st.sel_start.load(Ordering::SeqCst) as u32;
-    let sel_end = st.sel_end.load(Ordering::SeqCst) as u32;
-    if win_hwnd == 0 {
-        log::warn!("no previous foreground window, only copied to clipboard");
-        return Err("未找到唤起前窗口，表情已复制到剪贴板".into());
-    }
-    let focus = HWND(focus_hwnd as *mut core::ffi::c_void);
-    let restored = restore_focus(HWND(win_hwnd as *mut core::ffi::c_void), focus);
-    if !restored {
-        return Err("无法还原原窗口焦点，内容已复制到剪贴板，请手动粘贴".into());
-    }
-    restore_selection(focus, sel_start, sel_end);
-    std::thread::sleep(std::time::Duration::from_millis(60));
-    send_ctrl_v();
-    log::info!("pasted emoji to hwnd={win_hwnd}");
-    Ok(())
-}
-
-/// 文本 Emoji 直达：还原唤起前窗口焦点后直接输入文本，全程不写剪贴板
-pub fn apply_text_to_foreground(text: &str) -> Result<(), String> {
-    let st = FOREGROUND.get_or_init(ForegroundState::default);
-    let win_hwnd = st.hwnd.load(Ordering::SeqCst);
-    let focus_hwnd = st.focus.load(Ordering::SeqCst);
-    let sel_start = st.sel_start.load(Ordering::SeqCst) as u32;
-    let sel_end = st.sel_end.load(Ordering::SeqCst) as u32;
-    if win_hwnd == 0 {
-        return Err("未找到唤起前窗口".into());
-    }
-    let focus = HWND(focus_hwnd as *mut core::ffi::c_void);
-    let restored = restore_focus(HWND(win_hwnd as *mut core::ffi::c_void), focus);
-    if !restored {
-        return Err("无法还原原窗口焦点".into());
-    }
-    restore_selection(focus, sel_start, sel_end);
-    std::thread::sleep(std::time::Duration::from_millis(60));
-    send_unicode_text(text);
-    log::info!("typed emoji to hwnd={win_hwnd}");
-    Ok(())
 }

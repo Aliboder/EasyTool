@@ -191,7 +191,7 @@ git add website && git commit -m "feat(website): ..." && git push origin master
 
 ### 新增模块时的完整检查清单
 
-新增一个模块（如 quicklaunch）时，**不仅**要改 Bento 和 DeepDive，还必须同步以下所有位置：
+新增一个模块时，**不仅**要改 Bento 和 DeepDive，还必须同步以下所有位置：
 
 ```
 ✅ 已改（容易想到的）：

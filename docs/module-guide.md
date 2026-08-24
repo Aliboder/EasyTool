@@ -55,7 +55,7 @@ src/modules/<id>/                      # React 前端组件
 字段说明：
 - `id`：唯一标识，作为 config 中 `modules.<id>` 的键、Rust 模块名、前端模块 id
 - `name`：设置页/侧边栏显示名
-- `icon`：`clipboard` / `gauge`（仪表）/ `smile`（表情）/ `search`（搜索）/ `layout`（网格，quicklaunch 在用）；新增图标需同步改 `src/App.tsx` 与 `src/components/layout/Sidebar.tsx` 的图标映射
+- `icon`：`clipboard` / `gauge`（仪表）/ `smile`（表情）/ `search`（搜索）；新增图标需同步改 `src/App.tsx` 与 `src/components/layout/Sidebar.tsx` 的图标映射
 - `enabled`：默认是否启用
 - `default_config`：模块配置项的默认值（任意 JSON，启动时并入 config）
 
@@ -239,11 +239,11 @@ update({ gridSize: 80 });   // 即改即落盘，无需任何 invoke
 function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<FooConfig>) => void }) { ... }
 ```
 
-参考模板：`emoji/config.ts` + `quicklaunch/Settings.tsx`。
+参考模板：`emoji/config.ts` + `search/SearchSettings.tsx`。
 
 ### 3.2 内建行为（Hook 已处理，勿重复实现）
 
-- **键名双向映射**：JS camelCase ↔ config.json snake_case。曾因手写映射不一致导致 emoji 设置整页静默失败、quicklaunch 重启丢设置——此类 bug 已从机制上杜绝
+- **键名双向映射**：JS camelCase ↔ config.json snake_case。曾因手写映射不一致导致 emoji 设置整页静默失败——此类 bug 已从机制上杜绝
 - **默认值合并**：存储缺失的字段回落 defaults
 - **窗口 focus 防抖重读**：主窗与弹窗共用同一 moduleId 即自动保持同步（弹窗呼出即拿到最新配置）
 - 后端 `set_module_config` 保存后自动 `reapply_hotkeys`（热键变更即时生效）
@@ -286,7 +286,7 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 2. **内容缩放公式**：从 `src/lib/grid.ts` 引用 `gridIconSize(cell)`（图标 50%）与 `gridFontScale(cell)`（字号 15%），禁止手写魔法数字。例外：emoji 字形即内容，用 70% 比例
 3. **键盘 ↑↓ 跨行步进**：必须用 `gridColumns(el)` 实测列数（勿手写 ±1 或硬编码 gap）；列表视图保持线性 ±1
 4. **gap 统一 8px**（`gap-2`）；密集表情格可用 `gap-1`
-5. **数据量策略不强制统一**（search 分页 / emoji 批渲染 / clipboard 上限拉取 / quicklaunch 全量），按各自数据规模选择
+5. **数据量策略不强制统一**（search 分页 / emoji 批渲染 / clipboard 上限拉取），按各自数据规模选择
 6. 剪贴板的横向胶卷条（`grid-flow-col grid-rows-1`）是刻意的横向流设计，不属于本规范约束范围
 
 ## 6. 面板头标准（ModuleHeader，新模块必须遵守）
@@ -376,6 +376,5 @@ import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-head
 - **search** 的 `SearchView.tsx` 同时是**面板头参照实现**（ModuleHeader 全功能：search + searchTrailing + actions + 图标 tabs + HeaderSort，见第 6 节）
 - **clipboard**：独立弹窗窗口（延迟创建）+ 系统剪贴板监听 + 文件存储（缩略图/图标）+ 固定板块拖拽排序（小条目 @dnd-kit）+ 弹窗位置/尺寸记忆 + 监听规则，最完整的模块参照
 - **quota**：后台轮询线程 + **多账户支持**（账户增删改 + 独立密钥槽位 key_ref + 独立余额/历史）+ 告警通知 + 消费历史按账户分文件 + 完整时间线（横向滚动）+ 面板卡片拖拽排序（@dnd-kit + will-change），后台任务/数据可视化/多实例类模块参照
-- **search**：动态加载第三方 DLL（`Everything64.dll`，MIT，从官方 SDK 下载打包进 `modules/search/`）+ SDK 全局状态用互斥锁串行 + 查询放后台线程 + 复用剪贴板图标/缩略图命令 + 弹窗模式复用，外部依赖/FFI 类模块参照。⚠️ Tauri 命令若与其他模块同名，**函数名须带模块前缀**（`search_get_status`），`#[tauri::command(rename=...)]` 无法解决宏符号冲突
-- **quicklaunch**：固定项/文件夹管理（SQLite）+ 文件夹分组展示（2x2 网格预览）+ 拖拽排序（@dnd-kit）+ 网格/列表视图切换 + 文件拖入固定 + 右键菜单管理，文件夹/分组类模块参照
+- **search**：动态加载第三方 DLL（`Everything64.dll`，MIT，从官方 SDK 下载打包进 `modules/search/`）+ SDK 全局状态用互斥锁串行 + 查询放后台线程 + 复用剪贴板图标/缩略图命令 + 弹窗模式复用 + 应用中心（已安装应用扫描/频率计数/启动），外部依赖/FFI 类模块参照。⚠️ Tauri 命令若与其他模块同名，**函数名须带模块前缀**（`search_get_status`），`#[tauri::command(rename=...)]` 无法解决宏符号冲突
 - **emoji**：`config.ts` + `useModuleConfig` + 受控 Settings 的**配置管理标准参照实现**（主窗 Page 与弹窗 Popup 共用同一 Hook 自动同步）；含内置表情/图片表情双网格 + 收藏/分组

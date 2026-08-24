@@ -376,7 +376,7 @@ fn apply_emoji_impl(app: &AppHandle, state: &Db, kind: String, key: String) -> R
     // 文本 Emoji：粘贴 = SendInput 直接输入（不写剪贴板）；复制 = 写入剪贴板
     if kind == "emoji" {
         if click_action == "paste" {
-            return super::paste::apply_text_to_foreground(&key).map_err(|e| e.to_string());
+            return super::paste::apply_text_to_foreground(app, &key).map_err(|e| e.to_string());
         }
         if clipboard::write_text_rich(&key, None) {
             mark_self_write(app, Some(dedup::hash_text(&key)));
@@ -409,7 +409,7 @@ fn apply_emoji_impl(app: &AppHandle, state: &Db, kind: String, key: String) -> R
         ok
     });
     if click_action == "paste" {
-        super::paste::apply_to_foreground(write).map_err(|e| e.to_string())
+        super::paste::apply_to_foreground(app, write).map_err(|e| e.to_string())
     } else if write() {
         Ok(())
     } else {

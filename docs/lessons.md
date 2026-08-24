@@ -963,6 +963,51 @@
 
 ---
 
+### 发布 v0.5.0 踩坑：PowerShell 编码损坏 + NSIS glob 不匹配
+
+**问题描述**：执行 `gh release create v0.5.0` 发布后，GitHub Actions 构建失败两次：第一次 Cargo.toml 中文变乱码（`宸ュ叿绠?`），第二次 Release 无安装包（assets 为空）。
+
+**根本原因**：
+1. **PowerShell 5.1 编码陷阱**：`Set-Content`、here-string（`@"..."@`）默认用系统 locale 编码（中文 Windows = GBK/CP936），不是 UTF-8。用它改写含中文的 Cargo.toml 后，中文变成乱码，TOML 解析失败。即使加 `-Encoding UTF8` 也会加 BOM（`EF BB BF`），Cargo 同样不认。**整个 PowerShell 管道（变量赋值、字符串拼接、here-string）都是 GBK，`[System.IO.File]::WriteAllText` 的编码参数只控制写出，管道传入的字符串已经是 GBK 了**。
+2. **NSIS 产物 glob 不匹配**：workflow 里写 `*.nsis.exe`，但 Tauri 实际产物文件名是 `EasyTool_0.5.0_x64-setup.exe`（`*-setup.exe`），glob 匹配不上 → assets 为空。
+
+**解决方案**：
+1. 写含中文的文件**必须用 Node.js**（UTF-8 原生），PowerShell 在中文 Windows 上不可靠
+2. NSIS glob 改为 `*-setup.exe`；签名文件 `*.sig` 不变
+
+**教训**：
+1. **中文 Windows 上 PowerShell 5.1 不适合写 UTF-8 文件**：here-string、变量赋值、`Set-Content` 全程 GBK，BOM 也不行。改含中文的文件一律用 Node.js / 编辑器
+2. **CI 产物文件名要先本地验证**：`npx tauri build` 后检查 `src-tauri/target/release/bundle/nsis/` 下的真实文件名再写 glob
+3. **发布前检查 Release assets**：`gh release view v0.5.0` 确认有安装包，空 assets = glob 错误
+
+**相关代码**：
+- `.github/workflows/release.yml` - `*-setup.exe` glob
+- `src-tauri/Cargo.toml` - 中文 description
+
+---
+
+### Tauri v2 自动更新：createUpdaterArtifacts 必须显式开启
+
+**问题描述**：v0.5.0 发布后检查 Release assets，只有 `.exe` 没有 `.sig` 签名文件。客户端 `checkForUpdate()` 无法验证签名，更新功能完全失效。重试 3 次（换密钥、加密码、重设 Secret）都没有 `.sig`。
+
+**根本原因**：Tauri v2 中 `.sig` 文件的生成**不再默认开启**，必须在 `tauri.conf.json` 的 `bundle` 里显式设置 `"createUpdaterArtifacts": true`。只配了 `plugins.updater.endpoints` 和 `pubkey` 不够——这些是客户端检查更新用的，不影响构建时签名。
+
+**解决方案**：`tauri.conf.json` → `bundle` 加 `"createUpdaterArtifacts": true`。签名密钥用 `tauri signer generate` 生成，密码设为 `easytool`，密钥对存 `src-tauri/updater.key` / `.key.pub`（.gitignore），pubkey 内容放 `plugins.updater.pubkey`，私钥+密码存 GitHub Secrets（`TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`），workflow 两个 env 都要传。
+
+**教训**：
+1. **Tauri v2 `createUpdaterArtifacts` 是签名的总开关**：不设为 true，再正确的密钥也不会生成 `.sig`
+2. **CI 构建后必须验证 `.sig` 存在**：`gh api repos/.../releases/tags/vX.Y.Z --jq '.assets[].name'` 确认有 `.sig`，否则客户端更新必定失败
+3. **密钥密码要同步存 Secret 并传 env**：`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 是独立的 Secret，workflow 里要加 `env` 传给 `npx tauri build`
+
+**相关代码**：
+- `src-tauri/tauri.conf.json` → `bundle.createUpdaterArtifacts: true`
+- `.github/workflows/release.yml` → `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+- `src-tauri/updater.key` / `updater.key.pub`（.gitignore）
+- `src/lib/api.ts` → `checkForUpdate()`（前端调用）
+- `src/App.tsx` → 启动时静默检查 + 横幅提示
+
+---
+
 ### CI/CD 发布工作流：自动构建 + 签名 + 发布
 
 **问题描述**：手动构建发布流程繁琐，容易出错，需要自动化。

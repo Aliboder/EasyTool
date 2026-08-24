@@ -27,6 +27,8 @@ import {
   Video,
   Music,
   Archive,
+  Clock,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -89,6 +91,37 @@ function fmtTime(ms: number | null): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+function extractKeywords(query: string): string[] {
+  return query
+    .replace(/\b(ext|folder|size|path|date|dupe|len|regex|ws|mult|nouni|noext|nopath|nocase|whole|pure|case|diacritics):\S*/gi, "")
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length >= 1);
+}
+
+function Highlight({ text, keywords }: { text: string; keywords: string[] }) {
+  if (!keywords.length) return <>{text}</>;
+  const lower = text.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let lastIdx = 0;
+  for (const kw of keywords) {
+    const lkw = kw.toLowerCase();
+    let idx = lower.indexOf(lkw, lastIdx);
+    while (idx !== -1) {
+      if (idx > lastIdx) parts.push(text.slice(lastIdx, idx));
+      parts.push(
+        <mark key={`${idx}-${kw}`} className="rounded bg-primary/20 text-foreground">
+          {text.slice(idx, idx + kw.length)}
+        </mark>,
+      );
+      lastIdx = idx + kw.length;
+      idx = lower.indexOf(lkw, lastIdx);
+    }
+  }
+  if (lastIdx < text.length) parts.push(text.slice(lastIdx));
+  return <>{parts.length ? parts : text}</>;
+}
+
 /// 「应用」Tab：已安装应用中心（非 Everything 过滤器）
 const APPS_TAB = "apps";
 
@@ -124,7 +157,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; item: SearchResultDto } | null>(null);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(APPS_TAB);
   const [options, setOptions] = useState<SearchOptions>({
     matchCase: false,
     matchWholeWord: false,
@@ -261,8 +294,13 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       const items = await fetchPage(q, filterQuery, opts, 0, true, seq);
       if (items) await preloadVisuals(items);
       setLoading(false);
+      const trimmed = q.trim();
+      if (trimmed && items !== null) {
+        const hist = cfg.searchHistory.filter((h) => h !== trimmed);
+        updateCfg({ searchHistory: [trimmed, ...hist].slice(0, 20) });
+      }
     },
-    [fetchPage, preloadVisuals, filter],
+    [fetchPage, preloadVisuals, filter, cfg.searchHistory, updateCfg],
   );
 
   const loadMore = useCallback(async () => {
@@ -478,6 +516,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
   );
 
   // 列表行
+  const highlightKws = useMemo(() => extractKeywords(query), [query]);
   const rowNode = (r: SearchResultDto) => (
     <div
       onClick={() => {
@@ -499,9 +538,19 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     >
       {visualNode(r, 28)}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm">{r.name}</div>
+        <div className="truncate text-sm">
+          <Highlight text={r.name} keywords={highlightKws} />
+        </div>
         {cfg.columns.path && r.path && (
-          <div className="truncate text-[10px] text-muted-foreground">{r.path}</div>
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              doOpenLocation(r);
+            }}
+            className="truncate text-[10px] text-muted-foreground hover:underline cursor-pointer"
+          >
+            {r.path}
+          </div>
         )}
       </div>
       {cfg.columns.size && !r.is_folder && (
@@ -545,7 +594,7 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       >
         {visualNode(r, iconSize)}
         <span className="w-full truncate text-center leading-tight" style={{ fontSize: `${gridFontScale(gs)}px` }} title={r.name}>
-          {r.name}
+          <Highlight text={r.name} keywords={highlightKws} />
         </span>
       </div>
     );
@@ -812,6 +861,45 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
       )}
 
       <div ref={scrollRef} onScroll={onScroll} className="themed-scroll flex-1 overflow-y-auto">
+        {/* 搜索历史：输入为空且有历史记录时展示 */}
+        {!query.trim() && !browsingApps && cfg.searchHistory.length > 0 && (
+          <div className="border-b p-2">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">搜索历史</span>
+              <button
+                onClick={() => updateCfg({ searchHistory: [] })}
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                清空
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {cfg.searchHistory.map((h) => (
+                <div key={h} className="group flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      setQuery(h);
+                      doSearch(h, activeFilter.query, options);
+                    }}
+                    className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-accent"
+                  >
+                    <Clock className="size-3 text-muted-foreground" />
+                    {h}
+                  </button>
+                  <button
+                    onClick={() =>
+                      updateCfg({ searchHistory: cfg.searchHistory.filter((x) => x !== h) })
+                    }
+                    className="hidden rounded p-0.5 text-muted-foreground hover:text-foreground group-hover:block"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 搜索时匹配的应用置顶显示（点击直接启动）——所有 Tab 一致，网格图标形态 */}
         {query.trim() && apps !== null && (
           <AppsSection
