@@ -26,3 +26,7 @@ src-tauri/target/
 *.njsproj
 *.sln
 *.sw?
+
+# Updater signing key (NEVER commit)
+src-tauri/updater.key
+src-tauri/updater.key.pub

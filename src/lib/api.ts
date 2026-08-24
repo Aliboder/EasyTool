@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { check } from "@tauri-apps/plugin-updater";
 
 export interface Manifest {
   id: string;
@@ -32,3 +33,21 @@ export const saveMainSize = (width: number, height: number) =>
 export const setMainFollowMouse = (enabled: boolean) =>
   invoke<void>("set_main_follow_mouse", { enabled });
 export const getManifests = () => invoke<Manifest[]>("get_manifests");
+
+export interface UpdateInfo {
+  version: string;
+  notes: string | null;
+  downloadAndInstall: () => Promise<void>;
+}
+
+export async function checkForUpdate(): Promise<UpdateInfo | null> {
+  const update = await check();
+  if (update) {
+    return {
+      version: update.version,
+      notes: update.body ?? null,
+      downloadAndInstall: () => update.downloadAndInstall(),
+    };
+  }
+  return null;
+}

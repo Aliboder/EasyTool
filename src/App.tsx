@@ -18,6 +18,7 @@ import {
 import { SettingsView } from "@/components/settings-view";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { applyTheme } from "@/lib/theme";
+import { checkForUpdate } from "@/lib/api";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 
 // 诊断插桩：记录各页面分包的加载耗时/失败（写入 easytool.log）
@@ -78,6 +79,7 @@ function App() {
     }
   }, []);
   const [notice, setNotice] = useState<string | null>(null);
+  const [updateBanner, setUpdateBanner] = useState<{ version: string; notes: string } | null>(null);
 
   useEffect(() => {
     invoke("log_frontend", { level: "info", msg: "[diag] app mounted" }).catch(
@@ -99,6 +101,14 @@ function App() {
           level: "info",
           msg: "[diag] bootstrap done",
         }).catch(() => {});
+        // 后台静默检查更新（不阻塞启动），有新版本时显示顶部横幅
+        checkForUpdate()
+          .then((update) => {
+            if (update) {
+              setUpdateBanner({ version: update.version, notes: update.notes ?? "" });
+            }
+          })
+          .catch(() => {});
       })
       .catch(e => {
         console.error(e);
@@ -260,6 +270,36 @@ function App() {
               >
                 关闭
               </button>
+            </div>
+          )}
+          {updateBanner && (
+            <div className="flex items-center justify-between border-b bg-amber-500/10 px-4 py-2 text-sm">
+              <span>
+                新版本 v{updateBanner.version} 可用
+                {updateBanner.notes && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {updateBanner.notes.slice(0, 80)}
+                    {updateBanner.notes.length > 80 ? "..." : ""}
+                  </span>
+                )}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    checkForUpdate().then((u) => u?.downloadAndInstall());
+                    setUpdateBanner(null);
+                  }}
+                  className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary/90"
+                >
+                  下载更新
+                </button>
+                <button
+                  onClick={() => setUpdateBanner(null)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  忽略
+                </button>
+              </div>
             </div>
           )}
           <Suspense

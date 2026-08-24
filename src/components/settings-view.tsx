@@ -31,6 +31,7 @@ import {
 import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { SettingRow } from "@/components/setting-row";
 import type { AppConfig, Manifest } from "@/lib/api";
+import { checkForUpdate } from "@/lib/api";
 
 const GITHUB_ISSUES = "https://github.com/Aliboder/EasyTool/issues";
 
@@ -83,6 +84,12 @@ export function SettingsView({
 }) {
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [version, setVersion] = useState("");
+  const [updateStatus, setUpdateStatus] = useState<
+    "idle" | "checking" | "available" | "latest" | "error" | "downloading"
+  >("idle");
+  const [updateVersion, setUpdateVersion] = useState("");
+  const [updateNotes, setUpdateNotes] = useState("");
+  const [updateProgress, setUpdateProgress] = useState("");
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -101,6 +108,39 @@ export function SettingsView({
       .catch(() => setAutostart(false));
     getVersion().then(setVersion).catch(console.error);
   }, []);
+
+  const handleCheckUpdate = async () => {
+    setUpdateStatus("checking");
+    try {
+      const update = await checkForUpdate();
+      if (update) {
+        setUpdateVersion(update.version);
+        setUpdateNotes(update.notes ?? "");
+        setUpdateStatus("available");
+      } else {
+        setUpdateStatus("latest");
+      }
+    } catch (e) {
+      console.error("update check failed", e);
+      setUpdateStatus("error");
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    setUpdateStatus("downloading");
+    setUpdateProgress("正在下载...");
+    try {
+      const update = await checkForUpdate();
+      if (update) {
+        await update.downloadAndInstall();
+        setUpdateProgress("下载完成，重启应用后生效");
+      }
+    } catch (e) {
+      console.error("update download failed", e);
+      setUpdateStatus("error");
+      setUpdateProgress(String(e));
+    }
+  };
 
   const toggleAutostart = async (v: boolean) => {
     try {
@@ -233,6 +273,53 @@ export function SettingsView({
             <span className="text-sm font-medium">EasyTool 工具箱</span>
             <span className="text-xs text-muted-foreground">v{version}</span>
           </div>
+          <div className="flex items-center justify-between py-2">
+            <span className="text-sm font-medium">检查更新</span>
+            {updateStatus === "idle" && (
+              <button
+                onClick={handleCheckUpdate}
+                className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                检查新版本
+              </button>
+            )}
+            {updateStatus === "checking" && (
+              <span className="text-xs text-muted-foreground">检查中...</span>
+            )}
+            {updateStatus === "latest" && (
+              <span className="text-xs text-green-500">已是最新版本</span>
+            )}
+            {updateStatus === "available" && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-amber-500">v{updateVersion} 可用</span>
+                <button
+                  onClick={handleDownloadUpdate}
+                  className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary/90"
+                >
+                  下载更新
+                </button>
+              </div>
+            )}
+            {updateStatus === "downloading" && (
+              <span className="text-xs text-muted-foreground">{updateProgress}</span>
+            )}
+            {updateStatus === "error" && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-destructive">检查失败</span>
+                <button
+                  onClick={handleCheckUpdate}
+                  className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  重试
+                </button>
+              </div>
+            )}
+          </div>
+          {updateNotes && updateStatus === "available" && (
+            <div className="rounded-md bg-secondary/50 p-2 text-xs text-muted-foreground">
+              {updateNotes}
+            </div>
+          )}
           <div className="flex items-center justify-between py-2">
             <span className="text-sm font-medium">反馈建议</span>
             <button
