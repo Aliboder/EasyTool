@@ -15,7 +15,8 @@ EasyTool 是一款开源免费的 Windows 效率工具箱，用 Tauri 2 + Rust +
 | **剪贴板历史** | 记录文本/图片/文件，固定常用项，拖拽排序，搜索，一键粘贴 | `Ctrl+Shift+V` |
 | **额度监控** | DeepSeek / OpenCode Go 多账户余额监控，消费历史，阈值告警 | 主面板内 |
 | **表情面板** | 1900+ 表情分类浏览，中文/英文/shortcode 搜索，收藏置顶 | `Ctrl+Shift+J` |
-| **文件秒搜** | Everything 全文引擎毫秒级搜索，自定义列/排序，复制路径联动剪贴板 | `Ctrl+Shift+F` |
+| **文件秒搜** | Everything 全文引擎毫秒级搜索 + 已安装应用中心，自定义列/排序，复制路径联动剪贴板 | `Ctrl+Shift+F` |
+| **时长统计** | 自动记录软件使用时长，今日/本周/本月排行与甘特时间线，自动分类 + 自定义规则 | `Ctrl+Shift+T` |
 
 所有模块通过 `Ctrl+Shift+E` 统一呼出主面板，也可关闭统一模式使用独立热键。
 
@@ -42,7 +43,7 @@ EasyTool 是一款开源免费的 Windows 效率工具箱，用 Tauri 2 + Rust +
 1. 安装并启动 EasyTool
 2. 打开设置页，配置 API 密钥（如需使用额度监控）
 3. 按 `Ctrl+Shift+E` 呼出主面板
-4. 试试剪贴板历史、表情面板、文件搜索
+4. 试试剪贴板历史、表情面板、文件搜索、时长统计
 
 ---
 
@@ -77,12 +78,15 @@ src-tauri/src/
     ├── clipboard/      # 剪贴板历史
     ├── quota/          # 额度监控
     ├── emoji/          # 表情面板
-    └── search/         # 文件搜索
+    ├── search/         # 文件搜索（含已安装应用中心）
+    └── timetracker/    # 时长统计
 
 src/
 ├── App.tsx             # 根组件
 ├── lib/                # API 封装、主题、工具函数
 ├── components/         # UI 组件
+├── clipboard_popup.tsx # 剪贴板弹窗入口
+├── timetracker_window.tsx # 时长统计弹窗入口
 └── modules/            # 各模块前端页面
 ```
 
@@ -112,7 +116,9 @@ src/
 ├── config.json               # 应用配置
 ├── clipboard.db              # 剪贴板历史（SQLite WAL）
 ├── quota.db                  # 额度监控数据（SQLite WAL）
-├── balance_history_*.json    # 额度消费历史（旧格式，已迁移到 quota.db）
+├── balance_history_*.json    # 各账户额度消费历史（按账户分文件）
+├── apps.db                   # 已安装应用使用频率
+├── timetracker.db            # 软件使用时长（SQLite WAL）
 ├── images/                   # 图片原文
 ├── thumbs/                   # 缩略图缓存
 └── easytool.log              # 运行日志
