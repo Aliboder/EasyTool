@@ -1,24 +1,22 @@
-//! 粘贴回上一窗口：写剪贴板 → 还原前台窗口与焦点控件 → 模拟 Ctrl+V
+//! 粘贴回上一窗口：写剪贴板 → 隐藏窗口等焦点自然恢复 → 模拟 Ctrl+V
 
 use super::clipboard;
 use super::models::{Item, ItemKind};
 use super::state::AppState;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, SetFocus, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
-    VK_CONTROL, VK_MENU, VK_V,
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+    VK_CONTROL, VK_V,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, SendMessageW,
-    SetForegroundWindow, GUITHREADINFO,
+    GUITHREADINFO,
 };
 
 use tauri::Manager;
 
-/// 标准编辑控件消息：获取/设置选中范围
+/// 标准编辑控件消息：获取选中范围
 const EM_GETSEL: u32 = 0x00B0;
-const EM_SETSEL: u32 = 0x00B1;
 
 /// 唤起前记录的信息：原前台窗口 + 其中的焦点控件 + 选中范围
 pub struct ForegroundContext {
@@ -50,21 +48,6 @@ fn get_selection(hwnd: HWND) -> (u32, u32) {
         let r = SendMessageW(hwnd, EM_GETSEL, Some(WPARAM(0)), Some(LPARAM(0)));
         // Win32 约定：返回值 LOWORD=起点、HIWORD=终点
         ((r.0 & 0xFFFF) as u32, (r.0 >> 16) as u32)
-    }
-}
-
-/// 恢复焦点控件的选中范围
-fn restore_selection(hwnd: HWND, start: u32, end: u32) {
-    if hwnd.0.is_null() {
-        return;
-    }
-    unsafe {
-        let _ = SendMessageW(
-            hwnd,
-            EM_SETSEL,
-            Some(WPARAM(start as usize)),
-            Some(LPARAM(end as isize)),
-        );
     }
 }
 
@@ -158,57 +141,6 @@ pub fn paste_item(state: &AppState, app: &tauri::AppHandle, id: i64) -> Result<(
     send_ctrl_v();
     log::info!("pasted item {id}");
     Ok(())
-}
-
-/// 还原前台窗口；成功把焦点交给目标窗口则返回 true
-fn restore_focus(target: HWND, focus_control: HWND) -> bool {
-    unsafe {
-        // 模拟 Alt 键按下/释放：骗过 Windows 前台窗口限制
-        // 只有前台进程才能调用 SetForegroundWindow，Alt 按键可临时解锁
-        let alt_input_down = INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VK_MENU,
-                    ..Default::default()
-                },
-            },
-        };
-        let alt_input_up = INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT {
-                    wVk: VK_MENU,
-                    dwFlags: KEYEVENTF_KEYUP,
-                    ..Default::default()
-                },
-            },
-        };
-        let _ = SendInput(&[alt_input_down, alt_input_up], std::mem::size_of::<INPUT>() as i32);
-
-        // 1. 窗口回到前台
-        let activated = SetForegroundWindow(target).as_bool();
-
-        // 2. 焦点精确给回原焦点控件（跨线程需 AttachThreadInput）
-        let target_thread = GetWindowThreadProcessId(target, None);
-        let current_thread = GetCurrentThreadId();
-        let focus_ok = if !focus_control.0.is_null() {
-            if target_thread != 0 && target_thread != current_thread {
-                if AttachThreadInput(current_thread, target_thread, true).as_bool() {
-                    let ok = SetFocus(Some(focus_control)).is_ok();
-                    let _ = AttachThreadInput(current_thread, target_thread, false);
-                    ok
-                } else {
-                    false
-                }
-            } else {
-                SetFocus(Some(focus_control)).is_ok()
-            }
-        } else {
-            activated
-        };
-        activated || focus_ok
-    }
 }
 
 /// 模拟 Ctrl+V

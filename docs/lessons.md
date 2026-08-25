@@ -1225,3 +1225,11 @@ Aliboder
 **解决**：新增 `timetracker/display_name.rs` 三级解析器：① 读 search `apps.db` 的 `shortcut_cache`（target → .lnk 主名，复用已建缓存，不重复 COM 解析）；② `GetFileVersionInfoW` + `VerQueryValueW` 读 exe 的 `FileDescription`（覆盖 UWP/便携/无快捷方式程序，如 `windowsterminal.exe → Windows Terminal Host`、`mipccontinuity.exe → 小米互联服务`）；③ 仍失败保持 exe 主名。`apps` 表新增 `display_name` 列，`app_name` 继续存 exe 主名供分类关键词/用户规则匹配，展示查询统一 `COALESCE(NULLIF(display_name,''), app_name)`；采集线程用内存缓存解析新应用，启动时对存量行幂等回填。
 **教训**：①「同一个程序的两种展示名」先分清数据源：搜索有 .lnk 名，前台钩子只有 exe——不能直接要求两边一致，要给采集侧补解析层。② 展示名与判定名分离（`display_name` vs `app_name`），避免友好名破坏 `auto_categorize`/正则规则；exe 路径仍参与分类，风险更小。③ Windows 文件版本信息用 `\\VarFileInfo\\Translation` 枚举语言再查 `FileDescription`，比固定 `040904B0` 语言代码兼容性更好。
 **验证**：真实 exe 预演 `msedge → Microsoft Edge`、`code → Visual Studio Code`、`echo-client → 秘塔回响`、`idman → Internet Download Manager`；`cargo test` 64 passed（新增 2 个解析单测）；`npx tsc --noEmit` 通过。
+
+---
+
+## 69. 剪贴板粘贴链路残留旧焦点还原死代码，`tauri dev` 报 3 条 dead_code（2026-08-26）
+**现象**：`npm run tauri dev` 启动时 rustc 报 `EM_SETSEL` / `restore_selection` / `restore_focus` never used。
+**根因**：`paste_item` 早已改成「隐藏 EasyTool 窗口 → 等 100ms 让 Windows 自然把焦点还给原窗口 → 模拟 Ctrl+V」，旧方案里主动还原前台窗口/焦点控件/选中范围的函数和常量没人再调用，import 也只剩它们在用，所以编译器标为 dead code；不是运行时报错。
+**解决**：删掉 `restore_selection`、`restore_focus`、`EM_SETSEL`，并移除仅它们使用的 Win32 import（`SetFocus`/`VK_MENU`/`SetForegroundWindow`/`AttachThreadInput`/`GetCurrentThreadId`），模块顶部流程注释同步更新。`record_foreground` 仍被热键调用予以保留，但它记录的焦点控件/选中范围目前只写不读，后续可单独简化。
+**验证**：`cargo test` 64 passed；`tauri dev` 的 3 条 dead_code warning 消失（`cargo test` 里另有存量 unused 变量 `dur1`，只出现在测试编译，不进 dev 构建）。
