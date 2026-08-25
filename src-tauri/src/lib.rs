@@ -11,6 +11,13 @@ use tauri::{
 use std::str::FromStr;
 use std::sync::{Mutex, OnceLock};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
+use windows::Win32::Foundation::{POINT, RECT};
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetCursorPos, GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
 
@@ -191,9 +198,138 @@ pub(crate) fn hide_after_blur_grace(win: &tauri::Window) {
     });
 }
 
-/// 弹窗跟随鼠标定位（转发到剪贴板模块的物理坐标实现，供各模块弹窗复用）
+/// 计算弹出窗位置：跟随鼠标（横向居中于光标、纵向在光标下方），
+/// 全部使用 Win32 物理坐标（与 Tauri 的 DPI 换算无关），
+/// 并钳制在光标所在显示器的工作区内，窄屏时防护
 pub(crate) fn popup_position_physical(hwnd: windows::Win32::Foundation::HWND) -> (i32, i32) {
-    modules::clipboard::popup_position_physical(hwnd)
+    unsafe {
+        let mut rect = RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_err() {
+            return (0, 0);
+        }
+        let win_w = rect.right - rect.left;
+        let win_h = rect.bottom - rect.top;
+
+        let mut pt = POINT::default();
+        if GetCursorPos(&mut pt).is_err() {
+            return (0, 0);
+        }
+        let monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+            return (0, 0);
+        }
+        let work = info.rcWork;
+        let x = if work.right - work.left > win_w + 16 {
+            (pt.x - win_w / 2).clamp(work.left + 8, work.right - win_w - 8)
+        } else {
+            work.left + 8
+        };
+        let y = if work.bottom - work.top > win_h + 16 {
+            (pt.y + 16).clamp(work.top + 8, work.bottom - win_h - 8)
+        } else {
+            work.top + 8
+        };
+        (x, y)
+    }
+}
+
+/// 确保延迟创建的弹窗窗口存在，并恢复记住的尺寸（四模块共用）。
+/// 隐藏/最小化时 WebView2 会报 0x0 之类脏值，恢复前按最小尺寸过滤。
+pub(crate) fn ensure_popup_window(
+    app: &tauri::AppHandle,
+    label: &'static str,
+    html: &'static str,
+    size: (f64, f64),
+    cfg_key: &str,
+) -> Option<tauri::WebviewWindow> {
+    if let Some(win) = app.get_webview_window(label) {
+        return Some(win);
+    }
+    let win = tauri::WebviewWindowBuilder::new(
+        app,
+        label,
+        tauri::WebviewUrl::App(html.into()),
+    )
+    .decorations(false)
+    .skip_taskbar(true)
+    .visible(false)
+    .inner_size(size.0, size.1)
+    .min_inner_size(400.0, 300.0)
+    .resizable(true)
+    .always_on_top(true)
+    .build();
+    match win {
+        Ok(win) => {
+            let saved_size = app
+                .state::<ConfigState>()
+                .0
+                .lock()
+                .unwrap()
+                .modules
+                .get(cfg_key)
+                .and_then(|m| m.get("popup_size"))
+                .cloned();
+            if let Some(size) = saved_size {
+                if let (Some(w), Some(h)) = (
+                    size.get("w").and_then(|v| v.as_u64()),
+                    size.get("h").and_then(|v| v.as_u64()),
+                ) {
+                    if w >= 400 && h >= 300 {
+                        let _ = win.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
+                    }
+                }
+            }
+            Some(win)
+        }
+        Err(e) => {
+            log::error!("failed to create popup window {label}: {e}");
+            None
+        }
+    }
+}
+
+/// 按模块配置定位（跟随鼠标 / 固定位置）并显示聚焦弹窗。
+pub(crate) fn show_popup_at(
+    app: &tauri::AppHandle,
+    win: &tauri::WebviewWindow,
+    cfg_key: &str,
+) {
+    if let Ok(hwnd) = win.hwnd() {
+        let cfg = config::module_cfg(app, cfg_key);
+        let follow_mouse = cfg
+            .get("follow_mouse")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let (x, y) = if follow_mouse {
+            popup_position_physical(hwnd)
+        } else {
+            cfg.get("fixed_pos")
+                .and_then(|p| {
+                    Some((
+                        p.get("x")?.as_i64()? as i32,
+                        p.get("y")?.as_i64()? as i32,
+                    ))
+                })
+                .unwrap_or_else(|| popup_position_physical(hwnd))
+        };
+        unsafe {
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                x,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+        }
+    }
+    let _ = win.show();
+    let _ = win.set_focus();
 }
 
 /// 读模块启用开关（统一实现；下方各模块包装名保留以便调用点自解释）

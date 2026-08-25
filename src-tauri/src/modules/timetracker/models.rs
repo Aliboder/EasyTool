@@ -101,6 +101,9 @@ pub struct AppListItem {
 /// 顺序很关键：qqmusic/qqbrowser 若放在 qq(通讯) 之后会被误归效率工具，故视听、资源必须先于效率；
 /// 编程助手 opencode/codex/cursor 含 "code"，需与 AI 对话类（豆包/秘塔/DeepSeek 等）区分——
 /// 一个归效率工具、一个归学习创意。
+/// 修改下方关键词/优先级时同步 +1，让启动重分类知道自己需要重跑。
+pub const AUTO_CATEGORIZE_VERSION: u64 = 1;
+
 pub fn auto_categorize(app_name: &str, exe_path: &str) -> String {
     let name_lower = app_name.to_lowercase();
     let path_lower = exe_path.to_lowercase();

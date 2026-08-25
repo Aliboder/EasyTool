@@ -1,12 +1,12 @@
 use chrono::Datelike;
 use regex::Regex;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::RwLock;
 
 use super::models::{
-    auto_categorize, App, AppListItem, CategoryBreakdown, CategoryRule, DailyStat, DayOverview,
-    Event,
+    auto_categorize, App, AppListItem, AUTO_CATEGORIZE_VERSION, CategoryBreakdown, CategoryRule,
+    DailyStat, DayOverview, Event,
 };
 
 /// 编译后的分类规则缓存（priority 降序，首条命中即归入）。
@@ -72,6 +72,10 @@ impl TimetrackerDb {
                      category TEXT NOT NULL,
                      priority INTEGER DEFAULT 0,
                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                 );
+                 CREATE TABLE IF NOT EXISTS meta (
+                     key TEXT PRIMARY KEY,
+                     value TEXT NOT NULL
                  );",
             )
             .map_err(|e| format!("建表失败: {e}"))?;
@@ -851,8 +855,79 @@ impl TimetrackerDb {
         self.reload_rules()
     }
 
+    /// 当前分类指纹：内置分类版本 + 用户规则（pattern/category/priority，顺序敏感）。
+    /// 规则或内置关键词任一变化都会得到不同指纹。
+    fn rules_fingerprint(&self) -> Result<String, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT pattern, category, priority
+                 FROM category_rules ORDER BY priority DESC, id ASC",
+            )
+            .map_err(|e| format!("准备规则指纹查询失败: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+            })
+            .map_err(|e| format!("查询规则指纹失败: {e}"))?;
+        let mut fp = format!("v{AUTO_CATEGORIZE_VERSION}");
+        for row in rows {
+            let (pattern, category, priority) =
+                row.map_err(|e| format!("读取规则指纹失败: {e}"))?;
+            fp.push(';');
+            fp.push_str(&pattern);
+            fp.push('\u{1}');
+            fp.push_str(&category);
+            fp.push('\u{1}');
+            fp.push_str(&priority.to_string());
+        }
+        Ok(fp)
+    }
+
+    fn saved_rules_fingerprint(&self) -> Result<String, String> {
+        self.conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'category_rules_fp'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map(|v| v.unwrap_or_default())
+            .map_err(|e| format!("读取分类指纹失败: {e}"))
+    }
+
+    fn save_rules_fingerprint(&self, fp: &str) -> Result<(), String> {
+        self.conn
+            .execute(
+                "INSERT INTO meta(key, value) VALUES ('category_rules_fp', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![fp],
+            )
+            .map_err(|e| format!("保存分类指纹失败: {e}"))?;
+        Ok(())
+    }
+
+    /// 启动时按指纹判断是否需要重分类：规则/内置关键词没变则跳过全量 UPDATE。
+    pub fn reapply_categories_if_changed(&self) -> Result<bool, String> {
+        self.reload_rules()?;
+        let fp = self.rules_fingerprint()?;
+        if self.saved_rules_fingerprint()? == fp {
+            return Ok(false);
+        }
+        self.reapply_categories_inner()?;
+        self.save_rules_fingerprint(&fp)?;
+        Ok(true)
+    }
+
     /// 用当前规则+build 内置回退重新分类所有已有应用（规则变更后调用）。
     pub fn reapply_categories(&self) -> Result<(), String> {
+        self.reload_rules()?;
+        let fp = self.rules_fingerprint()?;
+        self.reapply_categories_inner()?;
+        self.save_rules_fingerprint(&fp)
+    }
+
+    fn reapply_categories_inner(&self) -> Result<(), String> {
         self.reload_rules()?;
         let mut stmt = self
             .conn

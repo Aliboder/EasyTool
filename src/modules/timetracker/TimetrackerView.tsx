@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
@@ -21,6 +21,8 @@ interface Props {
   cfg: TimetrackerConfig;
   onUpdate: (patch: Partial<TimetrackerConfig>) => void;
   popup?: boolean;
+  /** 主窗口 keep-alive：仅当前 Tab 活跃时轮询（弹窗不传默认始终跟随可见性） */
+  active?: boolean;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -49,7 +51,7 @@ const daysInMonth = () => {
 const buildDateRange = (start: string, count: number): string[] =>
   Array.from({ length: count }, (_, i) => shiftDate(start, i));
 
-export function TimetrackerView({ cfg, onUpdate, popup = false }: Props) {
+export function TimetrackerView({ cfg, onUpdate, popup = false, active = true }: Props) {
   // 弹窗呼出入场动画（主窗不播）
   const entranceRef = useWindowEntrance(popup, ["animate-in", "fade-in-0"]);
   // 弹窗尺寸记忆：缩放停止后写回模块配置
@@ -67,6 +69,10 @@ export function TimetrackerView({ cfg, onUpdate, popup = false }: Props) {
   const [selectedApp, setSelectedApp] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [loading, setLoading] = useState(false);
+  // 页面可见性：窗口隐藏/最小化时停止 30s 轮询，避免 keep-alive 暗耗
+  const [visible, setVisible] = useState(() => document.visibilityState === "visible");
+  const isShown = popup ? visible : active && visible;
+  const prevShown = useRef(isShown);
 
   // 共享图标缓存（排行/详情/甘特 tooltip 同源）
   const { icons, loadIcon } = useFileIcons();
@@ -139,12 +145,24 @@ export function TimetrackerView({ cfg, onUpdate, popup = false }: Props) {
     fetchData();
   }, [fetchData]);
 
-  // 定时刷新（30 秒）；翻看历史日期时不轮询，避免数据被顶掉观感跳动
+  // 定时刷新（30 秒）；翻看历史日期、页面不可见时不轮询
   useEffect(() => {
-    if (period !== "today" || !isToday) return;
+    if (period !== "today" || !isToday || !isShown) return;
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [fetchData, period, isToday]);
+  }, [fetchData, period, isToday, isShown]);
+
+  // keep-alive 切回 / 窗口重新可见时立即补一次刷新，避免隐藏期间数据过期
+  useEffect(() => {
+    if (isShown && !prevShown.current) fetchData();
+    prevShown.current = isShown;
+  }, [isShown, fetchData]);
+
+  useEffect(() => {
+    const onVis = () => setVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   // 今日/周/月概览优先用后端返回值；无数据时（如空列表）兜底为 0，不显示对比
   const cardOverview: DayOverview | null =

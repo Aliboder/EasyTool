@@ -38,6 +38,11 @@ impl AppsDb {
              CREATE TABLE IF NOT EXISTS app_usage (
                  target TEXT PRIMARY KEY,
                  count INTEGER NOT NULL DEFAULT 0
+             );
+             CREATE TABLE IF NOT EXISTS shortcut_cache (
+                 path TEXT PRIMARY KEY,
+                 target TEXT NOT NULL,
+                 mtime_ms INTEGER NOT NULL
              );",
         )
         .map_err(|e| format!("建表失败: {e}"))?;
@@ -82,6 +87,36 @@ impl AppsDb {
                 params![target],
             )
             .map_err(|e| format!("计数失败: {e}"))?;
+        Ok(())
+    }
+
+    /// 读取快捷方式解析缓存：.lnk 路径 → (解析目标, 文件修改时间 ms)
+    pub fn load_shortcut_cache(
+        &self,
+    ) -> Result<std::collections::HashMap<String, (String, u64)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path, target, mtime_ms FROM shortcut_cache")
+            .map_err(|e| format!("准备缓存查询失败: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, (row.get(1)?, row.get(2)?))))
+            .map_err(|e| format!("查询缓存失败: {e}"))?;
+        rows.collect::<Result<_, _>>()
+            .map_err(|e| format!("读取缓存失败: {e}"))
+    }
+
+    /// 写入快捷方式解析缓存（仅 mtime 变化/新增的条目）
+    pub fn store_shortcut_cache(&self, rows: &[(String, String, u64)]) -> Result<(), String> {
+        for (path, target, mtime_ms) in rows {
+            self.conn
+                .execute(
+                    "INSERT INTO shortcut_cache(path, target, mtime_ms) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(path) DO UPDATE SET target = excluded.target,
+                                                     mtime_ms = excluded.mtime_ms",
+                    params![path, target, mtime_ms],
+                )
+                .map_err(|e| format!("写入缓存失败: {e}"))?;
+        }
         Ok(())
     }
 }
@@ -152,7 +187,7 @@ pub fn resolve_target(path: &str) -> String {
 fn collect_apps(
     dir: &std::path::Path,
     depth: u32,
-    out: &mut Vec<(String, String)>,
+    out: &mut Vec<(String, String, u64)>,
     seen: &mut std::collections::HashSet<String>,
 ) {
     if depth > 6 {
@@ -176,11 +211,19 @@ fn collect_apps(
             if SCAN_EXTS.contains(&ext.to_lowercase().as_str()) {
                 let path_key = p.to_string_lossy().to_lowercase();
                 if seen.insert(path_key) {
+                    let mtime_ms = entry
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
                     out.push((
                         p.to_string_lossy().into_owned(),
                         p.file_stem()
                             .map(|s| s.to_string_lossy().into_owned())
                             .unwrap_or_default(),
+                        mtime_ms,
                     ));
                 }
             }
@@ -190,7 +233,7 @@ fn collect_apps(
 
 /// 扫描开始菜单，三道筛后返回全部已安装应用（按名称排序，含全局使用次数）
 pub fn scan_installed(app: &AppHandle) -> Result<Vec<ScannedApp>, String> {
-    let mut candidates: Vec<(String, String)> = Vec::new(); // (path, name)
+    let mut candidates: Vec<(String, String, u64)> = Vec::new(); // (path, name, mtime_ms)
     let mut seen_paths = std::collections::HashSet::new();
     let mut roots: Vec<std::path::PathBuf> = Vec::new();
     if let Some(d) = std::env::var_os("APPDATA") {
@@ -210,12 +253,32 @@ pub fn scan_installed(app: &AppHandle) -> Result<Vec<ScannedApp>, String> {
         collect_apps(r, 0, &mut candidates, &mut seen_paths);
     }
 
-    // 一次性解析所有候选的目标路径（每个 .lnk 需要 COM 解析，耗时），
-    // 缓存结果供 sync_targets 和过滤循环共用，避免每个候选解析两遍
-    let resolved: Vec<(String, String, String)> = candidates
-        .iter()
-        .map(|(p, n)| (p.clone(), n.clone(), resolve_target(p)))
-        .collect();
+    // 复用 shortcut_cache：mtime 未变的 .lnk 直接取上次解析结果，
+    // 只有新增/变更的快捷方式才做 COM 解析（扫描开始菜单通常上百个快捷方式）
+    let cache = app
+        .try_state::<Mutex<AppsState>>()
+        .map(|state| state.lock().unwrap().db.load_shortcut_cache().unwrap_or_default())
+        .unwrap_or_default();
+    let mut changed_rows: Vec<(String, String, u64)> = Vec::new();
+    let mut resolved: Vec<(String, String, String)> = Vec::with_capacity(candidates.len());
+    for (p, n, mtime_ms) in &candidates {
+        let target = match cache.get(p) {
+            Some((cached_target, cached_mtime)) if *cached_mtime == *mtime_ms => {
+                cached_target.clone()
+            }
+            _ => {
+                let target = resolve_target(p);
+                changed_rows.push((p.clone(), target.clone(), *mtime_ms));
+                target
+            }
+        };
+        resolved.push((p.clone(), n.clone(), target));
+    }
+    if !changed_rows.is_empty() {
+        if let Some(state) = app.try_state::<Mutex<AppsState>>() {
+            let _ = state.lock().unwrap().db.store_shortcut_cache(&changed_rows);
+        }
+    }
 
     let usage_map: std::collections::HashMap<String, i64> =
         match app.try_state::<Mutex<AppsState>>() {
@@ -264,7 +327,7 @@ mod tests {
 
     #[test]
     fn scan_real_start_menu() {
-        let mut candidates: Vec<(String, String)> = Vec::new();
+        let mut candidates: Vec<(String, String, u64)> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         let mut roots: Vec<std::path::PathBuf> = Vec::new();
         if let Some(d) = std::env::var_os("APPDATA") {
@@ -278,9 +341,9 @@ mod tests {
             collect_apps(r, 0, &mut candidates, &mut seen);
         }
         println!("candidates = {}", candidates.len());
-        let software: Vec<&(String, String)> = candidates
+        let software: Vec<&(String, String, u64)> = candidates
             .iter()
-            .filter(|(p, n)| {
+            .filter(|(p, n, _)| {
                 let t = resolve_target(p);
                 t.ends_with(".exe")
                     && !UNINSTALL_KEYS
@@ -289,7 +352,7 @@ mod tests {
             })
             .collect();
         println!("software after filters = {}", software.len());
-        for (p, _) in software.iter().take(3) {
+        for (p, _, _) in software.iter().take(3) {
             println!("  e.g. {} -> {}", n_of(p), p);
         }
         assert!(!software.is_empty(), "scan found nothing");
@@ -300,5 +363,21 @@ mod tests {
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default()
         }
+    }
+
+    #[test]
+    fn shortcut_cache_roundtrip() {
+        let db = AppsDb::open(std::path::Path::new(":memory:")).unwrap();
+        db.store_shortcut_cache(&[(
+            r"c:\shortcuts\a.lnk".into(),
+            r"c:\apps\a.exe".into(),
+            123,
+        )])
+        .unwrap();
+        let cache = db.load_shortcut_cache().unwrap();
+        assert_eq!(
+            cache.get(r"c:\shortcuts\a.lnk"),
+            Some(&(r"c:\apps\a.exe".to_string(), 123))
+        );
     }
 }

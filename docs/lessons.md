@@ -1203,3 +1203,16 @@ Aliboder
 **发版流程**（AI 代发版）：`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 三处 `version` 必须同时改（`Cargo.lock` 的根包 `easytool` 也记版本，一并改）；提交 → `git tag vX.Y.Z` → `git push origin master` + `git push origin vX.Y.Z`，GitHub Actions 的 `Build & Release` 自动构建签名发布，**不要手动 build/上传**。`.superpowers/` 是 brainstorming 可视化服务的临时会话状态，须加进 `.gitignore` 防止误提交。
 **网页内容滞后教训**：官网曾长期停在 v0.4.5，而软件已到 v0.5.2+。本次更新发现「快速启动 quicklaunch」模块已被彻底移除、其功能并入 search 模块的「应用中心」，但官网 bento/deep-dive/download/screenshots 仍把它当活跃模块展示。删模块时官网要同步清理：bento Card / deep-dive MODULES 项 / real-* 组件 / download WHAT_YOU_GET / hero 副标题模块列表 / footer 模块列表 / quicklaunch 的 mini 与 real 文件。新增模块（如 timetracker）同样要全量补这几处 + `stats-ticker` 统计 + `changelog`，且 hero 标题「唤出整套效率工具」在 `text-7xl` 会分行留孤儿字「具」，需 `whitespace-nowrap` + 调小字号修正。
 **验证**：`cargo test` 61 通过、`npx tsc --noEmit` 通过、`website` 内 `npm run build` 通过；用 Playwright 滚动触发 reveal 后截图逐板块核对（`whileInView`/`Reveal` 只有滚动到才显示，满页截图会全空白）。
+
+---
+
+## 67. 存量模块性能优化：弹窗 helper 收敛、.lnk 缓存、可见性轮询、热键按需重注册（2026-08-26）
+**动机**：对已有功能做无副作用的性能/资源优化，集中在四块：弹窗窗口与定位逻辑重复、应用中心每次全量 COM 解析 .lnk、主窗口 keep-alive 隐藏后 30s 轮询空跑、任意模块设置保存都会全局重注册热键。
+**关键点**：
+1. 弹窗统一收敛到 `lib.rs` 的 `ensure_popup_window` / `show_popup_at` / `popup_position_physical`：剪贴板/搜索/表情/时长统计只保留 label/html/尺寸参数；顺带统一恢复 `popup_size` 并过滤 <400x300 脏值。
+2. 应用中心新增 `apps.db` 的 `shortcut_cache(path,target,mtime_ms)`：扫描时按 .lnk 的 mtime 命中缓存，只有新增/变更的快捷方式才走 COM 解析；新增 `shortcut_cache_roundtrip` 单测。
+3. 时长统计页 30s 轮询改为「当前 Tab 活跃 + document 可见」双门控，keep-alive 隐藏/弹窗失焦即停止；重新可见时立即补一次刷新，避免数据过期。
+4. `set_module_config` 只在 patch 含 `hotkey`/`enabled` 时才调用 `reapply_hotkeys`，改尺寸/阈值等不再 unregister/register 一遍全局热键。
+5. 分类重算用指纹（内置 `AUTO_CATEGORIZE_VERSION` + category_rules 顺序字段），启动时指纹没变就跳过全量 `reapply_categories`；手动「重新分类」命令仍强制重跑。
+**教训**：不要在 Windows + core.autocrlf 的仓库里对全 crate 跑 `cargo fmt`——会把 35 个文件重新排版/换行造成大面积 churn；恢复时用 `git checkout-index --force` 让 Git 按仓库规则重写工作区换行（`git show > file` 会绕过 smudge，Git 仍报 modified），之后只对目标文件用编辑器小补丁。
+**验证**：`cargo test` 62 passed（新增 1 个缓存单测）；`npx tsc --noEmit` 通过。

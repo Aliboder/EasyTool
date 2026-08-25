@@ -90,6 +90,15 @@ export function AppsGrid({
     });
   }, [apps, query, sortBy, sortDesc]);
 
+  // 图标加载从 render 副作用改为 effect：列表变化时按需补拉，不阻塞渲染
+  const iconsRef = useRef(icons);
+  iconsRef.current = icons;
+  useEffect(() => {
+    for (const a of list) {
+      if (!iconsRef.current[a.path]) loadIcon(a.path);
+    }
+  }, [list, loadIcon]);
+
   // 键盘导航（↑↓ 按实测列数跨行步进，Enter 启动）：向容器注册处理函数
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
@@ -143,7 +152,6 @@ export function AppsGrid({
     return (
       <div className="flex flex-col">
         {list.map((a, i) => {
-          if (!icons[a.path]) loadIcon(a.path);
           const icon = icons[a.path];
           return (
             <div
@@ -185,7 +193,6 @@ export function AppsGrid({
       }}
     >
       {list.map((a, i) => {
-        if (!icons[a.path]) loadIcon(a.path);
         const icon = icons[a.path];
         return (
           <div

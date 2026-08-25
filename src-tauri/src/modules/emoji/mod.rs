@@ -5,9 +5,6 @@ pub mod db;
 pub mod paste;
 
 use tauri::Manager;
-use windows::Win32::UI::WindowsAndMessaging::{
-    SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
-};
 
 pub const POPUP_WINDOW_LABEL: &str = "emoji_popup";
 
@@ -38,62 +35,15 @@ pub fn on_hotkey(app: &tauri::AppHandle) {
     let Some(win) = ensure_popup_window(app) else {
         return;
     };
-    if let Ok(hwnd) = win.hwnd() {
-        let cfg = crate::config::module_cfg(app, "emoji");
-        let follow_mouse = cfg
-            .get("follow_mouse")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let (x, y) = if follow_mouse {
-            crate::popup_position_physical(hwnd)
-        } else {
-            cfg.get("fixed_pos")
-                .and_then(|p| {
-                    Some((
-                        p.get("x")?.as_i64()? as i32,
-                        p.get("y")?.as_i64()? as i32,
-                    ))
-                })
-                .unwrap_or_else(|| crate::popup_position_physical(hwnd))
-        };
-        unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                None,
-                x,
-                y,
-                0,
-                0,
-                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-            );
-        }
-    }
-    let _ = win.show();
-    let _ = win.set_focus();
+    crate::show_popup_at(app, &win, "emoji");
 }
 
 fn ensure_popup_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
-    if let Some(win) = app.get_webview_window(POPUP_WINDOW_LABEL) {
-        return Some(win);
-    }
-    let win = tauri::WebviewWindowBuilder::new(
+    crate::ensure_popup_window(
         app,
         POPUP_WINDOW_LABEL,
-        tauri::WebviewUrl::App("emoji_popup.html".into()),
+        "emoji_popup.html",
+        (620.0, 480.0),
+        "emoji",
     )
-    .decorations(false)
-    .skip_taskbar(true)
-    .visible(false)
-    .inner_size(620.0, 480.0)
-    .min_inner_size(400.0, 300.0)
-    .resizable(true)
-    .always_on_top(true)
-    .build();
-    match win {
-        Ok(win) => Some(win),
-        Err(e) => {
-            log::error!("failed to create emoji popup window: {e}");
-            None
-        }
-    }
 }

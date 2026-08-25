@@ -256,7 +256,7 @@ function App() {
       )}
       {visited.has("timetracker") && (
         <div className={active === "timetracker" ? "h-full" : "hidden"}>
-          <TimetrackerPage />
+          <TimetrackerPage active={active === "timetracker"} />
         </div>
       )}
     </div>

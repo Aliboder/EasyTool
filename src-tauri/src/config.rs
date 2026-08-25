@@ -150,6 +150,11 @@ pub fn set_module_config(
     module_id: String,
     patch: serde_json::Value,
 ) -> Result<(), String> {
+    // 只有热键/启停字段变化才需要全局重注册；其它设置（尺寸、阈值等）不再 churn 热键
+    let needs_hotkey_reapply = patch
+        .as_object()
+        .map(|obj| obj.keys().any(|k| k == "hotkey" || k == "enabled"))
+        .unwrap_or(false);
     {
         let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let m = cfg.modules.entry(module_id).or_default();
@@ -160,7 +165,9 @@ pub fn set_module_config(
         }
         save_config(&app, &cfg)?;
     }
-    crate::reapply_hotkeys(&app);
+    if needs_hotkey_reapply {
+        crate::reapply_hotkeys(&app);
+    }
     Ok(())
 }
 
