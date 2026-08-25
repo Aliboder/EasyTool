@@ -1,4 +1,4 @@
-import { Clipboard, Gauge, Settings, Smile, Search } from "lucide-react";
+import { Clipboard, Clock, Gauge, Settings, Smile, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface SidebarModule {
@@ -9,6 +9,7 @@ export interface SidebarModule {
 
 const ICONS: Record<string, typeof Clipboard> = {
   clipboard: Clipboard,
+  clock: Clock,
   gauge: Gauge,
   smile: Smile,
   search: Search,

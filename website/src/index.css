@@ -41,6 +41,13 @@ html {
 
 body {
   @apply bg-zinc-950 font-sans text-zinc-100 antialiased;
+  /* ambient emerald aura near the top, fading into flat zinc-950 */
+  background-image:
+    radial-gradient(60rem 40rem at 50% -8rem, rgba(16, 185, 129, 0.08), transparent 60%),
+    radial-gradient(40rem 30rem at 88% 12%, rgba(16, 185, 129, 0.05), transparent 55%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-color: hsl(240 10% 3.92%);
 }
 
 ::selection {
@@ -134,6 +141,10 @@ body::after {
   color: transparent;
   -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.08);
   user-select: none;
+  transition: -webkit-text-stroke-color 0.4s ease;
+}
+section:hover .outline-num {
+  -webkit-text-stroke-color: rgba(16, 185, 129, 0.28);
 }
 
 /* ---- bento card hover ---- */

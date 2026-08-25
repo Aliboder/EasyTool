@@ -1042,3 +1042,157 @@
 ---
 
 Aliboder
+
+---
+
+## 49. 时长统计模块：SQLite 时间口径必须存储与查询统一（2026-08-25）
+
+**现象**：events 表用 SQLite CURRENT_TIMESTAMP（UTC）存时间，查询却用 date('now','localtime') 对比 → UTC+8 时区下每天 0:00~8:00 的使用记录被归到昨天，当日统计查不到。
+
+**根因**：写入与查询用了两个时区口径。date('2026-08-25 16:00:00')（实为本地 0 点的 UTC 值）永远不等于 date('now','localtime')。
+
+**解决**：时间字符串一律由 Rust chrono::Local::now() 生成本地时间传入，存储/心跳/查询三处同口径；duration 用 julianday(两端同格式) 差值计算，偏移量相消精确。
+
+**教训**：涉及时间的字段，先定死「一个时钟、一个格式」，再写任何 SQL。混用 UTC 存储与本地查询是最常见的隐式 bug。
+
+---
+
+## 50. WinEventHook 回调线程禁止做耗时操作（2026-08-25）
+
+**现象**：timetracker 初版在 on_foreground 回调里同步写 SQLite（upsert + insert），会阻塞系统级窗口切换事件派发。
+
+**正确模式（ActivityWatch 同款）**：回调只做 Win32 API 轻量采集（pid/exe/title）→ mpsc::channel 入队即返回；独立心跳线程 ecv_timeout(15s) 消费——收到消息立即结算+开新会话，超时则心跳 UPDATE 当前会话时长（顺带解决「一直用同一应用直到关机丢整段数据」问题）。
+
+**教训**：系统钩子回调运行在 OS 派发线程，任何阻塞都会拖慢全系统；回调里只允许采集和入队。
+
+---
+
+## 51. Tauri 的 State 不能封装成「返回 MutexGuard」的辅助函数（2026-08-25）
+
+**现象**：n lock(app) -> Result<MutexGuard<T>> { app.state::<T>().lock() } 编译报 E0515（返回引用临时值）。pp.state::<T>() 返回的 State<'_,T> 是临时值，guard 借用它活不过当前表达式。
+
+**解决**：每个命令内联两行：let state = app.state::<Mutex<T>>(); let s = state.lock()...;
+
+**教训**：tauri Manager trait 返回的 State 是借用视图不是句柄，不能跨函数传递其内部引用。
+
+---
+
+## 52. 开关类配置必须作用于「消费者实际读取的标志」（2026-08-25）
+
+**现象**：timetracker「暂停录制」命令改的是 TimetrackerState.recording 字段，但采集循环读的是自己的 static AtomicBool RECORDING → 暂停功能静默失效，无任何报错。
+
+**解决**：删掉 state 字段，atomic 作为唯一真相源，命令层直接调 collector::set_recording()（内部顺带结算当前会话）。
+
+**教训**：同一个布尔语义出现两份存储（state 字段 + static）必然失同步；写开关功能时先问「谁在轮询这个值」，让 setter 直达那个位置。
+
+---
+
+## 53. 跨天会话的时长归属要显式拆账（2026-08-25）
+
+**现象**：23:50 开始使用某应用到次日 00:10，该 20 分钟会话整段归属开始那天（按 date(start_time) 分组），次日凌晨的 10 分钟凭空丢失。
+
+**解决**：心跳与切换结算前先调 oll_cross_day_event()——发现活跃会话起始日早于今天时，在昨日 23:59:59 封账原行，另开一条今日 00:00:00 起的新行（继承 app/title/is_active）。心跳粒度 15s 决定了会话最多跨一天，单次滚动即完备。
+
+**教训**：凡「按日分组统计连续区间」的数据模型，写入端必须处理跨边界切片；只靠查询端 date() 分组会把跨界数据整段算给起点。
+
+---
+
+## 54. 用户可配分类用正则需要「缓存编译」别每次切换都编译；设计里已承诺的表别一直留死配置（2026-08-26）
+**现象**：timertracker 的 auto_categorize() 是硬编码关键词数组，用户无法改分类（对比 ActivityWatch 的「用户定义分类规则」）。设计文档 §6.1 里的 category_rules 表和 autoAggregateMinutes 配置实际从未落地——daily_stats 表、aggregator.rs 都不存在，autoAggregateMinutes 是无任何代码消费的幽灵配置。
+**解决**：
+- 新增 category_rules 表（pattern 正则 / category / priority），categorize() 规则优先、回退内置关键词、再否则 unknown。
+- 规则在「窗口切换」（频繁）时被消费，若每条都 Regex::new() 重新编译会浪费。用 static RwLock 缓存编译好的 (Regex, priority, category) 列表，规则增删改命令里 reload_rules() 刷新，采集线程只读缓存。
+- 规则变更后调用 reapply_categories() 重跑所有已有 app 的 category，让旧数据立即按新规则归类（否则只在下次采集才生效）。
+- 清理幽灵配置：删 autoAggregateMinutes（manifest + config.ts + 默认值）。config.rs 的 merge_manifests 只对「缺失模块」灌默认，老 config.json 里残留键无人读取，无害。
+**教训**：①「设计文档写了 ≠ 实现了」，动手前先grep确认设计里的表/命令是否真存在，别对着幻想文档改代码。② 正则这类「廉价但非零开销」的匹配放到高频路径时，一定要缓存编译结果；配置字段若没有消费者，要么实现要么删，别留着误导。③ 用户可编辑的分类/规则，改完要触发「存量数据重算」，否则新规则只对新采集生效、老数据看不出变化。
+
+---
+
+## 55. 模块设置页必须遵守「Card + SettingRow + 自带 p-6」的房屋风格（2026-08-26）
+**现象**：timetracker 的设置用了裸 <h4> 小标题 + 手写 flex 行，外层也无 padding，导致和其它模块（剪贴板/quota 的 Card 分组 + 外衬 p-6）观感明显脱节、内容贴死抽屉边缘。
+**原因**：共享的 Drawer 内容区是 lex-1 overflow-y-auto，本身不带内边距——每个设置组件必须自己供应 padding；分组用 Card/CardHeader/CardTitle/CardContent，单行设置用 SettingRow（左标题+说明，右控件）。
+**解决**：timetracker Settings 改为 space-y-6 p-6 外层 + 每节一个 Card + 每行 SettingRow；分类规则编辑器的「输入框+下拉+添加按钮」改用 Input / Select / Button 组件统一高度。
+**教训**：写新模块设置页前先扫一遍现有模块（clipboard / quota / search），照抄它们的骨架（外层 padding + Card 分组 + SettingRow），而不是自创一套；共享容器（如 Drawer）不负责样式间隙时，间隙要由内容组件自己补。
+
+---
+
+## 56. 时间线必须绑定「周期」而非固定单日，否则切 Tab 不切换（2026-08-26）
+**现象**：切到本周/本月时，排行/概览/分类占比都跟着更新，唯独下方时间线柱状图纹丝不动，仍是今天那张 24 小时图。
+**原因**：时间线数据一直用 	imetracker_get_app_timeline(viewDate) 取单日事件，iewDate 默认今天且与 period 无关。初期选了「单日甘特图 + 全 Tab 历史回看」方案，副作用就是时间线只认日期不认周期。
+**解决**：把时间线改成周期感知——今日=24 根（小时）、本周=7 根（天）、本月=当月天数根（天）。Timeline 组件抽象成 granularity: "hour" | "day" 两种分组：hour 用绝对刻度（满格 60min）+ 参考线 + 当前时刻线；day 用归一化刻度（满格=当日最多），柱高=当日活跃时长、按软件堆叠。新增 	imetracker_get_app_timeline_range(start,end) 取整段事件。
+**教训**：凡「按周期呈现的时间序列图表」，其数据粒度必须与周期强绑定（小时/天），不要复用单日查询。组件应暴露粒度参数而非写死一种分组；柱状图的刻度：绝对（有物理上限如 24h/60min）用绝对值，否则用「最大值归一化」更直观。另外日期回看只在「今日」有意义——周/月是整段聚合，回看按钮放在全 Tab 会让人觉得时间线坏了。
+
+---
+
+## 57. 心跳不能把「当前会话」封账——update_current_event 只应刷新时长，封账单独 close（2026-08-26）
+**现象**：用户持续用电脑一小时，但「今日使用」总时长只剩约 20 分钟。实查 timetracker.db：当天 75 条 0 时长 + 120 条 1~15s 事件，仅 2 条>15s；事件时间跨度约 66 分钟，但 SUM(duration_sec) 只有约 20 分钟——约 46 分钟蒸发。
+**根因**：update_current_event 的 SQL 是 UPDATE events SET end_time=?1, duration_sec=..., is_active=?2 WHERE end_time IS NULL。它每次心跳都把 end_time 写死（封账）。于是首次心跳（15s）就把当前会话冻结在 15s；下一次心跳 WHERE end_time IS NULL 匹配不到行 → 静止在同一窗口超过 15s 的时长**不再被记录**，直到下一次切换前台才重新开事件。结果每个前台焦点只记到首个心跳，其余丢弃。而这与注释「即使一直停在同一个应用也持续累计时长」自相矛盾。
+**解决**：分开两层——update_current_event 只刷新 duration_sec + is_active（**end_time 保持 NULL**，会话持续开启、时长单调增长）；新增 close_current_event 才写 end_time 封账（切换窗口 / 暂停录制 / 跨天滚动时调用）。init 时顺手结算上次异常退出遗留的 open 会话（end_time 置为 start、时长为 0），避免「应用停机被算成使用」的另一类虚高。
+**教训**：①「心跳延长会话」与「封账结束会话」是两种不同语义，绝不能共用一条 SET end_time 的 UPDATE——end_time 一写，WHERE end_time IS NULL 就再也找不到了。② 验证时长统计一定要直接查库对账（SUM vs 时间跨度），不要只看 UI 数字；批量小事件 + 大间隔 = 采集有洞。③ 会话语义：end_time=NULL 表示「进行中」，值只应增大；谁把它写实谁就终结了它。
+
+---
+
+## 58. 心跳要在「活跃状态翻转」时把会话切段，否则挂机突不出来（2026-08-26）
+**现象**：上次修复把会话改成「一条持续增长记录（end_time 保持 NULL）」后，is_active 只=该条记录最后一次心跳的值，一段「用5分钟→挂机10分钟→再用5分钟」的会话会被整段算成全活跃或全挂机，中间那 10 分钟挂机丢失。
+**解决**：update_current_event 每心跳先读当前进行中会话的 is_active——与本次状态相同就延长（保持开启）；**翻转就封账旧段 + 开新段**（继承同 app/标题、写入新 is_active）。这样每段 is_active 恒定，活跃/挂机按 15s 心跳粒度分段准确，且总时长仍单调连续。
+**教训**：①「一段会话的活跃/挂机」要精确，就不能把 is_active 当作整条记录的属性——它属于「片段」。状态一旦翻转就切分。② 心跳既要点点累积时长，也要在状态边界切分；只满足其一都会在另一维度失真（要么冻结要么丢挂机）。③ 单测要用「翻转封账 + 新段状态」断言，别只断言"没冻结"。
+
+---
+
+## 59. 图标/列表「闪现消失」：轮询刷新时 loading 把已有内容整体替换成 spinner（2026-08-26）
+**现象**：应用排行图标时不常消失。定时轮询（30s）+ 切换日期/周期时 setLoading(true)，而 AppRanking 是 if (loading) return <Spinner/>、OverviewBar 大数字也 loading ? spinner : ...——刷新瞬间整块内容（含已加载图标）被 spinner 顶掉，闪一下再回来。
+**解决**：刷新时「保留旧数据」。只在首载/无数据才显示 spinner：AppRanking 改 if (loading && stats.length === 0)；OverviewBar 有 overview 就照常渲染、否则 loading 才转圈。另给 useFileIcons 加 missing 缓存——图标提取失败（返回 null）的路径也记录下来，避免每次渲染都重新 invoke + 图标闪灰块。
+**教训**：① 后台刷新类的 loading 绝不能把已有内容换成空的 spinner——用「保留上一次数据」或顶部细进度条，而不是整页替换。② 图标这类「可能失败」的异步资源，成功和失败都要缓存（失败进 missing 集合），否则失败路径反复触发抖动。
+**附带**：应用名带 .exe，采集用 ile_stem() 去扩展名（qq.exe→qq），并在 init 一次性清理存量 app_name 的后缀，保证新老数据一致。
+
+---
+
+## 60. 切换记录出现「A→A」：前台钩子按窗口(HWND)变化切事件，同应用的窗口/焦点变化也把会话切碎（2026-08-26）
+**现象**：「使用记录」里出现「A→A」——离开某软件、打开的又是它。查库确认这些 A→A 全是 is_active=1（不是活跃/挂机翻转），而是连续两条同 app 事件。
+**根因**：on_foreground 用 WinEventHook 监听前台窗口，**只要有新 HWND 获得前台就切换会话**（switch_session 关旧开新）。同一个应用的不同窗口 / 子窗口 / 焦点闪变（0000 时刻大量 0 时长事件）会被当成多次「切换」，把一段同应用使用切开成多条事件。所以链式显示时出现 A→A。
+**解决**：展示层——EventLog 按 app_id 合并连续的同一应用事件为一条（真实的应用切换才有「离开→打开」），合并条目标注「活跃 / 挂机 / 含挂机 X」；这也顺带吸收了活跃-挂机翻转产生的同 app 段。未改采集层（保留窗口级事件，总量/排行不受影响）。
+**教训**：①「应用切换」的记录粒度应与「应用」一致，前台钩子按 HWND 触发天然会把同应用的窗口切换切碎——要么采集时按 exe 相同就合并（更干净但改动采集），要么展示时合并。② 合并连续同 app 才能让「切换流水」语义成立；否则窗口变化、活跃/挂机边界都会伪造成一次切换。③ 这种数据先查库确认根因（是活跃翻转还是同app窗口变化）再对症，别想当然。
+
+---
+
+## 61. 从源头消除 A→A：switch_session 先判「是否同应用」，同 exe 不切事件（2026-08-26）
+**跟进**：在采集层把 A→A 治本。switch_session 在关旧开新之前，先用 ctive_event_app_path() 读进行中会话的 exe_path：跟新前台 exe 相同 → 直接 return（不切分，同一应用的窗口变化被吞掉，使用持续累计）；不同 → 才 close_current_event + start_event。这样事件只在「真实换应用」时产生，库里不再有同应用的窗口级碎片。
+**要点**：① 判同 app 用 exe_path（小写、去后缀前的原始路径比较），不是窗口标题或 hwnd。② 查询进行中会话要 JOIN apps 取 exe_path。③ 新增 ctive_event_app_path 方法 + 单测（无会话 None / 开段返回 exe / 封账 None）。
+**验证**：cargo test 55 通过。
+
+---
+
+## 62. 排行榜图标「消失」= 无图标时的占位太淡（20% 透明色块），照抄搜索「应用」Tab 的显式占位（2026-08-26）
+**现象**：应用排行图标仍时有时无。查库确认 day/week/month 统计都带 exe_path（无数据 bug），图标机制与搜索共享 useFileIcons + get_file_icon。真正的观感差异是**占位**：排行榜无图标时渲染 ackground-color: 分类色33（20% 透明），几乎看不见，像图标「消失」；搜索「应用」Tab 无图标时渲染显式的 FileQuestion 图标。
+**解决**：把 AppRanking / AppDetail 的无图标占位改成可见的 g-muted 方框 + FileQuestion（与搜索一致）。配合已做的「刷新不 blank + 失败路径缓存」，取不到图标或还在加载时都显示清晰的占位，不再闪成透明。
+**教训**：①「图标消失」别只查加载逻辑，也要看「没图标时渲染成什么」——过于透明的占位等价于消失。② 参考成熟模块（带图标的搜索应用Tab）的兜底呈现（显式占位图标），比自己造一个几乎不可见的色块可靠。③ 应用列表的图标来源 SHGetFileInfo 对系统/UWP 进程（explorer/searchhost 等）确实可能取不到，占位必须显式可见。
+
+---
+
+## 63. SQL 窗口函数算「消费」时差分为 `prev - cur` 而非 `cur - prev`，且用纯函数交叉验证（2026-08-26）
+**现象**：把 quota `apply_deepseek` 里逐条遍历算 `today_spend`/`avg7` 换成 SQL `LAG()` 聚合，单测断言 `today_spend==15` 却返回 `-15`，`avg7` 也变 `-5`。
+**根因**：LAG 取到上一行 `prev_balance`，当时写成 `SUM(balance - prev_balance)`（= 本 - 上 = 负的消费量）。筛选条件是 `balance < prev_balance`（确为下降），但求和写反了符号。消费量 = 上一记录 - 本记录。
+**解决**：改成 `SUM(prev_balance - balance)`，同时 `date(time/1000,'unixepoch','localtime')` 按时区对日期分桶（与 Rust 的 `chrono::Local` 一致）。
+**教训**：① 用窗口函数（LAG）做差分统计，符号以「上一行 - 本行」为准，别被「下降」的直觉带偏写成反向。② 凡是把纯函数逻辑换成 SQL，务必保留原纯函数，并加一个**交叉校验单测**（同一批数据，SQL 结果与纯函数结果逐项比对），这是防语义漂移最省事的护栏。③ PowerShell `Set-Content -Raw` 处理含中文的 UTF-8 文件会破坏编码（整文件报 invalid UTF-8）——改代码用编辑工具，别用 PowerShell 正替换。
+
+---
+
+## 64. 排行榜图标「时有时无」的另一种根因：`file_icon_png` 返回 None 会被前后端双重永久缓存（2026-08-26）
+**现象**：#62 已把占位改成可见的 FileQuestion，但某些应用仍是「只有占位、真图标出不来」。查库确认 day/week/month 统计都带 `exe_path`；图标机制（`useFileIcons` + `get_file_icon`）与搜索「应用」Tab 完全一致——真正的差异在**喂进去的路径**：搜索 Tab 喂的是刚扫描的 `.lnk`（稳定），排行榜喂的是前台钩子抓的真实 `exe_path`（脆弱）。
+**根因**：`file_icon_png`（内部走 `SHGetFileInfoW`）对两类路径确实会返回 `None`：① `\\?\` 设备路径前缀（库里有历史脏数据清理逻辑 `apps.rs` 就是为它写的）；② 不存在/受限的 exe（卸载/更新后失效、系统/UWP 进程如 searchhost/shellhost）——且**行为不稳定**：实测同一个不存在路径单独跑 `cargo test` 是 `Some`、整批并行跑就成了 `None`。而前端 `useFileIcons` 把返回 null 的路径记进 `missingIcon` 集合**永久缓存**（`missing` 决定不再重试），后端 `ICON_CACHE` 同样缓存 `None` → 只要某路径失败一次，这个应用的真实图标就在本次运行里**永远**出不来了（直到重启应用），排行榜里表现为「时有时无」。
+**解决**：让 `file_icon_png` **保证永不返回 None**：① 先用 `strip_prefix(r"\\?\")` 把设备路径转成常规路径；② 两层 `extract_icon`（真实文件 → 通用图标）都失败时再 `or_else(generic_icon_png())`，用 `image` crate 直接生成一个中性「窗口」图标兜底。这样 `get_file_icon` 永远返回一个 base64，前端命中的要么是真图标要么是通用图标，`missingIcon`/`ICON_CACHE` 再也不会把有效路径 pin 成「缺」。
+**验证**：新增单测 `stale_path_returns_generic_icon`——对不存在的 exe、`\\?\` 路径、WindowsApps/systemapps/临时目录等真实受限样本都断言「必须 Some（回退成功）」。`cargo test` 57 passed（并行稳定）。
+**教训**：① 依赖 `SHGetFileInfoW` 取图标并不可靠（设备路径、失效/受限进程、并行时都可能 null），编写时把「取不到」兜成「一定能返回」即可消除整类「图标消失」；否则前端 null 缓存会把一次失败永久放大成整个会话缺图标。② 排查「图标不显示」按三层看：路径是否有效 → `SHGetFileInfoW` 是否稳定 → 前端失败是否被缓存；搜索「应用」Tab 因喂 `.lnk` 稳定路径而始终正常，正好反衬排行榜的真实 exe 路径更脆弱。
+
+---
+
+## 65. 时长统计分类体系：判定、文案、色值、存量数据四处联动（2026-08-26）
+**现象**：原分类只有 6 类（开发/办公/娱乐/社交/系统/其他）且划分粗糙——「娱乐」把游戏/视频/音乐/直播一锅端，「办公」混进了通讯工具（teams/discord/钉钉/飞书），缺「学习/浏览/AI」这类对学生 + AI 编程画像真正有用的维度。
+**目标**：用户最终定为 6 类，按用户语义直接落地 `efficiency(效率工具) / resource(资源获取) / media(视听娱乐) / study(学习创意) / system(系统工具) / game(游戏)`。
+**解决**：改四处：
+1. Rust `auto_categorize`（models.rs）重写关键词判定，匹配顺序 **游戏 → 视听娱乐 → 资源获取 → 学习创意 → 效率工具 → 系统兜底**。顺序即优先级：`qqmusic`/`qqbrowser` 若放到 `qq`(通讯) 之后会被误归效率工具，故视听、资源必须先判；编程助手 `opencode`/`codex`/`cursor` 含子串 "code"，需与 AI 对话类（豆包/秘塔/DeepSeek）区分——前者归效率工具、后者归学习创意。
+2. 前端 `types.ts` 的 `CATEGORY_LABELS`（文案）+ `CATEGORY_HEX`（6 组互不冲突色值）。所有消费点（设置分类下拉、AppDetail 改分类、排行徽章、CategoryOverview 占比图）都从 `Object.entries(CATEGORY_LABELS)` 派生，改一处全生效；`categoryColor` 的回退色硬编码为灰，避免删掉 `unknown` 键后 `?? CATEGORY_HEX.unknown` 变 undefined。
+3. `setup_from_handle` 启动时调用一次 `db.reapply_categories()`（幂等，只更新 `category_locked=0` 的自动分类项），让旧数据自动重分类，无需用户手动点「重新分类」。
+4. 新增 `auto_categorize` 单测（6 类各命中 + QQ 系列消歧 + 编程助手 vs AI 对话 + 未命中兜底 system）。
+
+**教训**：①「枚举 + 着色 + 判定」这类多端联动（Rust 判定分类、TS 管文案/色值、多处 UI 消费），必须让所有 UI 从同一常量派生，而不是各写一份——否则加/改类别时会漏改某处。② 关键词自动分类，**顺序即优先级**：先判更具体/更强特异的类别（如 QQ 品牌下的 qqmusic 先归视听、qq浏览器先归资源，再判通通讯 qq），再判宽泛项；且刻意避免过短子串（x/go/et/line 这类单双字母会大面积误配）。③ 兜底类直接承接所有未命中项（`system` 而非 `unknown`），保证覆盖率；分类体系变更后要用已有的 `reapply_categories`（尊重手动锁定 `category_locked`）让存量数据生效，否则用户看到新旧分类混杂。④ 换掉枚举键后，老的常量引用（如 `CATEGORY_HEX.unknown`）必须同步清理，否则 `??` 回退到 `undefined` 导致样式失效——TS 类型查不出这类「值选错了」的键，要 grep 一遍消费点。

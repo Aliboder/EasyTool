@@ -27,6 +27,9 @@ src-tauri/target/
 *.sln
 *.sw?
 
+# 临时/会话状态（brainstorming 可视化服务等）
+.superpowers/
+
 # Updater signing key (NEVER commit)
 src-tauri/updater.key
 src-tauri/updater.key.pub

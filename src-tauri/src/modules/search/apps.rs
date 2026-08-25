@@ -33,29 +33,21 @@ impl AppsDb {
     pub fn open(path: &std::path::Path) -> Result<Self, String> {
         let conn =
             rusqlite::Connection::open(path).map_err(|e| format!("打开数据库失败: {e}"))?;
-        let db = AppsDb { conn };
-        db.init()?;
-        Ok(db)
-    }
-
-    fn init(&self) -> Result<(), String> {
-        self.conn
-            .execute_batch(
-                "PRAGMA journal_mode=WAL;
-                 CREATE TABLE IF NOT EXISTS app_usage (
-                     target TEXT PRIMARY KEY,
-                     count INTEGER NOT NULL DEFAULT 0
-                 );",
-            )
-            .map_err(|e| format!("建表失败: {e}"))?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             CREATE TABLE IF NOT EXISTS app_usage (
+                 target TEXT PRIMARY KEY,
+                 count INTEGER NOT NULL DEFAULT 0
+             );",
+        )
+        .map_err(|e| format!("建表失败: {e}"))?;
         // 清理历史版本产生的带扩展前缀（\\?\）的脏计数键
-        self.conn
-            .execute(
-                "DELETE FROM app_usage WHERE substr(target, 1, 4) = ?1",
-                params![r"\\?"],
-            )
-            .map_err(|e| format!("清理失败: {e}"))?;
-        Ok(())
+        conn.execute(
+            "DELETE FROM app_usage WHERE substr(target, 1, 4) = ?1",
+            params![r"\\?"],
+        )
+        .map_err(|e| format!("清理失败: {e}"))?;
+        Ok(Self { conn })
     }
 
     /// 批量落库扫描到的目标（新目标从 0 起），返回 目标→当前次数

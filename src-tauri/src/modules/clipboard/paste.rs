@@ -3,7 +3,6 @@
 use super::clipboard;
 use super::models::{Item, ItemKind};
 use super::state::AppState;
-use std::sync::atomic::Ordering;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{

@@ -53,15 +53,18 @@ const importEmoji = () =>
   import("@/modules/emoji/Page").then(m => ({ default: m.EmojiPage }));
 const importSearch = () =>
   import("@/modules/search/Page").then(m => ({ default: m.SearchPage }));
+const importTimetracker = () =>
+  import("@/modules/timetracker/Page").then(m => ({ default: m.TimetrackerPage }));
 
 const Clippage = lazy(loadPage("clipboard", importClipboard));
 const QuotaPage = lazy(loadPage("quota", importQuota));
 const EmojiPage = lazy(loadPage("emoji", importEmoji));
 const SearchPage = lazy(loadPage("search", importSearch));
+const TimetrackerPage = lazy(loadPage("timetracker", importTimetracker));
 
 // 首屏就绪前预载全部模块代码：与上方 lazy 共用同一 import（命中缓存，无额外请求），
 // 保证主窗口显示时落地面板代码已就位
-const PAGE_IMPORTS = [importClipboard, importQuota, importEmoji, importSearch];
+const PAGE_IMPORTS = [importClipboard, importQuota, importEmoji, importSearch, importTimetracker];
 
 function App() {
   const entranceRef = useWindowEntrance(true, ["animate-in", "fade-in-0", "zoom-in-95"]);
@@ -249,6 +252,11 @@ function App() {
       {visited.has("search") && (
         <div className={active === "search" ? "h-full" : "hidden"}>
           <SearchPage />
+        </div>
+      )}
+      {visited.has("timetracker") && (
+        <div className={active === "timetracker" ? "h-full" : "hidden"}>
+          <TimetrackerPage />
         </div>
       )}
     </div>

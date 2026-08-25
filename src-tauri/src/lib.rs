@@ -2,7 +2,7 @@ mod config;
 mod migrate;
 mod modules;
 
-use config::{AppConfig, ConfigState};
+use config::ConfigState;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -13,45 +13,6 @@ use std::sync::{Mutex, OnceLock};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
-
-/// 共享 SQLite 连接池（避免各模块独立创建连接的开销）
-/// 注意：rusqlite::Connection 不是 Clone 的，所以每个模块仍然独立打开连接
-/// 但共享 WAL 模式和 busy_timeout 配置
-pub struct SqlitePool {
-    data_dir: std::path::PathBuf,
-}
-
-impl SqlitePool {
-    pub fn open(data_dir: &std::path::Path) -> Result<Self, String> {
-        // 预创建数据库文件并设置 WAL 模式
-        let clip_path = data_dir.join("clipboard.db");
-        let quota_path = data_dir.join("quota.db");
-        let apps_path = data_dir.join("apps.db");
-        
-        // 预创建数据库文件（如果不存在）
-        for path in &[&clip_path, &quota_path, &apps_path] {
-            if !path.exists() {
-                let conn = rusqlite::Connection::open(path)
-                    .map_err(|e| format!("Failed to create {}: {e}", path.display()))?;
-                conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;").ok();
-            }
-        }
-        
-        Ok(Self { data_dir: data_dir.to_path_buf() })
-    }
-    
-    pub fn clip_path(&self) -> std::path::PathBuf {
-        self.data_dir.join("clipboard.db")
-    }
-    
-    pub fn quota_path(&self) -> std::path::PathBuf {
-        self.data_dir.join("quota.db")
-    }
-    
-    pub fn apps_path(&self) -> std::path::PathBuf {
-        self.data_dir.join("apps.db")
-    }
-}
 
 /// 极简日志器：输出到 stderr + 日志文件（%APPDATA%/com.aliboder.easytool/easytool.log）
 struct SimpleLogger {
@@ -122,6 +83,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
+
     let icon = app.default_window_icon().cloned().expect("no window icon");
     TrayIconBuilder::new()
         .icon(icon)
@@ -265,11 +227,16 @@ fn emoji_enabled(app: &tauri::AppHandle) -> bool {
     module_enabled(app, "emoji")
 }
 
+fn timetracker_enabled(app: &tauri::AppHandle) -> bool {
+    module_enabled(app, "timetracker")
+}
+
 struct Hotkeys {
     unified: bool,
     clip_hotkey: String,
     search_hotkey: String,
     emoji_hotkey: String,
+    timetracker_hotkey: String,
     main_hotkey: String,
 }
 
@@ -280,14 +247,17 @@ struct ResolvedHotkeys {
     clip_enabled: bool,
     search_enabled: bool,
     emoji_enabled: bool,
+    timetracker_enabled: bool,
     clip: Option<Shortcut>,
     search: Option<Shortcut>,
     emoji: Option<Shortcut>,
+    timetracker: Option<Shortcut>,
     main: Option<Shortcut>,
     /// 原始字符串（注册接口需要 &str 参数）
     clip_str: Option<String>,
     search_str: Option<String>,
     emoji_str: Option<String>,
+    timetracker_str: Option<String>,
     main_str: Option<String>,
 }
 
@@ -301,13 +271,16 @@ fn refresh_resolved_hotkeys(app: &tauri::AppHandle) {
         clip_enabled: clipboard_enabled(app),
         search_enabled: search_enabled(app),
         emoji_enabled: emoji_enabled(app),
+        timetracker_enabled: timetracker_enabled(app),
         clip: Shortcut::from_str(&hk.clip_hotkey).ok(),
         search: Shortcut::from_str(&hk.search_hotkey).ok(),
         emoji: Shortcut::from_str(&hk.emoji_hotkey).ok(),
+        timetracker: Shortcut::from_str(&hk.timetracker_hotkey).ok(),
         main: Shortcut::from_str(&hk.main_hotkey).ok(),
         clip_str: Some(hk.clip_hotkey.clone()),
         search_str: Some(hk.search_hotkey.clone()),
         emoji_str: Some(hk.emoji_hotkey.clone()),
+        timetracker_str: Some(hk.timetracker_hotkey.clone()),
         main_str: Some(hk.main_hotkey),
     };
     *RESOLVED_HOTKEYS
@@ -348,11 +321,19 @@ fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Shift+J")
         .to_string();
+    let timetracker_hotkey = cfg
+        .modules
+        .get("timetracker")
+        .and_then(|m| m.get("hotkey"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Shift+T")
+        .to_string();
     Hotkeys {
         unified: cfg.unified_hotkey,
         clip_hotkey,
         search_hotkey,
         emoji_hotkey,
+        timetracker_hotkey,
         main_hotkey: cfg
             .hotkeys
             .get("main")
@@ -442,6 +423,17 @@ pub fn reapply_hotkeys(app: &tauri::AppHandle) {
                 }
             }
         }
+        if resolved.timetracker_enabled {
+            if let Some(hk) = &resolved.timetracker_str {
+                match app.global_shortcut().register(hk.as_str()) {
+                    Ok(_) => log::info!("timetracker hotkey registered: {hk}"),
+                    Err(e) => {
+                        log::error!("failed to register timetracker hotkey: {e}");
+                        notify_hotkey_failed(app, hk);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -503,6 +495,12 @@ pub fn run() {
                     {
                         log::info!("emoji hotkey matched, showing popup");
                         modules::emoji::on_hotkey(app);
+                    } else if !resolved.unified
+                        && resolved.timetracker_enabled
+                        && resolved.timetracker.as_ref().is_some_and(|s| s == shortcut)
+                    {
+                        log::info!("timetracker hotkey matched, showing popup");
+                        modules::timetracker::on_hotkey(app);
                     } else if resolved.main.as_ref().is_some_and(|s| s == shortcut) {
                         if resolved.unified {
                             log::info!("main hotkey toggling main window");
@@ -519,37 +517,33 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            // 1. 先用默认配置快速启动
-            let mut cfg = AppConfig::default();
+            // 并行加载配置和 manifests
+            let app_handle = app.handle().clone();
+            let cfg_handle = app_handle.clone();
+            let manifests_handle = app_handle.clone();
             
-            // 2. 异步加载 manifests（不阻塞 setup）
-            let manifests_handle = app.handle().clone();
+            let cfg_thread = std::thread::spawn(move || {
+                config::load_config(&cfg_handle)
+            });
+            
             let manifests_thread = std::thread::spawn(move || {
                 modules::load_manifests(&manifests_handle)
             });
             
-            // 3. 等待 manifests 加载完成（快速，通常 <50ms）
+            // 等待配置和 manifests 加载完成
+            let mut cfg = cfg_thread.join().unwrap_or_else(|e| {
+                log::error!("config load thread panicked: {:?}", e);
+                config::load_config(app.handle())
+            });
+            
             let manifests = manifests_thread.join().unwrap_or_else(|e| {
                 log::error!("manifests load thread panicked: {:?}", e);
                 modules::load_manifests(app.handle())
             });
             
-            // 4. 合并 manifests 到默认配置
             modules::merge_manifests(&mut cfg, &manifests);
             let _ = config::save_config(app.handle(), &cfg);
             app.manage(ConfigState(std::sync::Mutex::new(cfg)));
-            
-            // 5. 异步加载实际配置（不阻塞 setup，加载完成后自动更新 ConfigState）
-            config::load_config_async(app.handle().clone());
-            
-            // 6. 创建共享 SQLite 连接池
-            let data_dir = app.path().app_data_dir().unwrap();
-            if let Ok(pool) = SqlitePool::open(&data_dir) {
-                app.manage(pool);
-                log::info!("[setup] SQLite connection pool initialized");
-            } else {
-                log::error!("[setup] failed to initialize SQLite connection pool");
-            }
 
             // 旧数据一次性迁移（在模块 setup 之前，避免与剪贴板模块同时打开新库）
             migrate::run_migration(app.handle());
@@ -596,6 +590,17 @@ pub fn run() {
                 }))
             } else {
                 log::info!("[setup] emoji module disabled, skipping");
+                None
+            };
+
+            let timetracker_handle = if timetracker_enabled(app.handle()) {
+                log::info!("[setup] initializing timetracker module");
+                let app_clone = app.handle().clone();
+                Some(std::thread::spawn(move || {
+                    modules::timetracker::setup_from_handle(&app_clone)
+                }))
+            } else {
+                log::info!("[setup] timetracker module disabled, skipping");
                 None
             };
 
@@ -669,7 +674,7 @@ pub fn run() {
 
             build_tray(app)?;
 
-            // search/emoji 的 join 放后台线程：setup 内任何阻塞都会推迟事件循环启动
+            // search/emoji/timetracker 的 join 放后台线程：setup 内任何阻塞都会推迟事件循环启动
             // （即推迟首帧绘制）；二者实际工作在上方 spawn 时已并行开始，
             // 主窗口首屏只依赖剪贴板模块，前端首次访问对应页面时早已就绪
             std::thread::spawn(move || {
@@ -685,6 +690,13 @@ pub fn run() {
                         Ok(Ok(())) => {}
                         Ok(Err(e)) => log::error!("emoji module init failed: {e}"),
                         Err(e) => log::error!("emoji module thread panicked: {:?}", e),
+                    }
+                }
+                if let Some(handle) = timetracker_handle {
+                    match handle.join() {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => log::error!("timetracker module init failed: {e}"),
+                        Err(e) => log::error!("timetracker module thread panicked: {:?}", e),
                     }
                 }
             });
@@ -765,6 +777,31 @@ pub fn run() {
             modules::emoji::commands::get_emoji_thumb,
             modules::emoji::commands::apply_emoji,
             modules::emoji::commands::copy_custom_emoji,
+            modules::timetracker::commands::timetracker_get_today_stats,
+            modules::timetracker::commands::timetracker_get_week_stats,
+            modules::timetracker::commands::timetracker_get_month_stats,
+            modules::timetracker::commands::timetracker_get_day_stats,
+            modules::timetracker::commands::timetracker_get_day_overview,
+            modules::timetracker::commands::timetracker_get_daily_totals,
+            modules::timetracker::commands::timetracker_get_app_timeline,
+modules::timetracker::commands::timetracker_get_app_timeline_range,
+            modules::timetracker::commands::timetracker_get_app_detail,
+            modules::timetracker::commands::timetracker_today_top,
+            modules::timetracker::commands::timetracker_set_recording,
+            modules::timetracker::commands::timetracker_is_recording,
+modules::timetracker::commands::timetracker_set_category,
+modules::timetracker::commands::timetracker_delete_event,
+modules::timetracker::commands::timetracker_get_category_breakdown,
+modules::timetracker::commands::timetracker_list_rules,
+modules::timetracker::commands::timetracker_add_rule,
+modules::timetracker::commands::timetracker_update_rule,
+modules::timetracker::commands::timetracker_delete_rule,
+modules::timetracker::commands::timetracker_reapply_rules,
+modules::timetracker::commands::timetracker_list_apps,
+modules::timetracker::commands::timetracker_reset_app_category,
+modules::timetracker::commands::timetracker_get_week_overview,
+modules::timetracker::commands::timetracker_get_month_overview,
+modules::timetracker::commands::timetracker_get_category_breakdown_range,
         ])
         .on_window_event(|window, event| {
             match event {
@@ -780,6 +817,7 @@ pub fn run() {
                     if label == modules::clipboard::POPUP_WINDOW_LABEL
                         || label == modules::search::POPUP_WINDOW_LABEL
                         || label == modules::emoji::POPUP_WINDOW_LABEL
+                        || label == modules::timetracker::POPUP_WINDOW_LABEL
                     {
                         hide_after_blur_grace(window);
                     } else if label == MAIN_WINDOW_LABEL {

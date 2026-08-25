@@ -8,6 +8,7 @@ pub mod clipboard;
 pub mod emoji;
 pub mod quota;
 pub mod search;
+pub mod timetracker;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Manifest {

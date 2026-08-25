@@ -39,13 +39,13 @@ const TECHS = [siRust, siTauri, siReact, siTypescript, siTailwindcss, siVite, si
 const HIGHLIGHTS = [
   {
     icon: FlaskConical,
-    title: "36+ 后端单元测试",
-    body: "去重、自写守卫、数据迁移、热键解析等核心逻辑全覆盖。",
+    title: "61+ 后端单元测试",
+    body: "去重、自写守卫、数据迁移、热键解析、时长聚合等核心逻辑全覆盖。",
   },
   {
     icon: Cpu,
     title: "Win32 原生集成",
-    body: "WM_CLIPBOARDUPDATE 监听、SendInput 直输、全局热键注册，全部走系统级 API。",
+    body: "WM_CLIPBOARDUPDATE 监听、SendInput 直输、全局热键、前台窗口钩子，全部走系统级 API。",
   },
   {
     icon: Blocks,

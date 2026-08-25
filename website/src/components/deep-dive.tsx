@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { AppWindow, ClipboardList, Gauge, Search, Smile } from "lucide-react";
+import { Clock, ClipboardList, Gauge, Search, Smile } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Reveal } from "./reveal";
@@ -58,28 +58,28 @@ const MODULES: ModuleInfo[] = [
   {
     id: "search", name: "文件秒搜", icon: Search,
     tagline: "全盘文件，输入即达",
-    desc: "调用 Everything NTFS 索引引擎，毫秒级返回全盘文件名结果。",
+    desc: "调用 Everything NTFS 索引引擎，毫秒级返回全盘文件名结果；内置已安装应用中心。",
     features: [
       { icon: "⚡", text: "基于 Everything 引擎，文件名毫秒级返回" },
+      { icon: "🖥️", text: "「应用」Tab = 已安装应用中心，点击即启动" },
       { icon: "🔧", text: "正则、大小写、全字匹配、路径匹配随意组合" },
       { icon: "📐", text: "结果列与排序自定义，列表 / 网格双视图" },
-      { icon: "📄", text: "单次最多返回 200 条，支持缩略图预览" },
       { icon: "🔗", text: "复制路径自动进入剪贴板历史，跨模块联动" },
     ],
     meta: ["Ctrl+Shift+F", "Everything", "跟随鼠标", "DLL"],
   },
   {
-    id: "quicklaunch", name: "快速启动", icon: AppWindow,
-    tagline: "常用工具，一键直达",
-    desc: "应用、文件、文件夹、网址的快捷启动面板，支持拖拽排序和分组管理。",
+    id: "timetracker", name: "时长统计", icon: Clock,
+    tagline: "时间花在哪，一目了然",
+    desc: "自动记录前台软件使用时长，多维度排行 + 甘特时间线 + 应用分类，隐私本地存储。",
     features: [
-      { icon: "🚀", text: "支持应用、文件、文件夹、网址四种快捷方式" },
-      { icon: "🔀", text: "拖拽排序 + 分组管理，自定义布局" },
-      { icon: "📐", text: "网格 / 列表双视图，格子大小可调（48-96px）" },
-      { icon: "📥", text: "支持文件拖入添加、剪贴板粘贴路径" },
-      { icon: "📋", text: "右键菜单：打开 / 复制路径 / 重命名 / 删除" },
+      { icon: "⏱️", text: "今日 / 本周 / 本月总览，昨日对比一目了然" },
+      { icon: "📊", text: "应用排行：总时长 + 活跃时长双维度排序" },
+      { icon: "📈", text: "每日甘特时间线，翻看任意一天的分布" },
+      { icon: "🏷️", text: "自动分类（效率/资源/视听/学习/游戏），可自定义规则" },
+      { icon: "😴", text: "离开检测：无键鼠输入自动剔除 AFK 时间" },
     ],
-    meta: ["主面板内", "拖拽排序", "SQLite", "@dnd-kit"],
+    meta: ["Ctrl+Shift+T", "跟随鼠标", "SQLite", "Win32 钩子"],
   },
 ];
 

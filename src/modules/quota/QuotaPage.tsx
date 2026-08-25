@@ -1,5 +1,5 @@
-// 额度监控面板：摘要条 + DeepSeek/Go 账户分区 + 设置抽屉
-// 历史图表统一在卡片展开内，设置改侧滑抽屉不整页切换
+// 额度监控面板：单一滚动视图，按供应商分组展示账户卡片。
+// 供应商无关（registry 驱动），新供应商自动长出分组；设置走侧滑抽屉。
 
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -8,8 +8,8 @@ import { Settings2, RefreshCw } from "lucide-react";
 import { Drawer } from "@/components/ui/drawer";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { QuotaSettings } from "./QuotaSettings";
-import { QuotaSummary } from "./quota-summary";
-import { DeepseekCard, GoCard, type AccountStatusPayload } from "./quota-cards";
+import { AccountCard } from "./quota-cards";
+import { type AccountStatusPayload, getKindMeta, knownKinds } from "./registry";
 
 interface StatusPayload {
   accounts: AccountStatusPayload[];
@@ -25,13 +25,7 @@ export function QuotaPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<number | null>(null);
-  const [panel, setPanel] = useState("overview");
 
-  const dsAccounts = status?.accounts.filter((a) => a.kind === "deepseek") ?? [];
-  const goAccounts = status?.accounts.filter((a) => a.kind === "go") ?? [];
-
-  // 状态走后端 fetch 后 emit 的 quota://updated 事件驱动；设置（含 keyring 读取）
-  // 只在挂载和手动/保存后拉取，不再固定 5 秒轮询
   const refreshStatus = useCallback(() => {
     invoke<StatusPayload>("get_status").then(setStatus).catch(console.error);
     setLastRefresh(Date.now());
@@ -50,8 +44,19 @@ export function QuotaPage() {
     };
   }, [refreshAll, refreshStatus]);
 
-  const threshold = settings?.warn_threshold ?? 10;
-  const critical = settings?.critical_threshold ?? threshold / 2;
+  const thresholds = {
+    threshold: settings?.warn_threshold ?? 10,
+    critical: settings?.critical_threshold ?? (settings?.warn_threshold ?? 10) / 2,
+  };
+
+  // 按 kind 分组账户（仅含注册表已知的 kind，按 order 排序），组标题带供应商图标
+  const groups = knownKinds()
+    .map((kind) => ({
+      kind,
+      meta: getKindMeta(kind),
+      accounts: status?.accounts.filter((a) => a.kind === kind) ?? [],
+    }))
+    .filter((g) => g.accounts.length > 0);
 
   return (
     <div className="relative flex h-full flex-col">
@@ -82,69 +87,38 @@ export function QuotaPage() {
             </HeaderButton>
           </>
         }
-        tabs={[
-          { id: "overview", label: "总览" },
-          { id: "deepseek", label: "DeepSeek" },
-          { id: "go", label: "OpenCode Go" },
-        ]}
-        activeTab={panel}
-        onTabChange={setPanel}
       />
 
       <div className="flex-1 overflow-y-auto">
-        <div className="space-y-6 p-6">
-          {panel === "overview" && (
-            <QuotaSummary
-              accounts={status?.accounts ?? []}
-              loading={status == null}
-              threshold={threshold}
-              critical={critical}
-            />
-          )}
-
-          {panel === "deepseek" && (
-            <section>
-              {status == null ? (
-                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  加载中...
+        <div className="space-y-8 p-6">
+          {status == null ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              加载中...
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              暂无账户，点击右上角 ⚙ 添加
+            </div>
+          ) : (
+            groups.map((g) => (
+              <section key={g.kind}>
+                <div className="mb-3 flex items-center gap-2">
+                  <g.meta.icon className="size-4 text-muted-foreground" />
+                  <h3 className="text-sm font-semibold">{g.meta.name}</h3>
+                  <span className="text-xs text-muted-foreground">{g.accounts.length} 个账户</span>
                 </div>
-              ) : dsAccounts.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  暂无 DeepSeek 账户，点击右上角 ⚙ 添加
-                </div>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {dsAccounts.map((acc) => (
-                    <DeepseekCard
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {g.accounts.map((acc) => (
+                    <AccountCard
                       key={acc.id}
                       account={acc}
-                      threshold={threshold}
-                      critical={critical}
+                      threshold={thresholds.threshold}
+                      critical={thresholds.critical}
                     />
                   ))}
                 </div>
-              )}
-            </section>
-          )}
-
-          {panel === "go" && (
-            <section>
-              {status == null ? (
-                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  加载中...
-                </div>
-              ) : goAccounts.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                  暂无 Go 账户，点击右上角 ⚙ 添加
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {goAccounts.map((acc) => (
-                    <GoCard key={acc.id} account={acc} />
-                  ))}
-                </div>
-              )}
-            </section>
+              </section>
+            ))
           )}
         </div>
       </div>

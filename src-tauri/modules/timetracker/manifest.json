@@ -1,0 +1,13 @@
+{
+  "id": "timetracker",
+  "name": "时长统计",
+  "icon": "clock",
+  "enabled": true,
+  "description": "自动记录电脑软件使用时长，支持统计分析和可视化",
+  "default_config": {
+    "trackWindowTitle": true,
+    "afkThresholdSec": 120,
+    "topN": 10,
+    "hotkey": "Ctrl+Shift+T"
+  }
+}

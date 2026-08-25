@@ -14,6 +14,8 @@ const TREE: [string, string][] = [
   ["images\\", "图片原文"],
   ["thumbs\\", "缩略图缓存"],
   ["balance_history_*.json", "额度消费历史（按账户分文件）"],
+  ["timetracker.db", "软件使用时长 · SQLite WAL"],
+  ["apps.db", "已安装应用使用频率"],
 ];
 
 const COMPARE = [

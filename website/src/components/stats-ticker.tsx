@@ -5,7 +5,7 @@ const STATS = [
   { value: 500, label: "条剪贴板历史", unit: "" },
   { value: 1900, label: "内置表情", unit: "+" },
   { value: 200, label: "单次搜索结果", unit: "" },
-  { value: 36, label: "Rust 单元测试", unit: "+" },
+  { value: 61, label: "Rust 单元测试", unit: "+" },
   { value: 5, label: "功能模块", unit: "" },
 ];
 

@@ -41,7 +41,8 @@ const PILLARS = [
     code: `Ctrl+Shift+E  →  主面板
 Ctrl+Shift+V  →  剪贴板
 Ctrl+Shift+J  →  表情
-Ctrl+Shift+F  →  文件搜索`,
+Ctrl+Shift+F  →  文件搜索
+Ctrl+Shift+T  →  时长统计`,
   },
 ];
 

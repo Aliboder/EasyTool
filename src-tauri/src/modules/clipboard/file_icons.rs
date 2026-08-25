@@ -1,8 +1,7 @@
 //! 文件类型图标（Windows Shell，与资源管理器一致）与图片缩略图提取
 
 use super::monitor::base64_encode;
-use lru::LruCache;
-use std::num::NonZeroUsize;
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Gdi::{
@@ -15,26 +14,22 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
 
 /// 按路径缓存图标 base64（None = 提取失败，不再重试）
-static ICON_CACHE: OnceLock<Mutex<LruCache<String, Option<String>>>> = OnceLock::new();
+static ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
 /// 按路径缓存缩略图/大预览 base64（避免同一文件反复解码，上限 200 防内存膨胀）
-static THUMB_CACHE: OnceLock<Mutex<LruCache<String, Option<String>>>> = OnceLock::new();
-static PREVIEW_CACHE: OnceLock<Mutex<LruCache<String, Option<String>>>> = OnceLock::new();
+static THUMB_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+static PREVIEW_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+const CACHE_MAX: usize = 200;
 
-const ICON_CACHE_MAX: usize = 200;
-const THUMB_CACHE_MAX: usize = 200;
-const PREVIEW_CACHE_MAX: usize = 100; // 大预览图更占内存，上限更低
-
-/// 带容量上限的缓存读取/写入（LRU 策略）
+/// 带容量上限的缓存读取/写入（超出删最旧，迭代顺序 = 插入顺序）
 fn cache_get_or_insert(
-    cache: &OnceLock<Mutex<LruCache<String, Option<String>>>>,
+    cache: &OnceLock<Mutex<HashMap<String, Option<String>>>>,
     key: &str,
-    max_size: usize,
     compute: impl FnOnce() -> Option<String>,
 ) -> Option<String> {
     // 先查缓存
     {
-        let mut map = cache
-            .get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(max_size).unwrap())))
+        let map = cache
+            .get_or_init(|| Mutex::new(HashMap::new()))
             .lock()
             .unwrap();
         if let Some(v) = map.get(key) {
@@ -47,10 +42,15 @@ fn cache_get_or_insert(
     // 二次加锁写入
     {
         let mut map = cache
-            .get_or_init(|| Mutex::new(LruCache::new(NonZeroUsize::new(max_size).unwrap())))
+            .get_or_init(|| Mutex::new(HashMap::new()))
             .lock()
             .unwrap();
-        map.put(key.to_string(), v.clone());
+        if map.len() >= CACHE_MAX {
+            if let Some(old) = map.keys().next().cloned() {
+                map.remove(&old);
+            }
+        }
+        map.insert(key.to_string(), v.clone());
     }
     v
 }
@@ -59,11 +59,43 @@ fn cache_get_or_insert(
 /// 优先访问真实文件取「格式专属图标」（如 txt/图片/exe 各自独立图标）；
 /// 文件不存在时回退按扩展名取关联图标，保证始终有图标显示
 pub fn file_icon_png(path: &str) -> Option<String> {
-    cache_get_or_insert(&ICON_CACHE, path, ICON_CACHE_MAX, || {
+    cache_get_or_insert(&ICON_CACHE, path, || {
+        // `\\?\` 设备路径前缀会让 SHGetFileInfoW 直接取不到图标（返回 None），
+        // 而前端把 null 永久缓存为"缺"导致图标一直空着。转成常规路径再提取。
+        let path = path.strip_prefix(r"\\?\").unwrap_or(path);
         let png = unsafe { extract_icon(path, false) }
-            .or_else(|| unsafe { extract_icon(path, true) })?;
+            .or_else(|| unsafe { extract_icon(path, true) })
+            .or_else(generic_icon_png)?;
         Some(base64_encode(&png))
     })
+}
+
+/// 兜底通用图标：SHGetFileInfoW 对失效/受限路径可能失败（且行为不稳定），
+/// 一旦返回 None，前端会永久缓存为"缺"、图标就一直空着。
+/// 用 image 直接生成一个中性窗口图标确保永不空白。
+fn generic_icon_png() -> Option<Vec<u8>> {
+    let (w, h) = (32u32, 32u32);
+    let mut img = image::RgbaImage::from_pixel(w, h, image::Rgba([219, 224, 231, 255]));
+    let border = image::Rgba([150, 159, 172, 255]);
+    let title = image::Rgba([178, 187, 200, 255]);
+    let body = image::Rgba([196, 203, 213, 255]);
+    for y in 4..28 {
+        for x in 4..28 {
+            let p = if x < 5 || x > 26 || y < 5 || y > 26 {
+                border
+            } else if y < 10 {
+                title
+            } else {
+                body
+            };
+            img.put_pixel(x, y, p);
+        }
+    }
+    let mut buf = Vec::new();
+    image::DynamicImage::ImageRgba8(img)
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+        .ok()?;
+    Some(buf)
 }
 
 /// 通过 SHGetFileInfo 拿 HICON，再提取像素编码 PNG
@@ -171,7 +203,7 @@ unsafe fn read_icon_pixels(
 
 /// 图片文件缩略图（PNG base64，最长边 256，保持比例；按路径缓存）
 pub fn file_thumb_png(path: &str) -> Option<String> {
-    cache_get_or_insert(&THUMB_CACHE, path, THUMB_CACHE_MAX, || {
+    cache_get_or_insert(&THUMB_CACHE, path, || {
         let img = image::open(path).ok()?;
         let thumb = img.thumbnail(256, 256);
         let mut buf = Vec::new();
@@ -184,7 +216,7 @@ pub fn file_thumb_png(path: &str) -> Option<String> {
 
 /// 图片文件大预览（PNG base64，最长边 1024，保持比例；悬停预览用，按路径缓存）
 pub fn file_preview_png(path: &str) -> Option<String> {
-    cache_get_or_insert(&PREVIEW_CACHE, path, PREVIEW_CACHE_MAX, || {
+    cache_get_or_insert(&PREVIEW_CACHE, path, || {
         let img = image::open(path).ok()?;
         let preview = img.thumbnail(1024, 1024);
         let mut buf = Vec::new();
@@ -216,5 +248,33 @@ mod tests {
         }
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(seen.len() > 1, "图标应按格式区分，而非全部通用");
+    }
+
+    /// 应用排行的 exe 路径常随卸载/更新失效，或位于受限目录（WindowsApps/systemapps）：
+    /// 无论路径存在与否、是否受限，都必须回退到通用图标（不为 None），
+    /// 否则前端把 null 永久缓存为"缺"，排行里该应用图标就一直空着
+    #[test]
+    fn stale_path_returns_generic_icon() {
+        for p in [
+            r"C:\nonexistent\GoneApp.exe",
+            r"C:\Windows\System32\explorer.exe",
+            "noext_gone",
+            r"\\?\C:\weird\path.file",
+            // 实际录到的受限/可疑路径样本
+            r"C:\Program Files\WindowsApps\4651ed44255e.47979655102ce_3.1.2025.0_x64__k6txddmbb6c52\steam++.exe",
+            r"C:\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\SearchHost.exe",
+            r"C:\Windows\System32\shellhost.exe",
+            r"C:\Users\aliboder\AppData\Local\Temp\geek64.exe",
+        ] {
+            let got = file_icon_png(p);
+            assert!(
+                got.is_some(),
+                "失效路径 `{p}` 应回退到通用图标（非 None）"
+            );
+            assert!(
+                got.as_ref().unwrap().len() > 100,
+                "`{p}` 通用图标过小"
+            );
+        }
     }
 }

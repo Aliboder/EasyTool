@@ -1,6 +1,7 @@
 //! 额度监控 SQLite 存储：余额历史 / Go 快照 / Go 重置周期。
 //! 连接用 Mutex 串行化（rusqlite::Connection 非 Sync），与剪贴板模块 Db 同一模式。
 
+use chrono::NaiveDate;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -196,6 +197,48 @@ impl QuotaDb {
             )
             .map(|_| ())
             .map_err(|e| e.to_string())
+    }
+
+    // ---------- 消费统计（SQL 聚合，轮询热路径用，避免全量 load+遍历） ----------
+
+    /// 今日消费 + 近 7 天日均消费（不含今天）。
+    /// 「消费」= 上一记录余额 - 本记录余额（仅计下降量）；语义与
+    /// history::today_spend / avg_daily_spent 一致，tests::spend_stats_matches_pure 交叉校验。
+    pub fn spend_stats(&self, account_id: &str, today: NaiveDate) -> DbResult<(f64, f64)> {
+        let today_s = today.format("%Y-%m-%d").to_string();
+        let start_s = (today - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+        let today_spend: f64 = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(SUM(prev_balance - balance), 0) FROM (
+                    SELECT balance, LAG(balance) OVER (ORDER BY time ASC) AS prev_balance, time
+                    FROM balance_history WHERE account_id = ?1
+                 ) WHERE prev_balance IS NOT NULL AND balance < prev_balance
+                   AND date(time/1000, 'unixepoch', 'localtime') = ?2",
+                params![account_id, today_s],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let (spent, days): (f64, i64) = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(SUM(prev_balance - balance), 0),
+                        (SELECT COUNT(DISTINCT date(time/1000, 'unixepoch', 'localtime'))
+                         FROM balance_history WHERE account_id = ?1
+                           AND date(time/1000, 'unixepoch', 'localtime') >= ?2
+                           AND date(time/1000, 'unixepoch', 'localtime') < ?3)
+                 FROM (
+                    SELECT balance, LAG(balance) OVER (ORDER BY time ASC) AS prev_balance, time
+                    FROM balance_history WHERE account_id = ?1
+                 ) WHERE prev_balance IS NOT NULL AND balance < prev_balance
+                   AND date(time/1000, 'unixepoch', 'localtime') >= ?2
+                   AND date(time/1000, 'unixepoch', 'localtime') < ?3",
+                params![account_id, start_s, today_s],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|e| e.to_string())?;
+        let avg = if days == 0 { 0.0 } else { spent / days as f64 };
+        Ok((today_spend, avg))
     }
 
     // ---------- Go 快照 ----------
@@ -430,6 +473,34 @@ mod tests {
         let rows = db.load_balance("a").unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].0, 3000);
+    }
+
+    #[test]
+    fn spend_stats_matches_pure() {
+        use chrono::{Duration, Local, TimeZone};
+        let db = mem();
+        let today = Local::now().date_naive();
+        let mk = |date: NaiveDate| {
+            Local
+                .from_local_datetime(&date.and_hms_opt(12, 0, 0).unwrap())
+                .earliest()
+                .map(|dt| dt.timestamp_millis())
+                .unwrap_or(0)
+        };
+        // 消费序列：100(3天前) → 90(2天前) → 85(昨天) → 70(今天)
+        db.append_balance("a", 100.0, 1.0, 99.0, mk(today - Duration::days(3))).unwrap();
+        db.append_balance("a", 90.0, 1.0, 89.0, mk(today - Duration::days(2))).unwrap();
+        db.append_balance("a", 85.0, 1.0, 84.0, mk(today - Duration::days(1))).unwrap();
+        db.append_balance("a", 70.0, 1.0, 69.0, mk(today)).unwrap();
+        let (ts, avg) = db.spend_stats("a", today).unwrap();
+        assert!((ts - 15.0).abs() < 1e-9); // 今天 85→70
+        assert!((avg - 5.0).abs() < 1e-9); // 3 个有数据日消费 15，日均 5
+        // 与纯函数交叉校验
+        let records = crate::modules::quota::history::load(&db, "a");
+        assert!((crate::modules::quota::history::today_spend(&records, today) - ts).abs() < 1e-9);
+        assert!(
+            (crate::modules::quota::history::avg_daily_spent(&records, 7, today) - avg).abs() < 1e-9
+        );
     }
 
     #[test]

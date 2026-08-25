@@ -1,4 +1,4 @@
-import { AppWindow, ClipboardList, Gauge, Search, Smile } from "lucide-react";
+import { Clock, ClipboardList, Gauge, Search, Smile } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useRef } from "react";
@@ -8,7 +8,7 @@ import { MiniClipboard } from "./minis/clipboard";
 import { MiniQuota } from "./minis/quota";
 import { MiniEmoji } from "./minis/emoji";
 import { MiniSearch } from "./minis/search";
-import { MiniQuicklaunch } from "./minis/quicklaunch";
+import { MiniTimetracker } from "./minis/timetracker";
 
 function Card({
   icon: Icon,
@@ -101,12 +101,12 @@ export function Bento() {
         </Card>
 
         <Card
-          icon={AppWindow}
-          title="快速启动"
-          desc="应用、文件、文件夹、网址，拖拽排序一键直达。"
+          icon={Clock}
+          title="时长统计"
+          desc="自动记录软件使用时长，今日/本周/本月排行与时间线，一览无余。"
           accent
         >
-          <MiniQuicklaunch />
+          <MiniTimetracker />
         </Card>
       </div>
 
@@ -115,7 +115,7 @@ export function Bento() {
         <Card
           icon={Search}
           title="文件秒搜"
-          desc="Everything 全文引擎，输入即出结果（需安装 Everything）。"
+          desc="Everything 全文引擎 + 已安装应用中心，输入即出结果（需安装 Everything）。"
         >
           <MiniSearch />
         </Card>

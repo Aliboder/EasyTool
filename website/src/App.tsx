@@ -22,27 +22,29 @@ export default function App() {
     <ToastProvider>
       <ScrollProgress />
       <Nav />
-      <main>
-        <Hero />
-        <StatsTicker />
-        <TechMarquee />
-        <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-b from-zinc-900/50 to-transparent pointer-events-none" />
-          <Bento />
+      <main className="relative">
+        <div className="relative z-10">
+          <Hero />
+          <StatsTicker />
+          <TechMarquee />
+          <div className="relative">
+            <div className="absolute inset-0 bg-gradient-to-b from-zinc-900/50 to-transparent pointer-events-none" />
+            <Bento />
+          </div>
+          <DeepDive />
+          <div className="section-divider mx-auto max-w-6xl" />
+          <Hotkeys />
+          <div className="section-divider mx-auto max-w-6xl" />
+          <Pillars />
+          <LocalData />
+          <DevZone />
+          <Screenshots />
+          <Changelog />
+          <div className="section-divider mx-auto max-w-6xl" />
+          <Faq />
+          <Download />
+          <VersionBar />
         </div>
-        <DeepDive />
-        <div className="section-divider mx-auto max-w-6xl" />
-        <Hotkeys />
-        <div className="section-divider mx-auto max-w-6xl" />
-        <Pillars />
-        <LocalData />
-        <DevZone />
-        <Screenshots />
-        <Changelog />
-        <div className="section-divider mx-auto max-w-6xl" />
-        <Faq />
-        <Download />
-        <VersionBar />
       </main>
       <Footer />
     </ToastProvider>

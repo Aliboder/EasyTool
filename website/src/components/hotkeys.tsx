@@ -17,6 +17,7 @@ const HOTKEYS: Hotkey[] = [
   { action: "剪贴板", keys: ["Ctrl", "Shift", "V"], desc: "直接呼出剪贴板弹窗，跟随鼠标。搜索、固定、复制一步到位。", toast: "剪贴板弹窗", module: "剪贴板历史", color: "text-blue-400", colorBg: "bg-blue-500/15" },
   { action: "表情面板", keys: ["Ctrl", "Shift", "J"], desc: "弹出表情选择器，分类浏览 + 收藏夹，选中即直输到当前输入框。", toast: "表情面板已呼出", module: "表情面板", color: "text-amber-400", colorBg: "bg-amber-500/15" },
   { action: "文件搜索", keys: ["Ctrl", "Shift", "F"], desc: "调用 Everything 引擎秒搜全盘文件名，结果支持复制路径/直接打开。", toast: "文件搜索已就绪", module: "文件秒搜", color: "text-cyan-400", colorBg: "bg-cyan-500/15" },
+  { action: "时长统计", keys: ["Ctrl", "Shift", "T"], desc: "呼出时长统计弹窗，查看今日/本周/本月排行与时间线。", toast: "时长统计已呼出", module: "时长统计", color: "text-violet-400", colorBg: "bg-violet-500/15" },
 ];
 
 const KB_ROWS = [

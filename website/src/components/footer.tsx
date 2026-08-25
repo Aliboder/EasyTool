@@ -14,13 +14,13 @@ export function Footer() {
               EASYTOOL
             </p>
             <p className="mt-2 max-w-[280px] text-sm leading-relaxed text-zinc-500">
-              Windows 效率工具箱——剪贴板历史、AI 额度监控、表情面板、文件秒搜、快速启动。本地优先，开源免费。
+              Windows 效率工具箱——剪贴板历史、AI 额度监控、表情面板、文件秒搜、时长统计。本地优先，开源免费。
             </p>
             <div className="mt-4 flex items-center gap-3">
               <a href={REPO} target="_blank" rel="noreferrer" className="flex size-8 items-center justify-center rounded-lg border border-white/10 text-zinc-400 transition-colors hover:border-emerald-500/50 hover:text-white">
                 <Github className="size-4" />
               </a>
-              <span className="text-xs text-zinc-600">MIT License · v0.4.5</span>
+              <span className="text-xs text-zinc-600">MIT License · v0.6.0</span>
             </div>
           </div>
 

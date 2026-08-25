@@ -1,53 +1,57 @@
-// 额度监控账户卡片组件（DeepSeek / OpenCode Go）与迷你图表
-// 从 QuotaPage.tsx 拆出，职责单一：卡片渲染
+// 账户卡片：按供应商指标形态（balance / usage）分派渲染。全部字段来自后端真实数据。
+// AccountCard 提供共享 Card + 头部（图标/名称/徽章）；BalanceCard / UsageCard 只渲染内容体。
 
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Wallet, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import {
+  getKindMeta,
+  type AccountStatusPayload,
+  type GoPoint,
+  type GoQuotaPayload,
+  type StatsPayload,
+  fmtMoney,
+  WINDOW_NAMES,
+} from "./registry";
+import { AreaTrend, DailyBars, Ring } from "./charts";
 
-export interface GoQuotaPayload {
-  window: string;
-  used_percent: number;
-  resets_at: number | null;
+function StatusBadge({
+  account,
+  threshold,
+  critical,
+}: {
+  account: AccountStatusPayload;
+  threshold: number;
+  critical: number;
+}) {
+  const b = account.balance;
+  if (b == null) {
+    if (account.kind === "go" && account.go_windows.length) {
+      return <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-600">监控中</span>;
+    }
+    return (
+      <span
+        className={cn(
+          "rounded px-1.5 py-0.5 text-xs font-medium",
+          account.error ? "bg-orange-500/15 text-orange-600" : "bg-muted text-muted-foreground",
+        )}
+      >
+        {account.error ? "查询出错" : "未配置"}
+      </span>
+    );
+  }
+  const cls =
+    b < critical
+      ? "bg-red-500/15 text-red-600"
+      : b < threshold
+        ? "bg-orange-500/15 text-orange-600"
+        : "bg-emerald-500/15 text-emerald-600";
+  const label = b < critical ? "告急" : b < threshold ? "偏低" : "正常";
+  return <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium", cls)}>{label}</span>;
 }
 
-export interface AccountStatusPayload {
-  id: string;
-  kind: string;
-  name: string;
-  balance: number | null;
-  granted: number;
-  topped_up: number;
-  available: boolean;
-  error: string | null;
-  go_windows: GoQuotaPayload[];
-}
-
-export const WINDOW_NAMES: Record<string, string> = {
-  session: "滚动用量",
-  weekly: "每周用量",
-  monthly: "每月用量",
-};
-
-export function fmtMoney(n: number): string {
-  return `¥${n.toFixed(2)}`;
-}
-
-function fmtCountdown(ts: number | null): string {
-  if (!ts) return "—";
-  const diff = ts * 1000 - Date.now();
-  if (diff <= 0) return "即将重置";
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  if (d > 0) return `${d} 天 ${h} 小时 ${m} 分钟`;
-  if (h > 0) return `${h} 小时 ${m} 分钟`;
-  return `${m} 分钟`;
-}
-
-// 每秒刷新的倒计时：独立组件，只重渲染自身，避免整页每秒重渲染
 function Countdown({ ts }: { ts: number | null }) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -55,288 +59,174 @@ function Countdown({ ts }: { ts: number | null }) {
     const t = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [ts]);
-  return <span className="font-semibold text-primary">{fmtCountdown(ts)}</span>;
+  if (!ts) return <span>—</span>;
+  const diff = ts * 1000 - Date.now();
+  if (diff <= 0) return <span>即将重置</span>;
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  if (d > 0) return <span>{d} 天 {h} 小时</span>;
+  if (h > 0) return <span>{h} 小时 {m} 分</span>;
+  return <span>{m} 分</span>;
 }
 
-function AccountBadge({
-  account,
-  threshold,
-  critical,
-}: {
+/** 余额型内容体（DeepSeek）：渐变余额头 + 近7天消费趋势 */
+function BalanceBody({ account, threshold, critical }: {
   account: AccountStatusPayload;
   threshold: number;
   critical: number;
 }) {
-  const low = account.balance != null && account.balance < critical;
-  const lowish = account.balance != null && account.balance < threshold;
-  const label =
-    account.balance == null
-      ? account.error
-        ? "查询出错"
-        : "未配置"
-      : low
-        ? "告急"
-        : lowish
-          ? "偏低"
-          : "正常";
-  const cls =
-    account.balance == null
-      ? account.error
-        ? "bg-orange-500/15 text-orange-600"
-        : "bg-muted text-muted-foreground"
-      : low
-        ? "bg-red-500/15 text-red-600"
-        : lowish
-          ? "bg-orange-500/15 text-orange-600"
-          : "bg-emerald-500/15 text-emerald-600";
-  return <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium", cls)}>{label}</span>;
-}
-
-// 该账户每日消费迷你柱状图（点击卡片展开）
-function MiniDailyBars({ accountId }: { accountId: string }) {
-  const [data, setData] = useState<{ date: string; amount: number }[] | null>(null);
-  useEffect(() => {
-    invoke<{ date: string; amount: number }[]>("get_daily_history", { accountId })
-      .then(setData)
-      .catch(console.error);
-  }, [accountId]);
-  if (!data) {
-    return (
-      <div className="mt-2 flex h-16 items-center justify-center text-xs text-muted-foreground">
-        加载中...
-      </div>
-    );
-  }
-  if (!data.length) {
-    return (
-      <div className="mt-2 flex h-16 items-center justify-center text-xs text-muted-foreground">
-        暂无历史数据
-      </div>
-    );
-  }
-  const max = Math.max(1, ...data.map((d) => d.amount));
-  const recent = data.slice(-30);
-  return (
-    <div className="mt-2 flex h-16 items-end gap-0.5">
-      {recent.map((d, i) => (
-        <div
-          key={i}
-          className="min-w-0 flex-1 rounded-t bg-primary/25 transition-colors hover:bg-primary/40"
-          style={{ height: `${Math.max(3, (d.amount / max) * 100)}%` }}
-          title={`${d.date} · ${fmtMoney(d.amount)}`}
-        />
-      ))}
-    </div>
-  );
-}
-
-// Go 窗口利用率趋势（点击窗口展开）
-function GoSparkline({
-  accountId,
-  window,
-  days = 7,
-}: {
-  accountId: string;
-  window: string;
-  days?: number;
-}) {
-  const [points, setPoints] = useState<{ time: number; used_percent: number }[] | null>(null);
-  useEffect(() => {
-    invoke<{ time: number; used_percent: number }[]>("get_go_history", {
-      accountId,
-      window,
-      days,
-    })
-      .then(setPoints)
-      .catch(console.error);
-  }, [accountId, window, days]);
-  if (!points) {
-    return (
-      <div className="flex h-10 items-center justify-center text-[10px] text-muted-foreground">
-        加载中...
-      </div>
-    );
-  }
-  if (points.length < 2) {
-    return (
-      <div className="flex h-10 items-center justify-center text-[10px] text-muted-foreground">
-        暂无趋势数据（新周期开始后出现）
-      </div>
-    );
-  }
-  // y 轴自动缩放到数据范围（带余量），窄区间变化才看得见；恒定值画在带余量的中间
-  const vals = points.map((p) => p.used_percent);
-  const rawMin = Math.min(...vals);
-  const rawMax = Math.max(...vals);
-  let lo = rawMin - (rawMax - rawMin) * 0.25;
-  let hi = rawMax + (rawMax - rawMin) * 0.25;
-  if (hi - lo < 8) {
-    lo = rawMin - 4;
-    hi = rawMax + 4;
-  }
-  lo = Math.max(0, lo);
-  hi = Math.min(100, hi);
-  if (hi - lo < 1) hi = Math.min(100, lo + 1);
-  const span = hi - lo;
-
-  const W = 200;
-  const H = 40;
-  const step = W / (points.length - 1);
-  const pts = points.map(
-    (p, i) => `${(i * step).toFixed(1)},${(H - ((p.used_percent - lo) / span) * H).toFixed(1)}`,
-  );
-  const path = `M ${pts.join(" L ")}`;
-  const area = `${path} L ${W},${H} L 0,${H} Z`;
-
-  const last = vals[vals.length - 1];
-  return (
-    <div className="mt-1">
-      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>
-          当前 <span className="font-semibold text-foreground">{last}%</span>
-        </span>
-        <span>
-          区间 {rawMin}%–{rawMax}%
-        </span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-10 w-full" preserveAspectRatio="none">
-        <path d={area} className="fill-primary/15" />
-        <path
-          d={path}
-          className="fill-none stroke-primary"
-          strokeWidth={1.5}
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-    </div>
-  );
-}
-
-export function DeepseekCard({
-  account,
-  threshold,
-  critical,
-}: {
-  account: AccountStatusPayload;
-  threshold: number;
-  critical: number;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  // 每卡自取近 7 天日均（燃尽率），不再依赖父级选中账户
-  const [avg7, setAvg7] = useState<number | null>(null);
+  const [stats, setStats] = useState<StatsPayload | null>(null);
   useEffect(() => {
     let alive = true;
-    invoke<{ today: number; avg_7d: number }>("get_stats_data", { accountId: account.id })
-      .then((s) => alive && setAvg7(s.avg_7d))
+    invoke<StatsPayload>("get_stats_data", { accountId: account.id })
+      .then((s) => alive && setStats(s))
       .catch(() => {});
     return () => {
       alive = false;
     };
   }, [account.id]);
+
+  const alert = account.balance != null && account.balance < critical;
+  const low = account.balance != null && account.balance >= critical && account.balance < threshold;
+  const accent = alert
+    ? "from-red-500/90 to-rose-600/70"
+    : low
+      ? "from-orange-500/90 to-amber-600/70"
+      : "from-primary to-primary/60";
+  const numCls = alert ? "text-red-50" : low ? "text-orange-50" : "text-primary-foreground";
   const days =
-    avg7 != null && avg7 > 0 && account.balance != null
-      ? Math.floor(account.balance / avg7)
-      : null;
+    stats && stats.avg_7d > 0 && account.balance != null ? Math.floor(account.balance / stats.avg_7d) : null;
+
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Wallet className="size-4 text-muted-foreground" />
-          {account.name}
-          <AccountBadge account={account} threshold={threshold} critical={critical} />
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? "收起" : "展开消费历史"}
-            title={expanded ? "收起" : "查看消费历史"}
-            className="ml-auto rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-          </button>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-semibold">
+    <div>
+      {/* 渐变余额头 */}
+      <div className={cn("rounded-xl bg-gradient-to-br px-4 pt-3 pb-3", accent)}>
+        <div className={cn("text-[11px] opacity-90", numCls)}>余额</div>
+        <div className={cn("mt-0.5 text-3xl font-bold tracking-tight tabular-nums", numCls)}>
           {account.balance != null ? fmtMoney(account.balance) : "—"}
         </div>
-        <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
-          <span>赠送 {fmtMoney(account.granted)}</span>
-          <span>充值 {fmtMoney(account.topped_up)}</span>
+        <div className={cn("mt-1 flex flex-wrap gap-3 text-[11px] opacity-90", numCls)}>
+          {account.granted > 0 && <span>赠送 {fmtMoney(account.granted)}</span>}
+          {account.topped_up > 0 && <span>充值 {fmtMoney(account.topped_up)}</span>}
+          {days != null && <span>约 {days} 天耗尽</span>}
         </div>
-        {account.balance != null &&
-          (days != null ? (
-            <div className="mt-1 text-xs text-muted-foreground">
-              按近期日均消费 ¥{avg7!.toFixed(2)} 可用约{" "}
-              <span className="font-medium text-foreground">{days}</span> 天
-            </div>
-          ) : (
-            <div className="mt-1 text-xs text-muted-foreground">暂无足够历史数据计算日均消费</div>
-          ))}
-        {expanded && <MiniDailyBars accountId={account.id} />}
+      </div>
+      {/* 近7天消费 */}
+      <div className="mt-3">
+        <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>近 7 天消费</span>
+          {stats && <span className="font-medium text-foreground">今日 {fmtMoney(stats.today)}</span>}
+        </div>
+        {stats && stats.daily.length > 0 ? (
+          <DailyBars data={stats.daily} days={7} className="h-12" />
+        ) : (
+          <div className="flex h-12 items-center justify-center text-xs text-muted-foreground">
+            暂无历史
+          </div>
+        )}
+        <div className="mt-1.5 text-[11px] text-muted-foreground">
+          {account.available ? "账户可用" : "账户不可用"}
+          {stats && stats.avg_7d > 0 && <span> · 日均 {fmtMoney(stats.avg_7d)}</span>}
+        </div>
         {account.error && (
           <div className="mt-1 text-xs text-orange-600" title={account.error}>
             {account.error.length > 40 ? account.error.slice(0, 40) + "…" : account.error}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-export function GoCard({ account }: { account: AccountStatusPayload }) {
-  const [open, setOpen] = useState<string | null>(null);
+/** Go 单窗口：环形用量（点击展开趋势）*/
+function GoWindowBlock({ win, accountId }: {
+  win: GoQuotaPayload;
+  accountId: string;
+}) {
+  const [points, setPoints] = useState<GoPoint[] | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    invoke<GoPoint[]>("get_go_history", { accountId, window: win.window, days: 7 })
+      .then((p) => setPoints(p))
+      .catch(console.error);
+  }, [open, accountId, win.window]);
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <Ring percent={win.used_percent} size={48} />
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-w-0 flex-1 flex-col items-start text-left"
+      >
+        <span className="flex items-center gap-1 text-sm font-medium text-foreground">
+          {WINDOW_NAMES[win.window] ?? win.window}
+          {open ? <ChevronUp className="size-3.5 text-muted-foreground" /> : <ChevronDown className="size-3.5 text-muted-foreground" />}
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          剩余 {Math.max(0, 100 - win.used_percent)}% · 重置 <Countdown ts={win.resets_at} />
+        </span>
+      </button>
+      {open && (
+        <div className="w-full">
+          {points && points.length >= 2 ? (
+            <AreaTrend className="h-10" points={points.map((p) => ({ x: p.time, y: p.used_percent }))} />
+          ) : (
+            <div className="flex h-10 items-center justify-center text-[10px] text-muted-foreground">
+              {points == null ? "加载中..." : "暂无趋势数据"}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 用量型内容体（Go）：三窗口环形用量 */
+function UsageBody({ account }: { account: AccountStatusPayload }) {
+  if (!account.go_windows.length) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <RefreshCw className="size-4 opacity-60" />
+        {account.error ? `暂无套餐数据（${account.error}）` : "未配置密钥或暂无套餐数据"}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      {account.go_windows.map((w) => (
+        <GoWindowBlock key={w.window} win={w} accountId={account.id} />
+      ))}
+    </div>
+  );
+}
+
+export function AccountCard({
+  account,
+  threshold,
+  critical,
+}: {
+  account: AccountStatusPayload;
+  threshold: number;
+  critical: number;
+}) {
+  const meta = getKindMeta(account.kind);
+  const Icon = meta.icon;
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">{account.name}</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Icon className="size-4 text-muted-foreground" />
+          <span className="min-w-0 truncate">{account.name}</span>
+          <StatusBadge account={account} threshold={threshold} critical={critical} />
+        </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {!account.go_windows.length ? (
-          <div className="text-sm text-muted-foreground">
-            {account.error ? `暂无套餐数据（${account.error}）` : "未配置密钥或暂无套餐数据"}
-          </div>
+      <CardContent>
+        {meta.shape === "balance" ? (
+          <BalanceBody account={account} threshold={threshold} critical={critical} />
         ) : (
-          account.go_windows.map((w) => (
-            <div key={w.window}>
-              <button
-                type="button"
-                onClick={() => setOpen(open === w.window ? null : w.window)}
-                className="mb-1 flex w-full items-center justify-between text-xs"
-                title="点击查看用量趋势"
-              >
-                <span className="flex items-center gap-1">
-                  {open === w.window ? (
-                    <ChevronUp className="size-3.5" />
-                  ) : (
-                    <ChevronDown className="size-3.5" />
-                  )}
-                  {WINDOW_NAMES[w.window] ?? w.window}
-                </span>
-                <span className="text-muted-foreground">
-                  重置：
-                  <Countdown ts={w.resets_at} />
-                </span>
-              </button>
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div
-                  className={cn(
-                    "h-full rounded-full transition-all",
-                    w.used_percent >= 90
-                      ? "bg-red-500"
-                      : w.used_percent >= 70
-                        ? "bg-orange-500"
-                        : "bg-emerald-500",
-                  )}
-                  style={{ width: `${w.used_percent}%` }}
-                />
-              </div>
-              <div className="mt-0.5 flex justify-between text-xs text-muted-foreground">
-                <span>已用 {w.used_percent}%</span>
-                <span>剩余 {Math.max(0, 100 - w.used_percent)}%</span>
-              </div>
-              {open === w.window && <GoSparkline accountId={account.id} window={w.window} />}
-            </div>
-          ))
+          <UsageBody account={account} />
         )}
       </CardContent>
     </Card>

@@ -333,9 +333,8 @@ fn apply_deepseek(
 
     let db_guard = app.state::<Mutex<QuotaDb>>();
     let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let records = history::load(&db, &acc.id);
-    let today_spend = history::today_spend(&records, today);
-    let avg7 = history::avg_daily_spent(&records, 7, today);
+    // 消费统计走 SQL 聚合，避免每账户每轮全量 load+遍历（轮询热路径，多账户时省 DB/内存开销）
+    let (today_spend, avg7) = db.spend_stats(&acc.id, today).unwrap_or((0.0, 0.0));
     if status.last_surge_day != Some(today)
         && notify_surge
         && alerts::is_spike(today_spend, avg7)
@@ -368,6 +367,14 @@ fn persist_go(app: &AppHandle, account_id: &str, windows: &[GoQuota]) {
     let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let now = now_ms();
     for w in windows {
+        // 用量未变时跳过写库与周期跟踪：不做作的 idle 快照会把库撑爆（30s×3 窗口 ≈ 8640 行/天/账户）
+        let prev = db.prev_go_snapshot(account_id, &w.window, now).unwrap_or(None);
+        let unchanged = prev
+            .as_ref()
+            .is_some_and(|p| p.used_percent == w.used_percent && p.resets_at == w.resets_at);
+        if unchanged {
+            continue;
+        }
         let snap = GoSnapshot {
             captured_at: now,
             window: w.window.clone(),
@@ -419,29 +426,37 @@ fn track_go_cycle(db: &QuotaDb, account_id: &str, window: &str, snap: &GoSnapsho
 
 fn poll_loop(app: AppHandle) {
     let mut cached_interval: u64 = 30;
-    let mut cfg_tick: u32 = 0;
+    let mut last_cfg: Instant = Instant::now() - std::time::Duration::from_secs(6);
     loop {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-
-        // 检查模块是否启用，禁用时跳过工作
+        // 模块禁用时低频巡检（每 5 秒）而不空转忙等；启用后按间隔调度
         if !crate::quota_enabled(&app) {
+            std::thread::sleep(std::time::Duration::from_secs(5));
             continue;
         }
 
-        // 每 5 秒重读一次配置（替代原来每秒都读，减少无谓的 JSON clone/查找）
-        cfg_tick += 1;
-        if cfg_tick % 5 == 0 {
+        // 每 5 秒重读一次配置（替代固定 1s tick，减少无谓的 JSON clone/查找）
+        if last_cfg.elapsed().as_secs() >= 5 {
             let cfg = crate::config::module_cfg(&app, "quota");
             cached_interval = cfg_f64(&cfg, "refresh_interval_sec", 30.0).max(5.0) as u64;
+            last_cfg = Instant::now();
         }
-        let due = {
+
+        // 到期判断与剩余时间在一个锁内一次算清
+        let (due, remaining) = {
             let st_guard = app.state::<Mutex<QuotaState>>();
             let st = st_guard.lock().unwrap_or_else(|p| p.into_inner());
             match st.last_fetch {
-                Some(t) => t.elapsed().as_secs() >= cached_interval,
-                None => true,
+                Some(t) => {
+                    let elapsed = t.elapsed().as_secs();
+                    (
+                        elapsed >= cached_interval,
+                        cached_interval.saturating_sub(elapsed),
+                    )
+                }
+                None => (true, 0),
             }
         };
+
         if due {
             // 先推进时间戳再拉取：即使 fetch_once panic 也不会形成秒级重试环
             {
@@ -452,6 +467,12 @@ fn poll_loop(app: AppHandle) {
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 fetch_once(&app);
             }));
+        } else {
+            // 睡到「距下次到期」与「配置检查周期」的较小值：到期前按 5s 分片睡，
+            // 避免闲置时 1s 一醒（比之前少 5 倍唤醒），剩余 < 5s 时精确睡到边界
+            if remaining > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(remaining.min(5)));
+            }
         }
     }
 }

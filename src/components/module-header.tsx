@@ -124,11 +124,13 @@ export function HeaderButton({
   active,
   title,
   onClick,
+  disabled,
   children,
 }: {
   active?: boolean;
   title: string;
   onClick: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -137,11 +139,13 @@ export function HeaderButton({
       title={title}
       aria-label={title}
       onClick={onClick}
+      disabled={disabled}
       className={cn(
         "shrink-0 rounded p-1.5 transition-colors",
         active
           ? "bg-accent text-foreground"
           : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        disabled && "cursor-default opacity-40 hover:bg-transparent",
       )}
     >
       {children}
