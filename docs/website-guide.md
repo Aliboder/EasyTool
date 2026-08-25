@@ -22,13 +22,13 @@ website/
 │       ├── hero.tsx                 # 海报 Hero（版本号/masthead）
 │       ├── stats-ticker.tsx         # 翻转统计条（数字在此）
 │       ├── tech-marquee.tsx         # 技术栈滚动条
-│       ├── bento.tsx                # 01 四个模块（迷你组件入口）
+│       ├── bento.tsx                # 01 五个模块（迷你组件入口）
 │       ├── deep-dive.tsx            # 02 模块深潜（特性清单）
 │       ├── hotkeys.tsx              # 03 快捷键（键盘可视化）
 │       ├── pillars.tsx              # 04 设计哲学（代码片段）
 │       ├── local-data.tsx           # 05 数据属于你（对比表）
 │       ├── dev-zone.tsx             # 为开发者而建（终端/Logo）
-│       ├── screenshots.tsx          # 06 真实界面（5个组件）
+│       ├── screenshots.tsx          # 06 真实界面（6个组件）
 │       ├── changelog.tsx            # 07 更新日志
 │       ├── faq.tsx                  # 08 常见问题
 │       ├── download.tsx             # 09 下载
@@ -47,8 +47,10 @@ website/
 │       │   ├── quota.tsx            # 额度迷你（进度条）
 │       │   ├── emoji.tsx            # 表情迷你（分类Tab）
 │       │   ├── search.tsx           # 搜索迷你（过滤）
+│       │   ├── timetracker.tsx      # 时长统计迷你（排行条）
 │       │   └── item-icon.tsx        # 共享图标映射
-│       └── real-*.tsx               # 真实界面组件（5个）
+│       └── real-*.tsx               # 真实界面组件（6个）
+│           ├── real-timetracker.tsx
 │           ├── real-main-window.tsx
 │           ├── real-clipboard-popup.tsx
 │           ├── real-emoji-popup.tsx
@@ -88,7 +90,7 @@ App.tsx 中的组件顺序 = 页面从上到下的顺序。编号在各组件的
 需要改的地方：
 
 ```
-1. hero.tsx          → masthead 中的版本号 "0.4.5" → "0.5.0"
+1. hero.tsx          → masthead 中的版本号 "0.4.5" → "0.6.0"
 2. version-bar.tsx   → FACTS 数组中的 "v0.4.5"
 3. download.tsx      → "v0.4.5 · 2026-08-25 发布"
 4. changelog.tsx     → LOG 数组头部新增版本条目
@@ -100,11 +102,18 @@ App.tsx 中的组件顺序 = 页面从上到下的顺序。编号在各组件的
 需要改的地方：
 
 ```
-1. bento.tsx         → Card 组件新增一个（BENTO 布局需调整 grid）
-2. deep-dive.tsx     → MODULES 数组新增一项
+1. bento.tsx         → Card 组件新增一个（BENTO 布局需调整 grid）+ minis/ 新增迷你组件
+2. deep-dive.tsx     → MODULES 数组新增一项（icon 用 lucide-react 导入）
 3. hotkeys.tsx       → 如有独立热键，HOTKEYS 数组新增
 4. nav.tsx           → 如需导航锚点，LINKS 数组新增
 5. App.tsx           → 如板块顺序变化
+6. screenshots.tsx   → MODULES 数组 + renderComponent + real-*.tsx 新增真实界面组件
+7. hero.tsx          → 副标题模块列表
+8. download.tsx      → WHAT_YOU_GET 数组（"安装后你会得到"）
+9. pillars.tsx       → 热键代码片段（如模块有独立热键）
+10. local-data.tsx   → TREE 数组（如新增数据文件）
+11. stats-ticker.tsx → 如有新统计数字
+12. footer.tsx       → 模块列表
 ```
 
 ### 场景 3：修改模块功能
@@ -210,7 +219,8 @@ git add website && git commit -m "feat(website): ..." && git push origin master
   11. version-bar.tsx    → FACTS 数组中的版本号
   12. stats-ticker.tsx   → 如有新统计数字
   13. nav.tsx            → LINKS 数组（如需导航锚点）
-  14. App.tsx            → 板块顺序（如需要）
+  14. footer.tsx         → 页脚模块列表
+  15. App.tsx            → 板块顺序（如需要）
 ```
 
 ### 版本号更新的完整检查清单
@@ -239,7 +249,10 @@ git add website && git commit -m "feat(website): ..." && git push origin master
 7. download.tsx         → WHAT_YOU_GET 移除条目
 8. pillars.tsx          → 热键代码片段移除
 9. hotkeys.tsx          → HOTKEYS 数组移除（如有）
+10. footer.tsx          → 页脚模块列表移除
 ```
+
+> **特例：功能并入另一模块**（如 `quicklaunch` 快速启动 → `search` 的应用中心）。不仅要按上面删除 quicklaunch 的全部引用，还要在承接模块（search）的描述中补上该能力（deep-dive 特性、bento desc、download WHAT_YOU_GET），避免"功能凭空消失"。
 
 ### 残留文件清理
 

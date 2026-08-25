@@ -15,6 +15,7 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 - `quota` 额度监控：DeepSeek / OpenCode Go **多账户**，各账户独立密钥/余额/消费历史/告警；后台轮询
 - `emoji` 表情面板：1900+ 表情分类检索，中文/英文/shortcode 搜索，收藏置顶，SendInput 直输；独立弹窗
 - `search` 文件搜索：Everything 全文搜索（**需用户安装 Everything**），Everything64.dll 随应用打包；独立弹窗 + 模块页双入口。第一个「应用」Tab = **已安装应用中心**（扫描开始菜单，点击即启动，前台频率排序），搜索时匹配应用置顶显示
+- `timetracker` 时长统计：自动记录前台软件使用时长，今日/本周/本月总览与对比、应用排行（总/活跃时长）、每日甘特时间线、自动分类 + 自定义正则规则、AFK 离开检测；独立弹窗（延迟创建）
 
 ## 技术栈
 
@@ -34,14 +35,15 @@ src-tauri/src/
 ├── lib.rs         # 壳：托盘、全局热键、窗口事件、模块 setup、日志
 ├── config.rs      # AppConfig + ConfigState(Mutex)、config 读写命令
 ├── migrate.rs     # 旧数据一次性迁移
-└── modules/       # 模块注册表 mod.rs + clipboard/ + quota/ + emoji/ + search/
+└── modules/       # 模块注册表 mod.rs + clipboard/ + quota/ + emoji/ + search/ + timetracker/
 src-tauri/modules/  # 模块 manifest.json 目录
 src/
 ├── App.tsx        # 壳 UI：底部导航 + 模块页 + 设置页
 ├── lib/           # api(ipc封装)/theme/use-horizontal-wheel/use-window-entrance/context-menu
 ├── components/    # ui 组件 + hotkey-recorder + LazyImage + context-menu
 ├── clipboard_popup.tsx   # 剪贴板弹窗入口（延迟创建）
-├── └── modules/       # clipboard/ + quota/ + emoji/ + search/ 前端
+├── timetracker_window.tsx  # 时长统计弹窗入口（延迟创建）
+├── └── modules/       # clipboard/ + quota/ + emoji/ + search/ + timetracker/ 前端
 website/           # 官网（独立工程，详见 docs/website-guide.md）
 ```
 
@@ -52,20 +54,21 @@ website/           # 官网（独立工程，详见 docs/website-guide.md）
 - `clipboard_popup` 剪贴板弹窗：跟随鼠标或固定位置，失焦自动隐藏；**延迟创建**（首次呼出才建窗，避免启动闪现）
 - `emoji_popup` 表情弹窗：复用剪贴板弹窗模式（跟随鼠标/失焦隐藏/延迟创建）
 - `search_popup` 文件搜索弹窗：复用剪贴板弹窗模式，Everything64.dll 动态加载
+- `timetracker_window` 时长统计弹窗：复用剪贴板弹窗模式（跟随鼠标/失焦隐藏/延迟创建）
 - **坑**：Windows 下透明窗口（`.transparent(true)`）hide 后再 show 会崩溃，已放弃透明方案
 
 ### 全局热键与统一呼出
 - `unified_hotkey=true`（默认）：只注册主窗口热键（默认 Ctrl+Shift+E），各模块独立热键禁用；关闭则反之
 - **热键匹配必须用 `Shortcut::from_str(&cfg).map(|s| s == *shortcut)` 对象比较**
 - 录制格式：`Ctrl/Shift/Alt/Super + 键名`（Windows 键用 **Super** 不是 Win），见 `HotkeyRecorder`
-- 默认热键：主面板 Ctrl+Shift+E / 剪贴板 Ctrl+Shift+V / 表情 Ctrl+Shift+J / 搜索 Ctrl+Shift+F
+- 默认热键：主面板 Ctrl+Shift+E / 剪贴板 Ctrl+Shift+V / 表情 Ctrl+Shift+J / 搜索 Ctrl+Shift+F / 时长统计 Ctrl+Shift+T
 
 ### 配置与数据
-- 数据目录 `%APPDATA%\com.aliboder.easytool\`：`config.json`、`clipboard.db`（SQLite WAL，含 `pin_order` 列）、`apps.db`（已安装应用频率计数）、`images/`、`thumbs/`
+- 数据目录 `%APPDATA%\com.aliboder.easytool\`：`config.json`、`clipboard.db`（SQLite WAL，含 `pin_order` 列）、`apps.db`（已安装应用频率计数）、`timetracker.db`（软件使用时长）、`images/`、`thumbs/`
 - 额度历史按账户分文件 `balance_history_<account_id>.json`
 - 密钥存 keyring（service `com.aliboder.easytool`），**每账户独立槽位**；新账户绝不回退旧槽位
 - search 模块：`Everything64.dll` 打包在 `src-tauri/modules/search/`；查询须持全局互斥锁且放后台线程
-- search 模块：`apps.db` 存储已安装应用的使用频率（前台事件钩子累计）；`quicklaunch.db` 为已退役模块的历史遗留文件
+- search 模块：`apps.db` 存储已安装应用的使用频率（前台事件钩子累计）；`quicklaunch.db` 为已退役模块的历史遗留文件（快速启动已并入 search 的「应用中心」）
 
 ### 额度轮询（多账户）
 - `poll_loop` 后台线程按 `refresh_interval_sec`（≥5s）调 `fetch_once`
@@ -81,6 +84,14 @@ website/           # 官网（独立工程，详见 docs/website-guide.md）
 - 检测：系统字体优先 → canvas 像素检测 → Twemoji CDN 兜底
 - 直输：文本表情 SendInput 直接输入（不写剪贴板）；图片表情 write+Ctrl+V
 
+### 时长统计要点
+- 采集：前台窗口 SetWinEventHook → `mpsc::channel` 入队即返回（防止阻塞系统事件派发）；独立心跳线程 `recv_timeout` 消费，超时则 UPDATE 当前会话时长
+- 时长口径：时间字符串一律由 `chrono::Local::now()` 生成本地时间传入（写入/心跳/查询同口径，混用 UTC 会跨时区错日）；duration 用 `julianday(两端同格式)` 差值得出
+- 会话切分：`switch_session` 先判是否同应用（按 `exe_path`，小写），同 exe 不切事件——避免同应用窗口/焦点变化把会话切碎成 A→A
+- 分类：`auto_categorize` 关键词判定顺序即优先级（游戏→视听→资源→学习→效率→系统兜底）；前端 `CATEGORY_LABELS`/`CATEGORY_HEX` 为唯一常量来源，所有 UI 从 `Object.entries` 派生，改一处全生效
+- 分类规则变更后调用 `db.reapply_categories()`（幂等，只更 `category_locked=0` 的自动分类项），存量数据自动重分类
+- 图标占位：`file_icon_png` 保证永不返回 None（设备路径 `\\?\` 转常规 + 取不到回退通用图标），避免前端 `missingIcon` 永久缓存把一次失败放大成整会话缺图标
+
 ### 迁移
 - `migrate::run_migration` 启动自动执行一次，结果写 `config.migrated` 标记（幂等）
 - 剪贴板：PasteBoard 库按 hash 导入；余额：QuotaMonitor 记录按时间合并去重
@@ -95,7 +106,7 @@ npx tsc --noEmit       # 前端类型检查
 ```
 
 - 打包只支持 `msi/nsis`（**不支持 portable**）
-- 后端 51 个单元测试；前端无测试框架，验证靠人工
+- 后端 61 个单元测试；前端无测试框架，验证靠人工
 
 ## 发版流程（AI 代发版时必须按此执行）
 
