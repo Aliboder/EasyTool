@@ -1196,3 +1196,10 @@ Aliboder
 4. 新增 `auto_categorize` 单测（6 类各命中 + QQ 系列消歧 + 编程助手 vs AI 对话 + 未命中兜底 system）。
 
 **教训**：①「枚举 + 着色 + 判定」这类多端联动（Rust 判定分类、TS 管文案/色值、多处 UI 消费），必须让所有 UI 从同一常量派生，而不是各写一份——否则加/改类别时会漏改某处。② 关键词自动分类，**顺序即优先级**：先判更具体/更强特异的类别（如 QQ 品牌下的 qqmusic 先归视听、qq浏览器先归资源，再判通通讯 qq），再判宽泛项；且刻意避免过短子串（x/go/et/line 这类单双字母会大面积误配）。③ 兜底类直接承接所有未命中项（`system` 而非 `unknown`），保证覆盖率；分类体系变更后要用已有的 `reapply_categories`（尊重手动锁定 `category_locked`）让存量数据生效，否则用户看到新旧分类混杂。④ 换掉枚举键后，老的常量引用（如 `CATEGORY_HEX.unknown`）必须同步清理，否则 `??` 回退到 `undefined` 导致样式失效——TS 类型查不出这类「值选错了」的键，要 grep 一遍消费点。
+
+---
+
+## 66. 官网发版：三处版本必同步 + 网页内容易滞后（2026-08-26）
+**发版流程**（AI 代发版）：`package.json` / `src-tauri/tauri.conf.json` / `src-tauri/Cargo.toml` 三处 `version` 必须同时改（`Cargo.lock` 的根包 `easytool` 也记版本，一并改）；提交 → `git tag vX.Y.Z` → `git push origin master` + `git push origin vX.Y.Z`，GitHub Actions 的 `Build & Release` 自动构建签名发布，**不要手动 build/上传**。`.superpowers/` 是 brainstorming 可视化服务的临时会话状态，须加进 `.gitignore` 防止误提交。
+**网页内容滞后教训**：官网曾长期停在 v0.4.5，而软件已到 v0.5.2+。本次更新发现「快速启动 quicklaunch」模块已被彻底移除、其功能并入 search 模块的「应用中心」，但官网 bento/deep-dive/download/screenshots 仍把它当活跃模块展示。删模块时官网要同步清理：bento Card / deep-dive MODULES 项 / real-* 组件 / download WHAT_YOU_GET / hero 副标题模块列表 / footer 模块列表 / quicklaunch 的 mini 与 real 文件。新增模块（如 timetracker）同样要全量补这几处 + `stats-ticker` 统计 + `changelog`，且 hero 标题「唤出整套效率工具」在 `text-7xl` 会分行留孤儿字「具」，需 `whitespace-nowrap` + 调小字号修正。
+**验证**：`cargo test` 61 通过、`npx tsc --noEmit` 通过、`website` 内 `npm run build` 通过；用 Playwright 滚动触发 reveal 后截图逐板块核对（`whileInView`/`Reveal` 只有滚动到才显示，满页截图会全空白）。
