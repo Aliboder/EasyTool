@@ -126,7 +126,8 @@ fn switch_session(exe_path: &str, app_name: &str, title: &str) {
     }
     let _ = s.db.close_current_event(&now_local());
     let category = s.db.categorize(app_name, exe_path, title);
-    if let Ok(app_id) = s.db.upsert_app(exe_path, app_name, &category) {
+    let display_name = super::display_name_resolver().and_then(|r| r.resolve(exe_path));
+    if let Ok(app_id) = s.db.upsert_app(exe_path, app_name, &category, display_name.as_deref()) {
         let _ = s.db.start_event(app_id, title, &now_local());
     }
 }

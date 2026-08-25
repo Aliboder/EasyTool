@@ -1,8 +1,10 @@
 pub mod commands;
 pub mod collector;
 pub mod db;
+pub mod display_name;
 pub mod models;
 
+use std::sync::OnceLock;
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -10,6 +12,12 @@ pub const POPUP_WINDOW_LABEL: &str = "timetracker_window";
 
 pub struct TimetrackerState {
     pub db: db::TimetrackerDb,
+}
+
+static DISPLAY_NAMES: OnceLock<display_name::DisplayNameResolver> = OnceLock::new();
+
+pub fn display_name_resolver() -> Option<&'static display_name::DisplayNameResolver> {
+    DISPLAY_NAMES.get()
 }
 
 /// 从 AppHandle 初始化（用于并行初始化）
@@ -34,6 +42,15 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
         Ok(true) => log::info!("timetracker: rules changed, re-applied categories"),
         Ok(false) => {}
         Err(e) => log::error!("timetracker: apply categories on startup failed: {e}"),
+    }
+    // 展示名解析器（搜索快捷方式名 + exe 版本信息）与存量回填
+    let resolver = display_name::DisplayNameResolver::new(&data_dir);
+    let _ = DISPLAY_NAMES.set(resolver);
+    if let Some(resolver) = display_name_resolver() {
+        match db.backfill_display_names(resolver) {
+            Ok(n) if n > 0 => log::info!("timetracker: enriched {n} app display names"),
+            _ => {}
+        }
     }
     app.manage(Mutex::new(TimetrackerState { db }));
 

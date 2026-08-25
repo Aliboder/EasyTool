@@ -1216,3 +1216,12 @@ Aliboder
 5. 分类重算用指纹（内置 `AUTO_CATEGORIZE_VERSION` + category_rules 顺序字段），启动时指纹没变就跳过全量 `reapply_categories`；手动「重新分类」命令仍强制重跑。
 **教训**：不要在 Windows + core.autocrlf 的仓库里对全 crate 跑 `cargo fmt`——会把 35 个文件重新排版/换行造成大面积 churn；恢复时用 `git checkout-index --force` 让 Git 按仓库规则重写工作区换行（`git show > file` 会绕过 smudge，Git 仍报 modified），之后只对目标文件用编辑器小补丁。
 **验证**：`cargo test` 62 passed（新增 1 个缓存单测）；`npx tsc --noEmit` 通过。
+
+---
+
+## 68. 时长统计应用名 = exe 主名；用「快捷方式名 → 文件版本信息 → exe 主名」三级解析（2026-08-26）
+**现象**：时长统计排行里部分名称是 `msedge`/`code`/`echo-client`，而搜索「应用」Tab 显示 `Microsoft Edge`/`Visual Studio Code`/`秘塔回响`。
+**根因**：前台钩子只能拿到 `exe_path`，采集器用 `Path::file_stem()` 直接当 `app_name` 入库，且 `upsert_app` 每次前台切换都会覆盖；搜索「应用」Tab 取的是开始菜单 `.lnk` 主名，数据源本来就更友好。
+**解决**：新增 `timetracker/display_name.rs` 三级解析器：① 读 search `apps.db` 的 `shortcut_cache`（target → .lnk 主名，复用已建缓存，不重复 COM 解析）；② `GetFileVersionInfoW` + `VerQueryValueW` 读 exe 的 `FileDescription`（覆盖 UWP/便携/无快捷方式程序，如 `windowsterminal.exe → Windows Terminal Host`、`mipccontinuity.exe → 小米互联服务`）；③ 仍失败保持 exe 主名。`apps` 表新增 `display_name` 列，`app_name` 继续存 exe 主名供分类关键词/用户规则匹配，展示查询统一 `COALESCE(NULLIF(display_name,''), app_name)`；采集线程用内存缓存解析新应用，启动时对存量行幂等回填。
+**教训**：①「同一个程序的两种展示名」先分清数据源：搜索有 .lnk 名，前台钩子只有 exe——不能直接要求两边一致，要给采集侧补解析层。② 展示名与判定名分离（`display_name` vs `app_name`），避免友好名破坏 `auto_categorize`/正则规则；exe 路径仍参与分类，风险更小。③ Windows 文件版本信息用 `\\VarFileInfo\\Translation` 枚举语言再查 `FileDescription`，比固定 `040904B0` 语言代码兼容性更好。
+**验证**：真实 exe 预演 `msedge → Microsoft Edge`、`code → Visual Studio Code`、`echo-client → 秘塔回响`、`idman → Internet Download Manager`；`cargo test` 64 passed（新增 2 个解析单测）；`npx tsc --noEmit` 通过。

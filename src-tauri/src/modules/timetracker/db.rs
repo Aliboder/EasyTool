@@ -81,6 +81,8 @@ impl TimetrackerDb {
             .map_err(|e| format!("建表失败: {e}"))?;
         // 旧库补列：category_locked（手动锁定标记），CREATE IF NOT EXISTS 不回溯已有表
         self.ensure_column("apps", "category_locked", "category_locked INTEGER DEFAULT 0")?;
+        // 旧库补列：display_name（友好显示名，空 = 未解析，UI 查询 COALESCE 回退 app_name）
+        self.ensure_column("apps", "display_name", "display_name TEXT")?;
         // 启动时结算上次异常退出遗留的「进行中」会话：end_time 置为 start（时长 0），
         // 避免应用停机的那段时间被算成使用时长（如重启后首跳把停机 16h 计入）
         self.conn
@@ -142,14 +144,26 @@ impl TimetrackerDb {
     }
 
     /// 插入或更新应用，返回 app_id
-    pub fn upsert_app(&self, exe_path: &str, app_name: &str, category: &str) -> Result<i64, String> {
+    pub fn upsert_app(
+        &self,
+        exe_path: &str,
+        app_name: &str,
+        category: &str,
+        display_name: Option<&str>,
+    ) -> Result<i64, String> {
         self.conn
             .execute(
-                "INSERT INTO apps (exe_path, app_name, category) VALUES (?1, ?2, ?3)
+                "INSERT INTO apps (exe_path, app_name, category, display_name)
+                 VALUES (?1, ?2, ?3, NULLIF(?4, ''))
                  ON CONFLICT(exe_path) DO UPDATE SET
                      app_name = excluded.app_name,
+                     display_name = CASE
+                         WHEN NULLIF(excluded.display_name, '') IS NOT NULL
+                         THEN excluded.display_name
+                         ELSE apps.display_name
+                     END,
                      updated_at = CURRENT_TIMESTAMP",
-                params![exe_path, app_name, category],
+                params![exe_path, app_name, category, display_name.unwrap_or("")],
             )
             .map_err(|e| format!("插入应用失败: {e}"))?;
 
@@ -160,6 +174,35 @@ impl TimetrackerDb {
                 |row| row.get(0),
             )
             .map_err(|e| format!("查询应用ID失败: {e}"))
+    }
+
+    /// 为存量应用回填友好显示名（仅 display_name 为空的行；找不到 keep 原样）。
+    pub fn backfill_display_names(
+        &self,
+        resolver: &super::display_name::DisplayNameResolver,
+    ) -> Result<usize, String> {
+        let rows: Vec<(i64, String)> = self
+            .conn
+            .prepare("SELECT id, exe_path FROM apps WHERE display_name IS NULL OR display_name = ''")
+            .map_err(|e| format!("准备显示名回填查询失败: {e}"))?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| format!("查询显示名回填失败: {e}"))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("收集显示名回填失败: {e}"))?;
+        let mut updated = 0usize;
+        for (id, exe_path) in rows {
+            if let Some(name) = resolver.resolve(&exe_path) {
+                self.conn
+                    .execute(
+                        "UPDATE apps SET display_name = ?1, updated_at = CURRENT_TIMESTAMP
+                         WHERE id = ?2 AND (display_name IS NULL OR display_name = '')",
+                        params![name, id],
+                    )
+                    .map_err(|e| format!("回填显示名失败: {e}"))?;
+                updated += 1;
+            }
+        }
+        Ok(updated)
     }
 
     /// 手动设置应用分类：标记 category_locked=1（rules 重跑时跳过，避免覆盖用户手动选择）
@@ -324,7 +367,8 @@ impl TimetrackerDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT e.app_id, a.app_name, a.category, a.exe_path,
+                "SELECT e.app_id, COALESCE(NULLIF(a.display_name, ''), a.app_name),
+                        a.category, a.exe_path,
                         SUM(e.duration_sec) as total_duration,
                         SUM(CASE WHEN e.is_active = 1 THEN e.duration_sec ELSE 0 END) as active_duration,
                         COUNT(*) as session_count
@@ -489,7 +533,8 @@ impl TimetrackerDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT e.app_id, a.app_name, a.category, a.exe_path,
+                "SELECT e.app_id, COALESCE(NULLIF(a.display_name, ''), a.app_name),
+                        a.category, a.exe_path,
                         SUM(e.duration_sec),
                         SUM(CASE WHEN e.is_active = 1 THEN e.duration_sec ELSE 0 END),
                         COUNT(*)
@@ -532,7 +577,8 @@ impl TimetrackerDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT e.app_id, a.app_name, a.category, a.exe_path,
+                "SELECT e.app_id, COALESCE(NULLIF(a.display_name, ''), a.app_name),
+                        a.category, a.exe_path,
                         SUM(e.duration_sec),
                         SUM(CASE WHEN e.is_active = 1 THEN e.duration_sec ELSE 0 END),
                         COUNT(*)
@@ -571,7 +617,8 @@ impl TimetrackerDb {
             .conn
             .prepare(
                 "SELECT e.id, e.app_id, e.start_time, e.end_time, e.duration_sec,
-                        e.window_title, e.is_active, a.app_name, a.category
+                        e.window_title, e.is_active,
+                        COALESCE(NULLIF(a.display_name, ''), a.app_name), a.category
                  FROM events e
                  JOIN apps a ON e.app_id = a.id
                  WHERE e.start_time >= ?1 AND e.start_time < ?2 AND e.duration_sec > 0
@@ -605,7 +652,8 @@ impl TimetrackerDb {
             .conn
             .prepare(
                 "SELECT e.id, e.app_id, e.start_time, e.end_time, e.duration_sec,
-                        e.window_title, e.is_active, a.app_name, a.category
+                        e.window_title, e.is_active,
+                        COALESCE(NULLIF(a.display_name, ''), a.app_name), a.category
                  FROM events e
                  JOIN apps a ON e.app_id = a.id
                  WHERE e.start_time >= ?1 AND e.start_time < ?2 AND e.duration_sec > 0
@@ -721,7 +769,8 @@ impl TimetrackerDb {
     /// 应用基础信息
     pub fn get_app(&self, app_id: i64) -> Result<Option<App>, String> {
         let result = self.conn.query_row(
-            "SELECT id, exe_path, app_name, window_title, category, created_at, updated_at
+            "SELECT id, exe_path, COALESCE(NULLIF(display_name, ''), app_name),
+                    window_title, category, created_at, updated_at
              FROM apps WHERE id = ?1",
             params![app_id],
             |row| {
@@ -960,11 +1009,13 @@ impl TimetrackerDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT a.id, a.app_name, a.exe_path, a.category, a.category_locked,
+                "SELECT a.id, COALESCE(NULLIF(a.display_name, ''), a.app_name),
+                        a.exe_path, a.category, a.category_locked,
                         COALESCE(SUM(e.duration_sec), 0)
                  FROM apps a LEFT JOIN events e ON e.app_id = a.id
                  GROUP BY a.id
-                 ORDER BY COALESCE(SUM(e.duration_sec), 0) DESC, a.app_name ASC",
+                 ORDER BY COALESCE(SUM(e.duration_sec), 0) DESC,
+                          COALESCE(NULLIF(a.display_name, ''), a.app_name) ASC",
             )
             .map_err(|e| format!("准备应用列表查询失败: {e}"))?;
         let rows = stmt
@@ -1073,7 +1124,7 @@ mod tests {
         let p = temp_db("extend");
         remove(&p);
         let db = TimetrackerDb::open(&p).unwrap();
-        let app_id = db.upsert_app("c:\\a.exe", "A", "dev").unwrap();
+        let app_id = db.upsert_app("c:\\a.exe", "A", "dev", None).unwrap();
         let ev = db
             .start_event(app_id, "title", "2026-08-26 10:00:00")
             .unwrap();
@@ -1132,7 +1183,7 @@ mod tests {
         // 先建库并留一条「进行中」（end_time NULL）会话
         {
             let db = TimetrackerDb::open(&p).unwrap();
-            let app_id = db.upsert_app("c:\\b.exe", "B", "dev").unwrap();
+            let app_id = db.upsert_app("c:\\b.exe", "B", "dev", None).unwrap();
             db.start_event(app_id, "t", "2026-08-25 09:00:00")
                 .unwrap();
         }
@@ -1156,7 +1207,7 @@ mod tests {
         let p = temp_db("activepath");
         remove(&p);
         let db = TimetrackerDb::open(&p).unwrap();
-        let app_id = db.upsert_app("c:\\app.exe", "app", "dev").unwrap();
+        let app_id = db.upsert_app("c:\\app.exe", "app", "dev", None).unwrap();
         // 尚无进行中会话
         assert_eq!(db.active_event_app_path().unwrap(), None);
         // 开段后返回该应用 exe_path
@@ -1176,7 +1227,7 @@ mod tests {
         let p = temp_db("flip");
         remove(&p);
         let db = TimetrackerDb::open(&p).unwrap();
-        let app_id = db.upsert_app("c:\\c.exe", "C", "dev").unwrap();
+        let app_id = db.upsert_app("c:\\c.exe", "C", "dev", None).unwrap();
         db.start_event(app_id, "t", "2026-08-26 10:00:00")
             .unwrap();
 
