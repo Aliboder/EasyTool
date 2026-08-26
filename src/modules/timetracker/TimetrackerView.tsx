@@ -293,7 +293,7 @@ export function TimetrackerView({ cfg, onUpdate, popup = false, active = true }:
         )}
 
         {period === "today" && timelineEvents.length > 0 && (
-          <EventLog events={timelineEvents} isToday={isToday} />
+          <EventLog events={timelineEvents} isToday={isToday} onSelect={setSelectedApp} />
         )}
       </div>
 
