@@ -85,11 +85,6 @@ pub fn merge_manifests(cfg: &mut AppConfig, manifests: &[Manifest]) {
     }
 }
 
-#[tauri::command]
-pub fn get_manifests(app: AppHandle) -> Vec<Manifest> {
-    load_manifests(&app)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

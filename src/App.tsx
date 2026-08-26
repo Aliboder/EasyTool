@@ -3,8 +3,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { Sidebar } from "@/components/layout/Sidebar";
 import {
+  getBootstrap,
   getConfig,
-  getManifests,
   setModuleEnabled,
   setModuleOrder,
   setTheme,
@@ -62,9 +62,28 @@ const EmojiPage = lazy(loadPage("emoji", importEmoji));
 const SearchPage = lazy(loadPage("search", importSearch));
 const TimetrackerPage = lazy(loadPage("timetracker", importTimetracker));
 
-// 首屏就绪前预载全部模块代码：与上方 lazy 共用同一 import（命中缓存，无额外请求），
-// 保证主窗口显示时落地面板代码已就位
-const PAGE_IMPORTS = [importClipboard, importQuota, importEmoji, importSearch, importTimetracker];
+// 模块 id → 分包加载器：与上方 lazy 共用同一 import（命中缓存，无额外请求）
+const PAGE_IMPORTS: Record<string, () => Promise<{ default: React.ComponentType<any> }>> = {
+  clipboard: importClipboard,
+  quota: importQuota,
+  emoji: importEmoji,
+  search: importSearch,
+  timetracker: importTimetracker,
+};
+
+// 落地面板 = 排序第一位且启用的模块（与下方 enabledModules 同规则）
+function landingModule(m: Manifest[], c: AppConfig): string | null {
+  const byId = new Map(m.map((x) => [x.id, x]));
+  const ordered = (c.module_order ?? [])
+    .map((id) => byId.get(id))
+    .filter((x): x is Manifest => !!x);
+  const seen = new Set(ordered.map((x) => x.id));
+  return (
+    [...ordered, ...m.filter((x) => !seen.has(x.id))].find(
+      (x) => c.modules[x.id]?.enabled !== false,
+    )?.id ?? null
+  );
+}
 
 function App() {
   const entranceRef = useWindowEntrance(true, ["animate-in", "fade-in-0", "zoom-in-95"]);
@@ -88,17 +107,25 @@ function App() {
     invoke("log_frontend", { level: "info", msg: "[diag] app mounted" }).catch(
       () => {},
     );
-    Promise.all([getManifests(), getConfig()])
-      .then(async ([m, c]) => {
+    getBootstrap()
+      .then(async ({ manifests: m, config: c }) => {
         setManifests(m);
         setConfig(c);
-        // 预载模块代码 + 等两帧（主题应用、首帧绘制完成）→ 通知 Rust 显示主窗口，
-        // 窗口出现瞬间即完整内容（15s 后端兜底防前端异常永不显示）
-        await Promise.allSettled(PAGE_IMPORTS.map(importPage => importPage()));
+        // 只等落地面板分包就绪 + 两帧（主题应用、首帧绘制完成）→ 通知 Rust 显示主窗口。
+        // keep-alive 初始仅挂载落地面板，其余分包后台预载不阻塞首屏（冷缓存省 ~400ms）
+        const landing = landingModule(m, c);
+        await Promise.allSettled(
+          landing && PAGE_IMPORTS[landing] ? [PAGE_IMPORTS[landing]()] : [],
+        );
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
             invoke("main_window_ready").catch(() => {});
           }),
+        );
+        Promise.allSettled(
+          Object.entries(PAGE_IMPORTS)
+            .filter(([id]) => id !== landing)
+            .map(([, importPage]) => importPage()),
         );
         invoke("log_frontend", {
           level: "info",

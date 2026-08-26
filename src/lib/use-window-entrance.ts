@@ -8,6 +8,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 //  - 窗口从隐藏变可见时 → 从透明态播放动画，与窗口显示同步
 // 关键：焦点事件无法区分「窗口隐藏」与「拖动/切焦点导致的短暂失焦」，
 // 必须用 isVisible() 判断——只有窗口确实不可见才透明化/播放动画，避免拖动窗口闪烁。
+// 透明态以根节点内联 opacity 为准（DOM 即状态，无标志位）：冷启动 show 时
+// webview 可能收不到焦点事件，内容停在透明态 = 窗口空白，由挂载兜底补播。
 export function useWindowEntrance(enable: boolean, classes: string[]) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -32,10 +34,14 @@ export function useWindowEntrance(enable: boolean, classes: string[]) {
       el.style.opacity = "0";
     };
 
+    // 内容是否停在透明初始态（未播过动画/待播放）；play() 会清空内联 opacity
+    const isPending = () => ref.current?.style.opacity === "0";
+
     const win = getCurrentWindow();
     let unlisten: (() => void) | null = null;
-    let hidden = false; // 是否处于「已确认隐藏」状态
     let hideTimer: number | null = null;
+    let settleTimer: number | null = null;
+    let settleAttempts = 0;
 
     const onBlur = () => {
       // 失焦 ≠ 隐藏（可能是拖动/切焦点）：延迟确认窗口是否真的不可见
@@ -43,10 +49,7 @@ export function useWindowEntrance(enable: boolean, classes: string[]) {
       hideTimer = window.setTimeout(async () => {
         hideTimer = null;
         const visible = await win.isVisible();
-        if (!visible) {
-          hidden = true;
-          resetToHidden();
-        }
+        if (!visible) resetToHidden();
       }, 250);
     };
 
@@ -55,12 +58,10 @@ export function useWindowEntrance(enable: boolean, classes: string[]) {
         clearTimeout(hideTimer);
         hideTimer = null;
       }
-      // 仅当窗口「从隐藏变为可见」才播放动画；一直可见（拖动恢复）不播放
+      // 仅当内容仍停在透明初始态才播放：真实 hidden→visible 切换才透明化过，
+      // 一直可见的拖动/切焦点恢复时已非透明态，不会重放动画
       const visible = await win.isVisible();
-      if (hidden && visible) {
-        hidden = false;
-        play();
-      }
+      if (visible && isPending()) play();
     };
 
     win
@@ -73,18 +74,29 @@ export function useWindowEntrance(enable: boolean, classes: string[]) {
       })
       .then((fn) => (unlisten = fn));
 
-    // 初始化：先设为透明初始态；窗口当前可见则直接播放（启动场景），
-    // 不可见（如延迟创建的弹窗）则标记隐藏，等首次 show 时播放
+    // 冷启动兜底：主窗口以 visible:false 创建，show 时 webview 可能收不到焦点事件
+    // （首次启动无激活焦点），内容停在透明态 = 窗口空白，直到用户首次点击/拖动窗口
+    // 焦点事件才补播，表现为「界面突然重新加载」。挂载后轮询核对：窗口已可见且
+    // 仍未播过动画 → 补播（opacity 已非 "0" 即跳过，不会重复播）；窗口还没显示
+    // （慢启动）则限次续查；超过仍无则放弃——首次焦点事件路径仍能自愈
     resetToHidden();
-    (async () => {
-      const visible = await win.isVisible();
-      hidden = !visible;
-      if (visible) play();
-    })();
+    const settle = () => {
+      settleTimer = window.setTimeout(async () => {
+        settleTimer = null;
+        const visible = await win.isVisible();
+        if (visible) {
+          if (isPending()) play();
+        } else if (settleAttempts++ < 5) {
+          settle();
+        }
+      }, 1200);
+    };
+    settle();
 
     return () => {
       unlisten?.();
       if (hideTimer) clearTimeout(hideTimer);
+      if (settleTimer) clearTimeout(settleTimer);
     };
   }, [enable]);
 

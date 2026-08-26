@@ -78,6 +78,10 @@ pub fn save_config(app: &AppHandle, cfg: &AppConfig) -> Result<(), String> {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
+    // 内容未变化则跳过写盘（启动时 merge_manifests 的兜底落盘多数是空操作，省一次 IO）
+    if fs::read_to_string(&path).map(|existing| existing == json).unwrap_or(false) {
+        return Ok(());
+    }
     // 原子写：先落临时文件再改名覆盖，写盘中途崩溃不会留下半截 JSON
     // （否则下次启动解析失败 → 静默回退默认配置：热键/账户/开关全丢）
     let tmp = path.with_extension("json.tmp");

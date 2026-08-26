@@ -590,6 +590,27 @@ fn main_window_ready(app: tauri::AppHandle) {
     show_main(&app);
 }
 
+/// 启动一次性拉取：模块清单 + 配置（合并原 get_manifests/get_config 两次 IPC）
+#[derive(serde::Serialize)]
+struct Bootstrap {
+    manifests: Vec<modules::Manifest>,
+    config: config::AppConfig,
+}
+
+#[tauri::command]
+fn get_bootstrap(app: tauri::AppHandle) -> Bootstrap {
+    let config = app
+        .state::<config::ConfigState>()
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    Bootstrap {
+        manifests: modules::load_manifests(&app),
+        config,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logger();
@@ -796,10 +817,10 @@ pub fn run() {
             }
             // 显示时机交给前端：首屏就绪后调 main_window_ready 再显示，
             // 消除「窗口先出现、内容后跟上」的空白期；
-            // 15s 兜底：前端异常未发信号时强制显示，避免窗口永不出现
+            // 8s 兜底：前端异常未发信号时强制显示，避免窗口永不出现
             let fallback_handle = app.handle().clone();
             std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(15));
+                std::thread::sleep(std::time::Duration::from_secs(8));
                 if let Some(win) = fallback_handle.get_webview_window(MAIN_WINDOW_LABEL) {
                     if !win.is_visible().unwrap_or(true) {
                         log::warn!("main_window_ready timeout, force showing main window");
@@ -850,7 +871,7 @@ pub fn run() {
             config::set_main_hotkey,
             config::save_main_size,
             config::set_main_follow_mouse,
-            modules::get_manifests,
+            get_bootstrap,
             modules::clipboard::commands::get_history,
             modules::clipboard::commands::get_all_history,
             modules::clipboard::commands::pin_item,

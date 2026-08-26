@@ -20,6 +20,13 @@ export interface AppConfig {
   module_order: string[];
 }
 
+export interface Bootstrap {
+  manifests: Manifest[];
+  config: AppConfig;
+}
+
+// 启动一次性拉取（合并 get_manifests + get_config 两次 IPC）
+export const getBootstrap = () => invoke<Bootstrap>("get_bootstrap");
 export const getConfig = () => invoke<AppConfig>("get_config");
 export const setModuleEnabled = (id: string, enabled: boolean) =>
   invoke<void>("set_module_enabled", { id, enabled });
@@ -32,7 +39,6 @@ export const saveMainSize = (width: number, height: number) =>
   invoke<void>("save_main_size", { width, height });
 export const setMainFollowMouse = (enabled: boolean) =>
   invoke<void>("set_main_follow_mouse", { enabled });
-export const getManifests = () => invoke<Manifest[]>("get_manifests");
 
 export interface UpdateInfo {
   version: string;
