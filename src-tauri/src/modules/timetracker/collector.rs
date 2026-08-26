@@ -32,8 +32,10 @@ pub static RECORDING: AtomicBool = AtomicBool::new(true);
 static AFK_THRESHOLD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(120);
 /// 是否记录窗口标题（关闭时 title 存空串，涉及隐私的场景可关）
 static TRACK_TITLE: AtomicBool = AtomicBool::new(true);
+/// 系统有非静音声音播放时豁免离开判定（看视频/直播/音乐不算挂机）
+static AUDIO_EXEMPT: AtomicBool = AtomicBool::new(false);
 
-/// 启动前应用配置（setup_from_handle 调用）
+/// 应用配置（setup 与 set_module_config 保存后调用，幂等）
 pub fn apply_config(app: &AppHandle) {
     let cfg = crate::config::module_cfg(app, "timetracker");
     let threshold = cfg
@@ -47,6 +49,11 @@ pub fn apply_config(app: &AppHandle) {
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     TRACK_TITLE.store(track_title, Ordering::Relaxed);
+    let audio_exempt = cfg
+        .get("media_playing_active")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    AUDIO_EXEMPT.store(audio_exempt, Ordering::Relaxed);
 }
 
 /// 心跳间隔（秒）：会话时长的结算粒度，也是异常退出的最大丢失窗口
@@ -111,6 +118,52 @@ fn now_local() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+/// 默认输出设备上是否有非静音声音正在播放（任一会话音量表峰值 > 阈值）。
+/// WASAPI 会话枚举：视频/直播/音乐播放时豁免离开判定；枚举失败返回 false（宁可多记挂机，不外扩活跃）。
+/// 调用前需本线程已 CoInitializeEx（heartbeat_loop 启动时初始化）。
+fn media_playing() -> bool {
+    use windows::core::Interface;
+    use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
+    use windows::Win32::Media::Audio::{
+        eMultimedia, eRender, IAudioSessionManager2, IMMDeviceEnumerator,
+    };
+    use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+
+    // CLSID_MMDeviceEnumerator（crate 未生成该 coclass，常数手写）：
+    // BCDE0395-E52F-467C-8E3D-C4579291692E
+    const CLSID_MMDEVICE_ENUMERATOR: windows::core::GUID =
+        windows::core::GUID::from_u128(0xbcde0395_e52f_467c_8e3d_c4579291692e);
+
+    unsafe {
+        let Ok(enumerator) =
+            CoCreateInstance::<_, IMMDeviceEnumerator>(&CLSID_MMDEVICE_ENUMERATOR, None, CLSCTX_ALL)
+        else {
+            return false;
+        };
+        let Ok(device) = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) else {
+            return false;
+        };
+        let Ok(manager) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else {
+            return false;
+        };
+        let Ok(sessions) = manager.GetSessionEnumerator() else {
+            return false;
+        };
+        let Ok(count) = sessions.GetCount() else {
+            return false;
+        };
+        for i in 0..count {
+            let Ok(session) = sessions.GetSession(i) else { continue };
+            let Ok(meter) = session.cast::<IAudioMeterInformation>() else { continue };
+            // 峰值 ≈ 0 = 静音/暂停；0.005 为浮点音量的可闻下限
+            if meter.GetPeakValue().map(|v| v > 0.005).unwrap_or(false) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// 结算当前会话并开启新会话（切换窗口时调用）
 fn switch_session(exe_path: &str, app_name: &str, title: &str) {
     let Some(app) = APP.get() else { return };
@@ -143,6 +196,13 @@ fn switch_session(exe_path: &str, app_name: &str, title: &str) {
 
 /// 心跳主循环：recv_timeout 兼顾「切换即时响应」与「周期结算」
 fn heartbeat_loop(app: AppHandle, rx: mpsc::Receiver<SwitchMsg>) {
+    // 音频会话枚举（media_playing）需要本线程初始化 COM；失败则豁免静默失效
+    unsafe {
+        let _ = windows::Win32::System::Com::CoInitializeEx(
+            None,
+            windows::Win32::System::Com::COINIT_APARTMENTTHREADED,
+        );
+    }
     loop {
         match rx.recv_timeout(Duration::from_secs(HEARTBEAT_SECS)) {
             Ok(msg) => {
@@ -157,7 +217,11 @@ fn heartbeat_loop(app: AppHandle, rx: mpsc::Receiver<SwitchMsg>) {
                 // 心跳结算：即使一直停在同一个应用也持续累计时长，
                 // is_active 按「最近输入是否在阈值内」刷新
                 let threshold = AFK_THRESHOLD.load(Ordering::Relaxed) as u64;
-                let active = threshold == 0 || idle_secs() < threshold;
+                let mut active = threshold == 0 || idle_secs() < threshold;
+                // 有声音播放豁免离开：仅键鼠已判离开时才查（省 COM 枚举开销）
+                if !active && AUDIO_EXEMPT.load(Ordering::Relaxed) && media_playing() {
+                    active = true;
+                }
                 if let Some(state) = app.try_state::<std::sync::Mutex<TimetrackerState>>() {
                     if let Ok(s) = state.lock() {
                         // 先滚动跨天会话（0 点后第一次心跳触发），再正常结算

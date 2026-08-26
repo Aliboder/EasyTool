@@ -159,6 +159,8 @@ pub fn set_module_config(
         .as_object()
         .map(|obj| obj.keys().any(|k| k == "hotkey" || k == "enabled"))
         .unwrap_or(false);
+    // 采集类设置（AFK 阈值、音频豁免等）保存后即时重应用，不必重启
+    let is_timetracker = module_id == "timetracker";
     {
         let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let m = cfg.modules.entry(module_id).or_default();
@@ -171,6 +173,9 @@ pub fn set_module_config(
     }
     if needs_hotkey_reapply {
         crate::reapply_hotkeys(&app);
+    }
+    if is_timetracker {
+        crate::modules::timetracker::reapply_config(&app);
     }
     Ok(())
 }

@@ -55,6 +55,15 @@ export function TimetrackerSettings({ cfg, onUpdate }: Props) {
               </span>
             </div>
           </SettingRow>
+          <SettingRow
+            title="播放声音算活跃"
+            hint="系统有非静音声音播放时不算离开（看视频、直播、听音乐）"
+          >
+            <Switch
+              checked={cfg.mediaPlayingActive}
+              onCheckedChange={(v) => onUpdate({ mediaPlayingActive: v })}
+            />
+          </SettingRow>
         </CardContent>
       </Card>
 
