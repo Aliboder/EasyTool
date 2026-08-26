@@ -48,9 +48,14 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     let _ = DISPLAY_NAMES.set(resolver);
     if let Some(resolver) = display_name_resolver() {
         match db.backfill_display_names(resolver) {
-            Ok(n) if n > 0 => log::info!("timetracker: enriched {n} app display names"),
+            Ok(n) if n > 0 => log::info!("timetracker: aligned {n} app display names"),
             _ => {}
         }
+    }
+    // 归并同软件的多 exe 条目（名称对齐后执行才准确）
+    match db.merge_duplicate_apps() {
+        Ok(n) if n > 0 => log::info!("timetracker: merged {n} duplicate app entries"),
+        _ => {}
     }
     app.manage(Mutex::new(TimetrackerState { db }));
 

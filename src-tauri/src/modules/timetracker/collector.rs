@@ -127,6 +127,15 @@ fn switch_session(exe_path: &str, app_name: &str, title: &str) {
     let _ = s.db.close_current_event(&now_local());
     let category = s.db.categorize(app_name, exe_path, title);
     let display_name = super::display_name_resolver().and_then(|r| r.resolve(exe_path));
+    // 同软件多 exe 归并：新名命中已有条目（如电脑管家 11 个 exe 都归到主条目）直接复用，
+    // 不再为每个辅助 exe 新建 app（否则时间线/排行里同一软件出现多次）
+    if let Some(merge_id) = display_name
+        .as_deref()
+        .and_then(|n| s.db.find_merge_target(n).ok().flatten())
+    {
+        let _ = s.db.start_event(merge_id, title, &now_local());
+        return;
+    }
     if let Ok(app_id) = s.db.upsert_app(exe_path, app_name, &category, display_name.as_deref()) {
         let _ = s.db.start_event(app_id, title, &now_local());
     }
@@ -207,6 +216,17 @@ unsafe extern "system" fn on_foreground(
     };
     let _ = CloseHandle(HANDLE(proc.0));
     let Some(exe_path) = exe_path else { return };
+
+    // 只采集 .exe 进程：temp 目录随机名临时文件（如 qqpcclinic\qqp8475.tmp）每次都可能不同，
+    // 入库只会产生一次性垃圾条目，且没有版本信息可解析
+    let is_exe = std::path::Path::new(&exe_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("exe"))
+        .unwrap_or(false);
+    if !is_exe {
+        return;
+    }
 
     let mut title_buf = [0u16; 2048];
     let title_len = GetWindowTextW(hwnd, &mut title_buf);

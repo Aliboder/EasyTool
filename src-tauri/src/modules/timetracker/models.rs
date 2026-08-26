@@ -27,6 +27,9 @@ pub struct Event {
     pub app_name: String,
     #[serde(default)]
     pub category: String,
+    /// 应用 exe 路径（时间线图例取图标用）
+    #[serde(default)]
+    pub exe_path: String,
 }
 
 /// 每日统计

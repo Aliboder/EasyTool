@@ -885,7 +885,6 @@ pub fn run() {
             modules::quota::commands::test_key,
             modules::quota::commands::get_stats_data,
             modules::quota::commands::get_daily_history,
-            modules::quota::commands::get_go_history,
             modules::quota::commands::get_go_cycles,
             modules::search::commands::search,
             modules::search::commands::search_get_status,

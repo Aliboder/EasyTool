@@ -176,14 +176,15 @@ impl TimetrackerDb {
             .map_err(|e| format!("查询应用ID失败: {e}"))
     }
 
-    /// 为存量应用回填友好显示名（仅 display_name 为空的行；找不到 keep 原样）。
+    /// 全量对齐友好显示名：用当前解析器覆盖所有行（修复历史解析 bug 留下的截断名，
+    /// 如 "腾讯电脑管家" → "腾讯电"）。resolve 失败（exe 已卸载等）保留原值。
     pub fn backfill_display_names(
         &self,
         resolver: &super::display_name::DisplayNameResolver,
     ) -> Result<usize, String> {
         let rows: Vec<(i64, String)> = self
             .conn
-            .prepare("SELECT id, exe_path FROM apps WHERE display_name IS NULL OR display_name = ''")
+            .prepare("SELECT id, exe_path FROM apps")
             .map_err(|e| format!("准备显示名回填查询失败: {e}"))?
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|e| format!("查询显示名回填失败: {e}"))?
@@ -195,7 +196,7 @@ impl TimetrackerDb {
                 self.conn
                     .execute(
                         "UPDATE apps SET display_name = ?1, updated_at = CURRENT_TIMESTAMP
-                         WHERE id = ?2 AND (display_name IS NULL OR display_name = '')",
+                         WHERE id = ?2",
                         params![name, id],
                     )
                     .map_err(|e| format!("回填显示名失败: {e}"))?;
@@ -203,6 +204,88 @@ impl TimetrackerDb {
             }
         }
         Ok(updated)
+    }
+
+    /// 子组件后缀是否与主名「紧贴」：'-' 连接或 CJK 汉字紧贴。
+    /// ASCII 字母数字紧贴不算（避免 "Google Chrome" + "Google ChromeBeta" 这类独立产品被误并）。
+    fn is_connected_suffix(full: &str, prefix_len: usize) -> bool {
+        full[prefix_len..]
+            .chars()
+            .next()
+            .is_some_and(|c| c == '-' || ('\u{4E00}'..='\u{9FFF}').contains(&c))
+    }
+
+    /// 归并同软件的多 exe 条目（display_name 相同，或"-后缀/CJK 紧贴"前缀相连，
+    /// 如 "腾讯电脑管家-硬件检测" 归入 "腾讯电脑管家"）：事件 app_id 改指主行后删被并行。
+    /// 主行 = display_name 最短者（同名取 id 最小）。O(n²) 全表遍历，apps 数千行时改 SQL 优化。
+    /// 必须在 backfill_display_names 之后调用（名称是修复后的才归并得准）。
+    pub fn merge_duplicate_apps(&self) -> Result<usize, String> {
+        let rows: Vec<(i64, String)> = self
+            .conn
+            .prepare(
+                "SELECT id, display_name FROM apps
+                 WHERE display_name IS NOT NULL AND display_name != ''",
+            )
+            .map_err(|e| format!("准备归并查询失败: {e}"))?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| format!("查询归并失败: {e}"))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("收集归并失败: {e}"))?;
+        let mut rows = rows;
+        // 短名先登记为主行 → 前缀目标总是先于其子组件出现；同名取 id 小者
+        rows.sort_by(|a, b| a.1.len().cmp(&b.1.len()).then(a.0.cmp(&b.0)));
+        let mut targets: Vec<(i64, String)> = Vec::new();
+        let mut merged = 0usize;
+        for (id, name) in &rows {
+            let target = targets.iter().find(|(_, tname)| {
+                name == tname
+                    || (name.starts_with(tname.as_str())
+                        && Self::is_connected_suffix(name, tname.len()))
+            });
+            if let Some((tid, _)) = target {
+                self.conn
+                    .execute(
+                        "UPDATE events SET app_id = ?1 WHERE app_id = ?2",
+                        params![tid, id],
+                    )
+                    .map_err(|e| format!("归并事件失败: {e}"))?;
+                self.conn
+                    .execute("DELETE FROM apps WHERE id = ?1", params![id])
+                    .map_err(|e| format!("删除被并行失败: {e}"))?;
+                merged += 1;
+            } else {
+                targets.push((*id, name.clone()));
+            }
+        }
+        Ok(merged)
+    }
+
+    /// 采集时找归并目标：新解析出的 display_name 若命中已有应用（同名或作为其子组件），
+    /// 返回已有 app_id，调用方直接复用（不新建行）。规则与 merge_duplicate_apps 一致。
+    /// 反向情况（新名是主名、库中已有子组件）由下次启动的 merge_duplicate_apps 自愈。
+    pub fn find_merge_target(&self, display_name: &str) -> Result<Option<i64>, String> {
+        if display_name.trim().is_empty() {
+            return Ok(None);
+        }
+        let rows: Vec<(i64, String)> = self
+            .conn
+            .prepare(
+                "SELECT id, display_name FROM apps
+                 WHERE display_name IS NOT NULL AND display_name != ''",
+            )
+            .map_err(|e| format!("准备归并查询失败: {e}"))?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| format!("查询归并失败: {e}"))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("收集归并失败: {e}"))?;
+        Ok(rows
+            .iter()
+            .find(|(_, n)| {
+                n == display_name
+                    || (display_name.starts_with(n.as_str())
+                        && Self::is_connected_suffix(display_name, n.len()))
+            })
+            .map(|(id, _)| *id))
     }
 
     /// 手动设置应用分类：标记 category_locked=1（rules 重跑时跳过，避免覆盖用户手动选择）
@@ -618,7 +701,8 @@ impl TimetrackerDb {
             .prepare(
                 "SELECT e.id, e.app_id, e.start_time, e.end_time, e.duration_sec,
                         e.window_title, e.is_active,
-                        COALESCE(NULLIF(a.display_name, ''), a.app_name), a.category
+                        COALESCE(NULLIF(a.display_name, ''), a.app_name), a.category,
+                        a.exe_path
                  FROM events e
                  JOIN apps a ON e.app_id = a.id
                  WHERE e.start_time >= ?1 AND e.start_time < ?2 AND e.duration_sec > 0
@@ -638,6 +722,7 @@ impl TimetrackerDb {
                     is_active: row.get(6)?,
                     app_name: row.get(7)?,
                     category: row.get(8)?,
+                    exe_path: row.get(9)?,
                 })
             })
             .map_err(|e| format!("查询失败: {e}"))?;
@@ -653,7 +738,8 @@ impl TimetrackerDb {
             .prepare(
                 "SELECT e.id, e.app_id, e.start_time, e.end_time, e.duration_sec,
                         e.window_title, e.is_active,
-                        COALESCE(NULLIF(a.display_name, ''), a.app_name), a.category
+                        COALESCE(NULLIF(a.display_name, ''), a.app_name), a.category,
+                        a.exe_path
                  FROM events e
                  JOIN apps a ON e.app_id = a.id
                  WHERE e.start_time >= ?1 AND e.start_time < ?2 AND e.duration_sec > 0
@@ -673,6 +759,7 @@ impl TimetrackerDb {
                     is_active: row.get(6)?,
                     app_name: row.get(7)?,
                     category: row.get(8)?,
+                    exe_path: row.get(9)?,
                 })
             })
             .map_err(|e| format!("范围查询失败: {e}"))?;
@@ -1269,6 +1356,63 @@ mod tests {
             .unwrap();
         assert!(dur1 >= 13 && dur1 <= 15, "挂机段时长≈15s，实际 {dur1}");
         assert!(end1.is_none(), "状态未变不封账");
+
+        remove(&p);
+    }
+
+    #[test]
+    fn merge_duplicate_apps_merges_same_product() {
+        let p = temp_db("merge");
+        remove(&p);
+        let db = TimetrackerDb::open(&p).unwrap();
+        // 电脑管家场景：主 exe + 多个子组件 exe，各自有事件
+        let main = db
+            .upsert_app("d:\\qqpcmgr\\qqpctray.exe", "qqpctray", "efficiency", Some("腾讯电脑管家"))
+            .unwrap();
+        let sub = db
+            .upsert_app("d:\\qqpcmgr\\qmhwdetect.exe", "qmhwdetect", "efficiency", Some("腾讯电脑管家-硬件检测"))
+            .unwrap();
+        let other = db
+            .upsert_app("c:\\tools\\notepad.exe", "notepad", "dev", Some("记事本"))
+            .unwrap();
+        // 同主名第二 exe
+        let dup = db
+            .upsert_app("d:\\qqpcmgr\\qmui.exe", "qmui", "efficiency", Some("腾讯电脑管家"))
+            .unwrap();
+        for id in [main, sub, other, dup] {
+            db.start_event(id, "t", "2026-08-26 10:00:00").unwrap();
+        }
+
+        let merged = db.merge_duplicate_apps().unwrap();
+        assert_eq!(merged, 2, "硬件检测归入主名 + 同名 qmui 归入主行");
+
+        // 电脑管家的 3 条事件指向主行；无关应用（记事本）事件不受影响
+        let rows: Vec<i64> = db
+            .conn
+            .prepare("SELECT app_id FROM events")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let mut rows = rows;
+        rows.sort_unstable();
+        assert_eq!(rows, vec![main, main, main, other], "管家事件归主行，记事本保留");
+        // 只剩主行 + 无关应用
+        let count: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM apps", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+
+        // 增量查找：新 exe 解析出子组件名 → 归到主行
+        assert_eq!(db.find_merge_target("腾讯电脑管家-网络测速").unwrap(), Some(main));
+        // 精确同名 → 归主行
+        assert_eq!(db.find_merge_target("腾讯电脑管家").unwrap(), Some(main));
+        // 无关名字 → None
+        assert_eq!(db.find_merge_target("QQ音乐").unwrap(), None);
+        // ASCII 紧贴不算子组件（Google ChromeBeta 不被并入 Google Chrome）
+        assert_eq!(db.find_merge_target("Google ChromeBeta").unwrap(), None);
 
         remove(&p);
     }

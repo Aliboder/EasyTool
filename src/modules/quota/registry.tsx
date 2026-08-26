@@ -29,12 +29,6 @@ export interface StatsPayload {
   daily: { date: string; amount: number }[]; // 近14天每日
 }
 
-/// get_go_history 返回的某窗口用量趋势点
-export interface GoPoint {
-  time: number; // unix ms
-  used_percent: number;
-}
-
 /// get_go_cycles 返回的窗口重置周期
 export interface GoCycle {
   cycle_start: number;

@@ -29,6 +29,7 @@ interface QuotaSettings {
   critical_threshold: number;
   notify_low: boolean;
   notify_surge: boolean;
+  go_ring_remaining: boolean;
   accounts: AccountInfo[];
 }
 
@@ -415,6 +416,16 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
               <div className="text-xs text-muted-foreground">账户今日消费超近7天日均3倍时提醒</div>
             </div>
             <Switch checked={s.notify_surge} onCheckedChange={(v) => set({ notify_surge: v })} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Go 用量环从 100% 递减</div>
+              <div className="text-xs text-muted-foreground">开启后用量环显示剩余量（初始满环、随用量递减）；关闭则按实际用量显示（默认）</div>
+            </div>
+            <Switch
+              checked={s.go_ring_remaining}
+              onCheckedChange={(v) => set({ go_ring_remaining: v })}
+            />
           </div>
         </CardContent>
       </Card>

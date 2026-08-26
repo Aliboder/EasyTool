@@ -280,33 +280,6 @@ impl QuotaDb {
         Ok(())
     }
 
-    /// 某窗口的利用率时间序列（升序）
-    pub fn go_series(
-        &self,
-        account_id: &str,
-        window: &str,
-        since_ms: i64,
-    ) -> DbResult<Vec<GoSnapshot>> {
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT captured_at, window, used_percent, resets_at FROM go_snapshots
-                 WHERE account_id = ?1 AND window = ?2 AND captured_at >= ?3 ORDER BY captured_at ASC",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map(params![account_id, window, since_ms], |r| {
-                Ok(GoSnapshot {
-                    captured_at: r.get(0)?,
-                    window: r.get(1)?,
-                    used_percent: r.get(2)?,
-                    resets_at: r.get(3)?,
-                })
-            })
-            .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
-    }
-
     /// 本次写入前的上一份快照
     pub fn prev_go_snapshot(
         &self,
@@ -542,9 +515,6 @@ mod tests {
             },
         )
         .unwrap();
-        let series = db.go_series("a", "weekly", 0).unwrap();
-        assert_eq!(series.len(), 2);
-        assert_eq!(series[1].used_percent, 30);
         let prev = db.prev_go_snapshot("a", "weekly", 2500).unwrap().unwrap();
         assert_eq!(prev.used_percent, 30);
         let latest = db.latest_go_snapshots("a").unwrap();

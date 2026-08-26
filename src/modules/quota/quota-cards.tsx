@@ -5,17 +5,16 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import {
   getKindMeta,
   type AccountStatusPayload,
-  type GoPoint,
   type GoQuotaPayload,
   type StatsPayload,
   fmtMoney,
   WINDOW_NAMES,
 } from "./registry";
-import { AreaTrend, DailyBars, Ring } from "./charts";
+import { DailyBars, Ring } from "./charts";
 
 function StatusBadge({
   account,
@@ -139,52 +138,33 @@ function BalanceBody({ account, threshold, critical }: {
   );
 }
 
-/** Go 单窗口：环形用量（点击展开趋势）*/
-function GoWindowBlock({ win, accountId }: {
+/** Go 单窗口：环形用量（环形 + 窗口名/剩余/重置三行信息） */
+function GoWindowBlock({ win, ringRemaining }: {
   win: GoQuotaPayload;
-  accountId: string;
+  ringRemaining: boolean;
 }) {
-  const [points, setPoints] = useState<GoPoint[] | null>(null);
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    invoke<GoPoint[]>("get_go_history", { accountId, window: win.window, days: 7 })
-      .then((p) => setPoints(p))
-      .catch(console.error);
-  }, [open, accountId, win.window]);
+  const used = win.used_percent;
+  // 展示模式：按实际用量（未用为空环，随用量填充）/ 从 100% 逐次递减（显示剩余量）
+  // 颜色按已用量判断：剩余越少越红（展示剩余量时颜色不能随剩余值走，否则剩余 80% 会误标橙）
+  const shown = ringRemaining ? Math.max(0, 100 - used) : used;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <Ring percent={win.used_percent} size={48} />
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex min-w-0 flex-1 flex-col items-start text-left"
-      >
-        <span className="flex items-center gap-1 text-sm font-medium text-foreground">
-          {WINDOW_NAMES[win.window] ?? win.window}
-          {open ? <ChevronUp className="size-3.5 text-muted-foreground" /> : <ChevronDown className="size-3.5 text-muted-foreground" />}
+    <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+      <Ring percent={shown} size={72} colorPercent={used} />
+      <div className="flex w-full min-w-0 flex-col items-center text-center">
+        <span className="text-sm font-medium text-foreground">{WINDOW_NAMES[win.window] ?? win.window}</span>
+        <span className="text-[11px] text-muted-foreground">
+          {ringRemaining ? `已用 ${used}%` : `剩余 ${Math.max(0, 100 - used)}%`}
         </span>
         <span className="text-[11px] text-muted-foreground">
-          剩余 {Math.max(0, 100 - win.used_percent)}% · 重置 <Countdown ts={win.resets_at} />
+          重置 <Countdown ts={win.resets_at} />
         </span>
-      </button>
-      {open && (
-        <div className="w-full">
-          {points && points.length >= 2 ? (
-            <AreaTrend className="h-10" points={points.map((p) => ({ x: p.time, y: p.used_percent }))} />
-          ) : (
-            <div className="flex h-10 items-center justify-center text-[10px] text-muted-foreground">
-              {points == null ? "加载中..." : "暂无趋势数据"}
-            </div>
-          )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
 
 /** 用量型内容体（Go）：三窗口环形用量 */
-function UsageBody({ account }: { account: AccountStatusPayload }) {
+function UsageBody({ account, ringRemaining }: { account: AccountStatusPayload; ringRemaining: boolean }) {
   if (!account.go_windows.length) {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -194,9 +174,9 @@ function UsageBody({ account }: { account: AccountStatusPayload }) {
     );
   }
   return (
-    <div className="space-y-4">
+    <div className="flex items-start gap-3">
       {account.go_windows.map((w) => (
-        <GoWindowBlock key={w.window} win={w} accountId={account.id} />
+        <GoWindowBlock key={w.window} win={w} ringRemaining={ringRemaining} />
       ))}
     </div>
   );
@@ -206,10 +186,12 @@ export function AccountCard({
   account,
   threshold,
   critical,
+  ringRemaining,
 }: {
   account: AccountStatusPayload;
   threshold: number;
   critical: number;
+  ringRemaining: boolean;
 }) {
   const meta = getKindMeta(account.kind);
   const Icon = meta.icon;
@@ -226,7 +208,7 @@ export function AccountCard({
         {meta.shape === "balance" ? (
           <BalanceBody account={account} threshold={threshold} critical={critical} />
         ) : (
-          <UsageBody account={account} />
+          <UsageBody account={account} ringRemaining={ringRemaining} />
         )}
       </CardContent>
     </Card>

@@ -18,6 +18,8 @@ export interface Event {
   is_active: number;
   app_name: string;
   category: string;
+  /** 应用 exe 路径（时间线图例取图标用） */
+  exe_path?: string;
 }
 
 export interface DailyStat {

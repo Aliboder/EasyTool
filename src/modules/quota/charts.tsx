@@ -36,88 +36,39 @@ export function DailyBars({
   );
 }
 
-/** 面积趋势图（消费/用量随时间的上升趋势） */
-export function AreaTrend({
-  points,
-  height = 56,
-  className,
-}: {
-  points: { x: number; y: number }[];
-  height?: number;
-  className?: string;
-}) {
-  if (!points.length) {
-    return (
-      <div className={cn("flex items-center justify-center text-[10px] text-muted-foreground", className)} style={{ height }}>
-        暂无趋势数据
-      </div>
-    );
-  }
-  if (points.length === 1) {
-    return (
-      <div className={cn("flex items-center justify-center text-[10px] text-muted-foreground", className)} style={{ height }}>
-        新周期开始后出现趋势
-      </div>
-    );
-  }
-  const W = 300;
-  const H = height;
-  const ys = points.map((p) => p.y);
-  const lo = Math.min(...ys);
-  const hi = Math.max(...ys);
-  const span = Math.max(1, hi - lo);
-  const step = W / (points.length - 1);
-  const pts = points.map(
-    (p, i) => `${(i * step).toFixed(1)},${(H - ((p.y - lo) / span) * H * 0.9 - H * 0.05).toFixed(1)}`,
-  );
-  const path = `M ${pts.join(" L ")}`;
-  const area = `${path} L ${W},${H} L 0,${H} Z`;
-  const last = { x: W, y: H - ((ys[ys.length - 1] - lo) / span) * H * 0.9 - H * 0.05 };
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className={cn("h-auto w-full", className)} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="areatrend" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="var(--primary)" stopOpacity=".35" />
-          <stop offset="1" stopColor="var(--primary)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill="url(#areatrend)" />
-      <path d={path} fill="none" stroke="var(--primary)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-      <circle cx={last.x} cy={last.y} r={2.5} fill="var(--primary)" />
-    </svg>
-  );
-}
-
 /** 环形用量（single numeric percent）—— 用于 Go 每个窗口的视觉主位数 */
 export function Ring({
   percent,
   size = 56,
   className,
+  colorPercent = percent,
 }: {
   percent: number;
   size?: number;
   className?: string;
+  /** 颜色告警按此值判断（默认与 percent 一致；展示剩余量时可传已用量，保证剩余越少越红） */
+  colorPercent?: number;
 }) {
   const r = (size - 8) / 2;
   const c = 2 * Math.PI * r;
   const filled = Math.max(0, Math.min(100, percent)) / 100 * c;
   const color =
-    percent >= 90
+    colorPercent >= 90
       ? "var(--destructive)"
-      : percent >= 70
+      : colorPercent >= 70
         ? "oklch(0.72 0.17 65)"
         : "oklch(0.72 0.18 155)";
   const track = "var(--muted)";
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={className}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={5} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={7} />
       <circle
         cx={size / 2}
         cy={size / 2}
         r={r}
         fill="none"
         stroke={color}
-        strokeWidth={5}
+        strokeWidth={7}
         strokeLinecap="round"
         strokeDasharray={`${filled} ${c - filled}`}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}

@@ -182,10 +182,12 @@ fn query_raw(data: &[u8], key: &str) -> Option<(*mut core::ffi::c_void, u32)> {
 
 fn query_string(data: &[u8], key: &str) -> Option<String> {
     let (buf, len) = query_raw(data, key)?;
-    if len < 2 {
+    if len == 0 {
         return None;
     }
-    let words = unsafe { std::slice::from_raw_parts(buf as *const u16, len as usize / 2) };
+    // VerQueryValueW 对字符串资源的 lpdwLen 是「字符数（含 NUL）」，不是字节数；
+    // 若按字节数 /2 会把中文名截断一半（"腾讯电脑管家" → "腾讯电"）
+    let words = unsafe { std::slice::from_raw_parts(buf as *const u16, len as usize) };
     let end = words.iter().position(|&c| c == 0).unwrap_or(words.len());
     let s = String::from_utf16(&words[..end]).ok()?;
     (!s.trim().is_empty()).then_some(s)
@@ -221,5 +223,17 @@ mod tests {
         let name = version_info_display_name(path);
         assert!(name.is_some(), "explorer.exe 应能读到 FileDescription");
         assert!(!name.unwrap().trim().is_empty());
+    }
+
+    #[test]
+    fn version_info_reads_full_chinese_description() {
+        let path = r"d:\qqpcmgr\18.1.30302.212\qt64\qmui.exe";
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        // 回归：VerQueryValueW 的 len 是字符数，按字节数 /2 曾把中文名截断一半
+        // （"腾讯电脑管家" → "腾讯电"）
+        let name = version_info_display_name(path);
+        assert_eq!(name.as_deref(), Some("腾讯电脑管家"));
     }
 }

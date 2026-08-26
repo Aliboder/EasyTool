@@ -18,6 +18,7 @@ interface StatusPayload {
 interface Settings {
   warn_threshold: number;
   critical_threshold: number;
+  go_ring_remaining: boolean;
 }
 
 export function QuotaPage() {
@@ -47,6 +48,7 @@ export function QuotaPage() {
   const thresholds = {
     threshold: settings?.warn_threshold ?? 10,
     critical: settings?.critical_threshold ?? (settings?.warn_threshold ?? 10) / 2,
+    ringRemaining: settings?.go_ring_remaining ?? false,
   };
 
   // 按 kind 分组账户（仅含注册表已知的 kind，按 order 排序），组标题带供应商图标
@@ -114,6 +116,7 @@ export function QuotaPage() {
                       account={acc}
                       threshold={thresholds.threshold}
                       critical={thresholds.critical}
+                      ringRemaining={thresholds.ringRemaining}
                     />
                   ))}
                 </div>

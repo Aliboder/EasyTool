@@ -81,6 +81,7 @@ pub struct QuotaSettings {
     pub critical_threshold: f64,
     pub notify_low: bool,
     pub notify_surge: bool,
+    pub go_ring_remaining: bool,
     pub accounts: Vec<AccountInfo>,
 }
 
@@ -108,6 +109,7 @@ pub fn get_settings(app: AppHandle) -> QuotaSettings {
         critical_threshold: get("critical_threshold", warn / 2.0),
         notify_low: getb("notify_low", true),
         notify_surge: getb("notify_surge", true),
+        go_ring_remaining: getb("go_ring_remaining", false),
         accounts,
     }
 }
@@ -121,6 +123,7 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
         v["critical_threshold"] = serde_json::json!(settings.critical_threshold);
         v["notify_low"] = serde_json::json!(settings.notify_low);
         v["notify_surge"] = serde_json::json!(settings.notify_surge);
+        v["go_ring_remaining"] = serde_json::json!(settings.go_ring_remaining);
         Ok(())
     })?;
 
@@ -346,33 +349,11 @@ pub fn get_daily_history(app: AppHandle, account_id: String) -> Vec<DailyPoint> 
 }
 
 #[derive(Debug, Serialize)]
-pub struct GoPoint {
-    pub time: i64, // unix ms
-    pub used_percent: i32,
-}
-
-#[derive(Debug, Serialize)]
 pub struct GoCyclePayload {
     pub cycle_start: i64,
     pub cycle_end: Option<i64>,
     pub peak_utilization: f64,
     pub total_delta: f64,
-}
-
-/// Go 窗口利用率时间序列（近 days 天，前端趋势图用）
-#[tauri::command]
-pub fn get_go_history(app: AppHandle, account_id: String, window: String, days: i64) -> Vec<GoPoint> {
-    let since_ms = chrono::Utc::now().timestamp_millis() - days * 86_400_000;
-    let db_guard = app.state::<Mutex<QuotaDb>>();
-    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    db.go_series(&account_id, &window, since_ms)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|s| GoPoint {
-            time: s.captured_at,
-            used_percent: s.used_percent,
-        })
-        .collect()
 }
 
 /// Go 窗口重置周期历史（每窗口峰值/总消耗）
