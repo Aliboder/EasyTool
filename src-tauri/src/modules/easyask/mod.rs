@@ -80,6 +80,9 @@ fn ensure_webview(app: &AppHandle, url: &str) -> Result<(), String> {
             // 先隐藏，等前端定位后再显示：避免建窗瞬间在窗口左上角闪现
             let _ = wv.hide();
             state.webview.lock().unwrap().replace(wv);
+            // 建窗瞬间 WebView2 可能短暂激活其他窗口，把焦点交还主窗口，
+            // 防止「失焦自动隐藏」把窗口关掉（面板模式的隐藏由 hide_after_blur_grace 判定）
+            let _ = win.set_focus();
             log::info!("easyask: child webview created for {url}");
             *state.last_url.lock().unwrap() = Some(url);
         }

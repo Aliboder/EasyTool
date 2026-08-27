@@ -1247,3 +1247,12 @@ Aliboder
 **坑 6：导航幂等**：`last_url` 比对避免重复 navigate 把页面整页重载（切走再切回不丢聊天状态）；「刷新」用 `eval("location.reload()")`。
 **教训**：① 先翻 crate 源码确认 API 门控与可见性（cargo check 报 E0603/E0599 后再看是 feature 门控还是私有路径，别猜）。② 远程子 WebView 是外部内容，拿不到 Tauri IPC，天然安全，无需 capabilities。③ 模块页依赖用 provider id 而非 url：设置里改网址不触发导航，点标签（id 变化）才导航，避免输入时半截网址被打开。
 **验证**：`cargo test` 69 passed（新增 normalize_url 单测）；`npx tsc --noEmit` 通过。
+
+---
+
+## 71. 子 WebView 抢焦点触发「失焦自动隐藏」，主窗口一进 EasyAsk 就消失（2026-08-27）
+**现象**：点击 EasyAsk 模块 → 子 WebView 创建/显示 → 主窗口立刻隐藏；托盘、热键都再也呼不出来。
+**根因**：WebView2 子 WebView 是主窗口的子 HWND，创建/显示时会抢焦点；焦点落在子 HWND 上时 `win.is_focused()` 返回 false，主窗口的 `WindowEvent::Focused(false)` → `hide_after_blur_grace` 判定「失焦」→ 隐藏。此后每次呼出子 WebView 又抢焦点 → 再隐藏，形成死循环。
+**解决**：`hide_after_blur_grace` 增加判定——`GetForegroundWindow()` 若为主窗口的子窗口（`IsChild(main_hwnd, fg)`，子 WebView 含在内），视为窗口仍聚焦、不隐藏；建窗后 `win.set_focus()` 兜底把焦点交还主窗口。点外部仍正常隐藏（面板行为不变）。
+**教训**：① 多 webview 的焦点是独立 HWND，任何「失焦即隐藏/失焦置灰」逻辑都要把子 webview 焦点算作窗口聚焦。② 排查「窗口神秘消失」先找自动隐藏触发条件（`hide_after_blur_grace` / Focused 事件），不要只盯着事件源头。
+**验证**：`cargo test` 67 passed；`npx tsc --noEmit` 通过。

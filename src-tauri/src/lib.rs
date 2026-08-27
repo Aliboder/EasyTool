@@ -183,11 +183,24 @@ pub fn apply_main_window_mode(app: &tauri::AppHandle) {
 /// 失焦 200ms 后仍未聚焦则隐藏（点外部关闭；拖动标题栏/边缘缩放等瞬时失焦不误关）
 pub(crate) fn hide_after_blur_grace(win: &tauri::Window) {
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsChild};
     let win = win.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(200));
         if win.is_focused().map(|f| f).unwrap_or(false) {
             return;
+        }
+        // EasyAsk 子 WebView 是窗口的子 HWND：焦点落在它上面时窗口其实仍聚焦，
+        // 不能触发「点外部隐藏」（否则一进 EasyAsk 窗口就消失，且再也呼不出）
+        let focused_by_child = win
+            .hwnd()
+            .map(|hwnd| unsafe {
+                let fg = GetForegroundWindow();
+                !fg.is_invalid() && IsChild(hwnd, fg).as_bool()
+            })
+            .unwrap_or(false);
+        if focused_by_child {
+            continue;
         }
         // 左键仍按住 = 正在拖动窗口标题栏（move loop 中），等松手后再判，避免拖动中误关
         if (unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) } as u16 & 0x8000) != 0 {
