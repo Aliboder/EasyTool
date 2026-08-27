@@ -52,6 +52,7 @@
 46. **keep-alive 模块切回不要全量重载 + 逐字符检测要分片**：表情页「每次激活重载数据 + 重建 1906 对象 + 重渲染」且缓存冷时 `requestIdleCallback` 会连续跑 144+ 次 canvas 检测（每次新建 context + 4096 像素扫描 + 全量 localStorage 写）→ 切回卡 200ms+。修复：切回不重载改窗口 `focus` 刷新（同搜索页）；检测复用共享 canvas + 每帧 rAF 分片（24 个/帧）+ localStorage 防抖写（一批只写一次）。判定依据：日志里 `loadCatalog` 4~18ms 很快，而 `first paint after cat` 尖峰 212~262ms，量级正好 ≈ 144 × 单字符检测 ~1.5ms
 47. **去掉激活重载会造成 keep-alive 页面数据过期**：表情页把「切回就重载」换成「窗口 focus 刷新」后，主窗口内**切 Tab（剪贴板→表情）不触发 focus** → 右键剪贴板图片「添加表情」后收藏里看不到新表情（DB 已写入，是前端没刷新）。正确做法：**激活刷新要保留**（检测分片后已很便宜 ~5ms，不再卡），focus 刷新只作为补充覆盖「停留页面时外部操作变脏」的场景。排查「操作后不显示」先查 DB 确认是否写入成功，再查前端刷新时机
 47. **窗口「focus 刷新」对呼出场景是并发风暴**：表情页「窗口聚焦时 loadCatalog 刷新」本身没问题，但快捷键呼出时 WebView2 的 focus 事件会连发多次（日志可见单次呼出后 `loadCatalog` 2~6 次连续执行），且每次 `setCat` 传新对象都会重渲染 240 个表情 → 并发重载互相叠加，`loadCatalog` 尖峰 400ms+、`first paint` 250ms+，窗口像冻结。修复两处：`loadCatalog` 加 in-flight 合并（并发调用共享同一 Promise，谁先发起谁执行，其余等同一结果；同一对象 setCat React 跳过重渲染）；焦点刷新加 150ms 防抖（连续 focus 只保留最后一次）。教训：**「按需刷新」也要考虑事件风暴 + 提供合并/防抖**，否则刷新本身就是卡顿源
+48. **主窗口内嵌子 WebView（多 webview）**：① 建子 WebView 用 `Window::add_child(builder, pos, size)`——Windows 上 `WebviewBuilder::build` 在同步命令/事件处理器会死锁，涉及建窗的命令必须声明 `async fn`；② `WebviewBuilder` 重导出与 `add_child` 都被 `tauri` 的 `unstable` feature 门控（Cargo.toml 需加 `features = ["unstable"]`，官方多 webview 标准做法，不影响现有行为）；③ 子 WebView 是远程内容拿不到 Tauri IPC，天然安全，无需 capabilities；④ 子 WebView 不在 DOM 里，模块 keep-alive 用 `hidden` class 隐藏容器盖不住它，切走/卸载必须显式 `hide()`；⑤ 定位 = 容器 `getBoundingClientRect()` × `devicePixelRatio` 物理像素，ResizeObserver + window resize 防抖重发；⑥ `get_webview`/`get_window` 在内部 trait 上，`WebviewWindow` 拿不到——`add_child` 返回的 `Webview` 存进模块 state 供后续命令取用；⑦ 导航幂等：比对 `last_url`，URL 未变不重复 navigate（切走再切回不整页重载）。详见 lessons ##70
 
 ---
 
@@ -1233,3 +1234,16 @@ Aliboder
 **根因**：`paste_item` 早已改成「隐藏 EasyTool 窗口 → 等 100ms 让 Windows 自然把焦点还给原窗口 → 模拟 Ctrl+V」，旧方案里主动还原前台窗口/焦点控件/选中范围的函数和常量没人再调用，import 也只剩它们在用，所以编译器标为 dead code；不是运行时报错。
 **解决**：删掉 `restore_selection`、`restore_focus`、`EM_SETSEL`，并移除仅它们使用的 Win32 import（`SetFocus`/`VK_MENU`/`SetForegroundWindow`/`AttachThreadInput`/`GetCurrentThreadId`），模块顶部流程注释同步更新。`record_foreground` 仍被热键调用予以保留，但它记录的焦点控件/选中范围目前只写不读，后续可单独简化。
 **验证**：`cargo test` 64 passed；`tauri dev` 的 3 条 dead_code warning 消失（`cargo test` 里另有存量 unused 变量 `dur1`，只出现在测试编译，不进 dev 构建）。
+
+---
+
+## 70. 主窗口内嵌子 WebView（多 webview）直连 AI 对话网页（2026-08-27）
+**需求**：EasyAsk 模块页 = 顶栏（provider 标签）+ 容器区覆盖一个子 WebView 加载 chat.deepseek.com 等外部网页，切 AI = navigate，切走模块 = 隐藏。
+**坑 1：`WebviewBuilder::build` 在 Windows 同步命令/事件处理器里死锁**（tauri 2.11 文档明确标注）。建窗必须走 `Window::add_child(builder, pos, size)`（内部 `run_on_main_thread` + channel 同步），且所有建窗命令声明为 `async fn`（同步命令跑在主线程会死锁）。
+**坑 2：多 webview API 挂在 `unstable` feature 后面**：`tauri::webview::WebviewBuilder` 是私有路径、`tauri::WebviewBuilder` 重导出和 `Window::add_child` 都被 `#[cfg(feature = "unstable")]` 门控。Cargo.toml 需加 `features = ["unstable"]`（官方多 webview 的标准做法，不影响现有行为）。
+**坑 3：`get_webview`/`get_window` 在 `impl AppManager`（内部 trait）上，`WebviewWindow` 拿不到**：2.11 起 `WebviewWindow` 不再 Deref 到 `Window`。取子 WebView 的正确做法是 `add_child` 返回的 `Webview` 存进模块自己的 state（`Mutex<Option<Webview>>`），后续命令从 state 取。
+**坑 4：子 WebView 不在 DOM 里**——模块页 keep-alive 用 `hidden` class 隐藏容器，子 WebView 是原生层仍会盖在别的模块上面。进入/离开模块页必须调 `easyask_show`/`easyask_hide` 显式控制，模块卸载时也要 hide。
+**坑 5：定位换算**：子 WebView 位置相对窗口客户区，主 webview 满窗铺 → 容器 `getBoundingClientRect()` × `devicePixelRatio` 转物理像素即可；ResizeObserver + window resize 防抖重发。
+**坑 6：导航幂等**：`last_url` 比对避免重复 navigate 把页面整页重载（切走再切回不丢聊天状态）；「刷新」用 `eval("location.reload()")`。
+**教训**：① 先翻 crate 源码确认 API 门控与可见性（cargo check 报 E0603/E0599 后再看是 feature 门控还是私有路径，别猜）。② 远程子 WebView 是外部内容，拿不到 Tauri IPC，天然安全，无需 capabilities。③ 模块页依赖用 provider id 而非 url：设置里改网址不触发导航，点标签（id 变化）才导航，避免输入时半截网址被打开。
+**验证**：`cargo test` 69 passed（新增 normalize_url 单测）；`npx tsc --noEmit` 通过。

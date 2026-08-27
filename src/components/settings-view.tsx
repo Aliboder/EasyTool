@@ -18,7 +18,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Clipboard, Gauge, Smile, Search, ExternalLink } from "lucide-react";
+import { Bot, Clipboard, Gauge, Smile, Search, ExternalLink } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -39,6 +39,7 @@ const MODULE_ICONS: Record<string, typeof Clipboard> = {
   gauge: Gauge,
   smile: Smile,
   search: Search,
+  bot: Bot,
 };
 
 function SortableModuleCard({ id, children }: { id: string; children: ReactNode }) {

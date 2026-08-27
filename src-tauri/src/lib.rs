@@ -367,6 +367,10 @@ fn timetracker_enabled(app: &tauri::AppHandle) -> bool {
     module_enabled(app, "timetracker")
 }
 
+fn easyask_enabled(app: &tauri::AppHandle) -> bool {
+    module_enabled(app, "easyask")
+}
+
 struct Hotkeys {
     unified: bool,
     clip_hotkey: String,
@@ -761,6 +765,14 @@ pub fn run() {
                 None
             };
 
+            // EasyAsk 无后台任务，仅托管状态（子 WebView 延迟到首次进入模块页时创建）
+            if easyask_enabled(app.handle()) {
+                log::info!("[setup] initializing easyask module");
+                modules::easyask::setup_from_handle(app.handle())?;
+            } else {
+                log::info!("[setup] easyask module disabled, skipping");
+            }
+
             // 等待剪贴板模块初始化完成（弹窗窗口延迟到首次呼出时创建，避免启动闪现）
             if let Some(handle) = clipboard_handle {
                 match handle.join() {
@@ -958,6 +970,11 @@ modules::timetracker::commands::timetracker_reset_app_category,
 modules::timetracker::commands::timetracker_get_week_overview,
 modules::timetracker::commands::timetracker_get_month_overview,
 modules::timetracker::commands::timetracker_get_category_breakdown_range,
+            modules::easyask::easyask_ensure_webview,
+            modules::easyask::easyask_set_bounds,
+            modules::easyask::easyask_show,
+            modules::easyask::easyask_hide,
+            modules::easyask::easyask_reload,
         ])
         .on_window_event(|window, event| {
             match event {
