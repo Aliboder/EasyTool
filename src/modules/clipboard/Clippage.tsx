@@ -84,7 +84,15 @@ const LINE_CLAMP: Record<number, string> = {
 
 function fmtTime(ts: number): string {
   const d = new Date(ts);
+  const now = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
+  // 今天内显示「刚刚 / X 分钟前 / HH:mm」，跨天回到 MM/DD HH:mm
+  if (d.toDateString() === now.toDateString()) {
+    const mins = Math.floor((now.getTime() - d.getTime()) / 60000);
+    if (mins < 1) return "刚刚";
+    if (mins < 60) return `${mins} 分钟前`;
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
@@ -170,15 +178,13 @@ export function Clippage() {
     } else if (filter === "files") {
       result = result.filter((it) => it.kind === "files" && !isImageItem(it));
     }
-    // 按关键词过滤（内容 + 文件路径 + 备注）
-    const kw = search.trim().toLowerCase();
-    if (kw) {
-      result = result.filter(
-        (it) =>
-          it.preview.toLowerCase().includes(kw) ||
-          (it.full ?? "").toLowerCase().includes(kw) ||
-          (it.note ?? "").toLowerCase().includes(kw),
-      );
+    // 按关键词过滤（内容 + 文件路径 + 备注）；空格分词，多个词需全部命中（AND）
+    const kws = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (kws.length > 0) {
+      result = result.filter((it) => {
+        const hay = `${it.preview} ${it.full ?? ""} ${it.note ?? ""}`.toLowerCase();
+        return kws.every((k) => hay.includes(k));
+      });
     }
     return result;
   }, [allItems, search, filter]);

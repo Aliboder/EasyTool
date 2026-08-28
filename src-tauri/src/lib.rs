@@ -20,12 +20,19 @@ use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
 
-/// 极简日志器：输出到 stderr + 日志文件（%APPDATA%/com.aliboder.easytool/easytool.log）
+/// 极简日志器：输出到 stderr + 日志文件（%APPDATA%/com.aliboder.easytool/easytool.log）。
+/// BufWriter 缓冲合并写盘，降低高频日志（热键/心跳/剪贴板）的系统调用与锁竞争；
+/// 缓冲超阈值时主动 flush，避免崩溃丢日志过多。
 struct SimpleLogger {
-    file: std::sync::Mutex<std::fs::File>,
+    file: std::sync::Mutex<std::io::BufWriter<std::fs::File>>,
+    /// 自上次 flush 以来的日志行数（达到阈值主动写盘）
+    pending: std::sync::atomic::AtomicU32,
 }
 
 static LOGGER: std::sync::OnceLock<SimpleLogger> = std::sync::OnceLock::new();
+
+/// 缓冲行数上限：超过强制写盘（保证高频日志下崩溃丢日志可控）
+const LOG_FLUSH_LINES: u32 = 256;
 
 impl log::Log for SimpleLogger {
     fn enabled(&self, _metadata: &log::Metadata) -> bool {
@@ -43,6 +50,11 @@ impl log::Log for SimpleLogger {
         if let Ok(mut file) = self.file.lock() {
             use std::io::Write;
             let _ = writeln!(file, "{line}");
+            if self.pending.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1 >= LOG_FLUSH_LINES
+            {
+                self.pending.store(0, std::sync::atomic::Ordering::SeqCst);
+                let _ = file.flush();
+            }
         }
     }
     fn flush(&self) {}
@@ -73,7 +85,8 @@ fn init_logger() {
         Ok(file) => {
             if LOGGER
                 .set(SimpleLogger {
-                    file: std::sync::Mutex::new(file),
+                    file: std::sync::Mutex::new(std::io::BufWriter::new(file)),
+                    pending: std::sync::atomic::AtomicU32::new(0),
                 })
                 .is_ok()
             {

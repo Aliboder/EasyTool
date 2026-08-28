@@ -21,6 +21,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 /// 监听器线程持有的应用句柄
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
+/// 图片落盘任务队列（监听线程 → 独立 worker 的单向通道）
+static IMAGE_TX: OnceLock<std::sync::mpsc::Sender<(i64, Vec<u8>, u32, u32)>> = OnceLock::new();
+
 /// 轮询间隔（毫秒）
 const POLL_INTERVAL_MS: u64 = 500;
 /// 自身写入守卫窗口（毫秒）。
@@ -29,9 +32,15 @@ const POLL_INTERVAL_MS: u64 = 500;
 const SELF_WRITE_GUARD_MS: i64 = 2000;
 /// 缩略图最长边
 const THUMB_MAX_SIZE: u32 = 256;
+/// 原图保存最长边：超过则降采样（截图等大图编码慢、占盘大；预览/粘贴按需用原图，
+/// 2048 以内质量足够，磁盘与编码开销显著下降）
+const ORIGINAL_MAX_EDGE: u32 = 2048;
 
 pub fn start(app: AppHandle) {
     let _ = APP_HANDLE.set(app);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let _ = IMAGE_TX.set(tx);
+    spawn_image_worker(rx);
     std::thread::spawn(listener_thread);
     std::thread::spawn(poll_thread);
 }
@@ -286,26 +295,11 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
         log::info!("saved clipboard item id={id} kind={}", item.kind);
         drop(db);
 
-        // 4. 图片落盘（原图 + 缩略图）——锁外执行
+        // 4. 图片落盘（原图降采样 + 缩略图编码 + 磁盘写入）移入独立 worker 线程，
+        //    大图复制时不再阻塞剪贴板监听 / 轮询线程
         if let Some((rgba, w, h)) = image_data {
-            if let Ok(png) = clipboard::rgba_to_png(&rgba, w, h) {
-                let thumb_png = super::store::FileStore::make_thumb_png(&rgba, w, h, THUMB_MAX_SIZE);
-                if let Ok(img_path) = state.store.save_image(id, &png) {
-                    let thumb_path = match &thumb_png {
-                        Ok(tp) => state.store.save_thumb(id, tp).unwrap_or_default(),
-                        Err(_) => std::path::PathBuf::new(),
-                    };
-                    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                    let _ = db.set_image_paths(
-                        id,
-                        Some(img_path.to_string_lossy().into_owned()),
-                        Some(thumb_path.to_string_lossy().into_owned()),
-                    );
-                } else {
-                    log::warn!("failed to save image files for item {id}");
-                }
-            } else {
-                log::warn!("failed to encode png for item {id}");
+            if let Some(tx) = IMAGE_TX.get() {
+                let _ = tx.send((id, rgba, w, h));
             }
         }
 
@@ -412,4 +406,61 @@ pub fn base64_encode(bytes: &[u8]) -> String {
 
 fn widestr(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+// ---------- 图片落盘 worker ----------
+
+/// 图片落盘 worker：接收 (id, rgba, w, h)，负责原图降采样 + 缩略图编码 + 磁盘写入，
+/// 并短锁回填 image_path/thumb_path。与监听线程解耦，大图 PNG 编解码不再阻塞剪贴板监听。
+fn spawn_image_worker(rx: std::sync::mpsc::Receiver<(i64, Vec<u8>, u32, u32)>) {
+    std::thread::spawn(move || {
+        while let Ok((id, rgba, w, h)) = rx.recv() {
+            let Some(app) = APP_HANDLE.get() else {
+                continue;
+            };
+            if let Err(e) = save_image_files(app, id, &rgba, w, h) {
+                log::warn!("failed to save image files for item {id}: {e}");
+            }
+        }
+    });
+}
+
+fn save_image_files(
+    app: &tauri::AppHandle,
+    id: i64,
+    rgba: &[u8],
+    w: u32,
+    h: u32,
+) -> Result<(), String> {
+    // 原图降采样：最长边超过 ORIGINAL_MAX_EDGE 时等比例缩小（编码与磁盘双省）
+    let (out_w, out_h, out_rgba) = if w.max(h) > ORIGINAL_MAX_EDGE {
+        let scale = ORIGINAL_MAX_EDGE as f64 / w.max(h) as f64;
+        let nw = ((w as f64) * scale).round().max(1.0) as u32;
+        let nh = ((h as f64) * scale).round().max(1.0) as u32;
+        let img = image::RgbaImage::from_raw(w, h, rgba.to_vec()).ok_or("invalid rgba buffer")?;
+        let resized = image::DynamicImage::ImageRgba8(img)
+            .resize(nw, nh, image::imageops::FilterType::Triangle)
+            .to_rgba8();
+        (nw, nh, resized.into_raw())
+    } else {
+        (w, h, rgba.to_vec())
+    };
+
+    let png = clipboard::rgba_to_png(&out_rgba, out_w, out_h)?;
+    // 缩略图基于原始像素生成（避免先降采样再缩放的二次质量损失）
+    let thumb_png = super::store::FileStore::make_thumb_png(rgba, w, h, THUMB_MAX_SIZE);
+
+    let state = app.state::<AppState>();
+    let img_path = state.store.save_image(id, &png).map_err(|e| e.to_string())?;
+    let thumb_path = match &thumb_png {
+        Ok(tp) => state.store.save_thumb(id, tp).unwrap_or_default(),
+        Err(_) => std::path::PathBuf::new(),
+    };
+    let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _ = db.set_image_paths(
+        id,
+        Some(img_path.to_string_lossy().into_owned()),
+        Some(thumb_path.to_string_lossy().into_owned()),
+    );
+    Ok(())
 }

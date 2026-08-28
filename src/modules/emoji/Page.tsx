@@ -329,7 +329,7 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
         )}
         {visibleEmoji.length === 0 && visibleCustoms.length === 0 && (
           <div className="py-10 text-center text-sm text-muted-foreground">
-            {cat ? "无匹配表情" : "加载中..."}
+            {cat ? "这里没有匹配的表情，换个关键词或分类试试" : "加载中..."}
           </div>
         )}
       </div>
