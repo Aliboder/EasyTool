@@ -71,6 +71,12 @@ pub fn paste_item(state: &AppState, app: &tauri::AppHandle, id: i64) -> Result<(
 
     // 5. 模拟 Ctrl+V
     send_ctrl_v();
+
+    // 6. 使用过的条目记为最新（刷新时间戳 → 下次打开排序置顶）
+    if let Ok(db) = state.db.lock() {
+        let _ = db.touch_item(id, super::db::now_ms());
+    }
+
     log::info!("pasted item {id}");
     Ok(())
 }

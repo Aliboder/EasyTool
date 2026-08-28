@@ -770,7 +770,7 @@ export function Clippage() {
               )}
             </div>
           )}
-          <div ref={textListRef} className="flex-1 overflow-y-auto p-1">
+          <div className="flex-1 overflow-y-auto p-1">
             {ordered.length === 0 ? (
               <EmptyState
                 icon={search ? SearchX : ClipboardList}
@@ -799,26 +799,11 @@ export function Clippage() {
                 </SortableContext>
               </DndContext>
             ) : (
-              <div
-                className="relative w-full"
-                style={{ height: `${textVirtualizer.getTotalSize()}px` }}
-              >
-                {textVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const item = textItems[virtualRow.index];
-                  return (
-                    <div
-                      key={item.id}
-                      className="absolute left-0 top-0 w-full"
-                      style={{
-                        height: `${virtualRow.size}px`,
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                    >
-                      {textRow(item, imgItems.length + fileItems.length + virtualRow.index)}
-                    </div>
-                  );
-                })}
-              </div>
+              <ul className="space-y-2">
+                {textItems.map((item, i) =>
+                  textRow(item, imgItems.length + fileItems.length + i),
+                )}
+              </ul>
             )}
           </div>
         </div>

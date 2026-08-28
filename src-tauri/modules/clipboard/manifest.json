@@ -5,7 +5,6 @@
   "description": "记录剪贴板文本/图片/文件，支持固定与快速粘贴",
   "enabled": true,
   "default_config": {
-    "max_items": 500,
     "record_text": true,
     "record_image": true,
     "record_files": true,

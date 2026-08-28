@@ -3,7 +3,6 @@
 use super::models::{Item, ItemDto, ItemKind};
 use super::state::AppState;
 use serde::Serialize;
-use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Debug, Serialize)]
@@ -216,22 +215,6 @@ pub fn open_file(path: String) -> CmdResult<()> {
             message: format!("无法打开文件: {e}"),
         })?;
     Ok(())
-}
-
-/// 设置历史上限（写入 config 并即时生效）
-#[tauri::command]
-pub fn set_max_items(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    max_items: i64,
-) -> CmdResult<()> {
-    let max = max_items.clamp(1, 100000) as u64;
-    state.max_items.store(max, Ordering::SeqCst);
-    crate::config::update_module(&app, "clipboard", |v| {
-        v["max_items"] = serde_json::json!(max);
-        Ok(())
-    })
-    .map_err(CommandError::from)
 }
 
 /// 数据目录路径（设置展示用）

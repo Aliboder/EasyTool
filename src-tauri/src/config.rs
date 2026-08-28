@@ -24,7 +24,6 @@ impl Default for AppConfig {
             "clipboard".into(),
             serde_json::json!({
                 "enabled": true,
-                "max_items": 500,
                 "record_text": true,
                 "record_image": true,
                 "record_files": true,

@@ -672,7 +672,6 @@ pub fn run() {
             modules::clipboard::commands::copy_item,
             modules::clipboard::commands::open_file_location,
             modules::clipboard::commands::open_file,
-            modules::clipboard::commands::set_max_items,
             modules::clipboard::commands::get_data_dir,
             modules::clipboard::commands::open_data_dir,
             modules::clipboard::commands::get_stats,

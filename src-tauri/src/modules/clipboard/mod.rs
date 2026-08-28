@@ -15,12 +15,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
 };
 
-pub fn max_items(app: &tauri::AppHandle) -> u64 {
-    crate::config::module_cfg(app, "clipboard")
-        .get("max_items")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(2000)
-}
+/// 剪贴板历史上限：锁定 500 条（不可调），超出自动清理最旧的非固定条目
+pub const MAX_ITEMS: u64 = 500;
 
 /// 初始化剪贴板模块：数据库、状态、监听线程（从 AppHandle，用于并行初始化）
 pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -29,12 +25,12 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     db::backup_database(&data_dir);
     // 开库失败（典型：库损坏）→ 隔离损坏文件重建空库，应用照常启动
     let db_path = data_dir.join("clipboard.db");
-    let state = match AppState::new(data_dir.clone(), db_path.clone(), max_items(app)) {
+    let state = match AppState::new(data_dir.clone(), db_path.clone(), MAX_ITEMS) {
         Ok(s) => s,
         Err(e) => {
             log::error!("clipboard db init failed ({e}), quarantining broken db and recreating");
             crate::quarantine_broken_db(&db_path);
-            AppState::new(data_dir.clone(), db_path, max_items(app))
+            AppState::new(data_dir.clone(), db_path, MAX_ITEMS)
                 .map_err(|e| tauri::Error::Io(std::io::Error::other(e.to_string())))?
         }
     };
