@@ -1256,3 +1256,18 @@ Aliboder
 **解决**：`hide_after_blur_grace` 增加判定——`GetForegroundWindow()` 若为主窗口的子窗口（`IsChild(main_hwnd, fg)`，子 WebView 含在内），视为窗口仍聚焦、不隐藏；建窗后 `win.set_focus()` 兜底把焦点交还主窗口。点外部仍正常隐藏（面板行为不变）。
 **教训**：① 多 webview 的焦点是独立 HWND，任何「失焦即隐藏/失焦置灰」逻辑都要把子 webview 焦点算作窗口聚焦。② 排查「窗口神秘消失」先找自动隐藏触发条件（`hide_after_blur_grace` / Focused 事件），不要只盯着事件源头。
 **验证**：`cargo test` 67 passed；`npx tsc --noEmit` 通过。
+
+---
+## 72. 移除 EasyAsk 模块：六处清理清单 + 发版版本号三处同步（2026-08-27）
+**背景**：EasyAsk（主窗口内嵌子 WebView 直连 DeepSeek/Kimi/通义/豆包对话网页）在 v0.6.6 后以实验模块加入（2 个本地提交），体验未达预期决定整体移除。工作区删 471 行、改 48 行后收尾，本条目记录清理清单与两个坑。
+**移除清单（6 处，缺一处就有残留）**：
+1. `src-tauri/modules/<id>/manifest.json`（打包 resources 清单）
+2. `src-tauri/src/modules/<id>/` 整个 Rust 目录 + `src-tauri/src/modules/mod.rs` 的 `pub mod <id>;`
+3. `src-tauri/src/lib.rs`：setup 初始化块、`generate_handler!` 里的全部命令注册、模块专用热键/事件特判
+4. 前端 `src/modules/<id>/` 整套 + `src/App.tsx` 的 `lazy` import、`PAGE_IMPORTS`、页面挂载
+5. 该模块独享的 Cargo feature/依赖（EasyAsk 需 tauri `unstable` feature，移除后一并去掉）
+6. 文档：AGENTS.md 的模块列表（与代码同步改，防止下个 AI 会话信了过时文档）
+**坑 1：移除模块别只删正面代码，为它而生的特判也要清**：EasyAsk 曾迫使 `hide_after_blur_grace` 加 `IsChild(main_hwnd, fg)` 子 WebView 焦点判定；移除后换成更通用的方案——托盘呼出前注入一次 F24 按键获取前台权限 + `MAIN_FOCUSED_SINCE_SHOW` 呼出保护（show 后没真正拿到过焦点的「失焦」不算点外部）+ 150/400/900ms 焦点重试。同问题（托盘点击 set_focus 失败导致误隐藏）不再依赖多 webview 特判。
+**坑 2：发版三处版本号必须同一次提交**：收尾时发现 v0.6.6 的 release commit 只改了 `package.json` + `tauri.conf.json`，`src-tauri/Cargo.toml` 漏在 0.6.2——按 AGENTS.md 发版流程，漏一个会导致构建失败或版本不一致，本次一并同步到 0.6.6。回归 lessons 速查 #11。
+**教训**：移除模块后 grep `(?i)<id>` 全仓库（含 website/.github/tools）确认零残留；历史 lessons（##70/##71 多 webview 经验）保留不删，它们是已踩的坑记录。
+**验证**：`cargo check` / `cargo test` 66 passed（2 项需 Everything 环境的探测测试 ignored）；`npx tsc --noEmit` + `npm run build`（vite MPA）通过；提交前 `git status`/`git diff` 只含相关文件。

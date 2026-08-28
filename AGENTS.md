@@ -16,7 +16,6 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 - `emoji` 表情面板：1900+ 表情分类检索，中文/英文/shortcode 搜索，收藏置顶，SendInput 直输；独立弹窗
 - `search` 文件搜索：Everything 全文搜索（**需用户安装 Everything**），Everything64.dll 随应用打包；独立弹窗 + 模块页双入口。第一个「应用」Tab = **已安装应用中心**（扫描开始菜单，点击即启动，前台频率排序），搜索时匹配应用置顶显示
 - `timetracker` 时长统计：自动记录前台软件使用时长，今日/本周/本月总览与对比、应用排行（总/活跃时长）、每日甘特时间线、自动分类 + 自定义正则规则、AFK 离开检测；独立弹窗（延迟创建）
-- `easyask` AI 对话：主窗口内嵌子 WebView 直连 DeepSeek/Kimi/通义/豆包等对话网页，顶栏标签快速切换；无独立窗口（多 webview 需 tauri `unstable` feature）
 
 ## 技术栈
 

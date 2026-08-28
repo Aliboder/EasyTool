@@ -1,6 +1,6 @@
 [package]
 name = "easytool"
-version = "0.6.2"
+version = "0.6.6"
 description = "EasyTool 工具箱"
 authors = ["Yuan Jiawei"]
 edition = "2021"
@@ -20,7 +20,7 @@ panic = "abort"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "unstable"] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2.5.1"

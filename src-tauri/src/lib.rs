@@ -9,6 +9,7 @@ use tauri::{
     Manager, WindowEvent,
 };
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 use windows::Win32::Foundation::{POINT, RECT};
@@ -118,11 +119,43 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// show_main 呼出后主窗口是否真正拿到过焦点。托盘点击不授予前台权限，set_focus
+/// 可能失败——没拿到过焦点的「失焦」不是用户点外部，blur-grace 据此不隐藏
+static MAIN_FOCUSED_SINCE_SHOW: AtomicBool = AtomicBool::new(false);
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        // 托盘点击不授予前台权限：先注入一次无害按键（F24），让系统认为本进程刚
+        // 收到用户输入，set_focus 才有权限真正拿到焦点（托盘应用的标准做法）
+        unsafe {
+            use windows::Win32::UI::Input::KeyboardAndMouse::{
+                keybd_event, KEYEVENTF_KEYUP, KEYBD_EVENT_FLAGS,
+            };
+            keybd_event(0x87, 0, KEYBD_EVENT_FLAGS(0), 0); // VK_F24 down
+            keybd_event(0x87, 0, KEYEVENTF_KEYUP, 0); // VK_F24 up
+        }
+        if win.is_focused().unwrap_or(false) {
+            MAIN_FOCUSED_SINCE_SHOW.store(true, Ordering::Relaxed);
+        } else {
+            MAIN_FOCUSED_SINCE_SHOW.store(false, Ordering::Relaxed);
+        }
         let _ = win.show();
         let _ = win.unminimize();
         let _ = win.set_focus();
+        // 焦点可能没立即落定（子 WebView 激活抖动）：重试几次，让窗口真正拿到焦点
+        let app = app.clone();
+        std::thread::spawn(move || {
+            for delay in [150u64, 400, 900] {
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+                let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+                    return;
+                };
+                if win.is_focused().unwrap_or(false) {
+                    return;
+                }
+                let _ = win.set_focus();
+            }
+        });
     }
 }
 
@@ -183,23 +216,15 @@ pub fn apply_main_window_mode(app: &tauri::AppHandle) {
 /// 失焦 200ms 后仍未聚焦则隐藏（点外部关闭；拖动标题栏/边缘缩放等瞬时失焦不误关）
 pub(crate) fn hide_after_blur_grace(win: &tauri::Window) {
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsChild};
     let win = win.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(200));
-        if win.is_focused().map(|f| f).unwrap_or(false) {
+        if win.is_focused().unwrap_or(false) {
             return;
         }
-        // EasyAsk 子 WebView 是窗口的子 HWND：焦点落在它上面时窗口其实仍聚焦，
-        // 不能触发「点外部隐藏」（否则一进 EasyAsk 窗口就消失，且再也呼不出）
-        let focused_by_child = win
-            .hwnd()
-            .map(|hwnd| unsafe {
-                let fg = GetForegroundWindow();
-                !fg.is_invalid() && IsChild(hwnd, fg).as_bool()
-            })
-            .unwrap_or(false);
-        if focused_by_child {
+        // 呼出保护：show_main 后主窗口还没真正拿到过焦点（托盘点击不授予前台权限、
+        // set_focus 失败）时，焦点在外不是用户点外部，等焦点落定再说
+        if win.label() == MAIN_WINDOW_LABEL && !MAIN_FOCUSED_SINCE_SHOW.load(Ordering::Relaxed) {
             continue;
         }
         // 左键仍按住 = 正在拖动窗口标题栏（move loop 中），等松手后再判，避免拖动中误关
@@ -378,10 +403,6 @@ fn emoji_enabled(app: &tauri::AppHandle) -> bool {
 
 fn timetracker_enabled(app: &tauri::AppHandle) -> bool {
     module_enabled(app, "timetracker")
-}
-
-fn easyask_enabled(app: &tauri::AppHandle) -> bool {
-    module_enabled(app, "easyask")
 }
 
 struct Hotkeys {
@@ -778,14 +799,6 @@ pub fn run() {
                 None
             };
 
-            // EasyAsk 无后台任务，仅托管状态（子 WebView 延迟到首次进入模块页时创建）
-            if easyask_enabled(app.handle()) {
-                log::info!("[setup] initializing easyask module");
-                modules::easyask::setup_from_handle(app.handle())?;
-            } else {
-                log::info!("[setup] easyask module disabled, skipping");
-            }
-
             // 等待剪贴板模块初始化完成（弹窗窗口延迟到首次呼出时创建，避免启动闪现）
             if let Some(handle) = clipboard_handle {
                 match handle.join() {
@@ -983,11 +996,6 @@ modules::timetracker::commands::timetracker_reset_app_category,
 modules::timetracker::commands::timetracker_get_week_overview,
 modules::timetracker::commands::timetracker_get_month_overview,
 modules::timetracker::commands::timetracker_get_category_breakdown_range,
-            modules::easyask::easyask_ensure_webview,
-            modules::easyask::easyask_set_bounds,
-            modules::easyask::easyask_show,
-            modules::easyask::easyask_hide,
-            modules::easyask::easyask_reload,
         ])
         .on_window_event(|window, event| {
             match event {
@@ -998,15 +1006,12 @@ modules::timetracker::commands::timetracker_get_category_breakdown_range,
                         api.prevent_close();
                     }
                 }
+                WindowEvent::Focused(true) if window.label() == MAIN_WINDOW_LABEL => {
+                    MAIN_FOCUSED_SINCE_SHOW.store(true, Ordering::Relaxed);
+                }
                 WindowEvent::Focused(false) => {
                     let label = window.label().to_string();
-                    if label == modules::clipboard::POPUP_WINDOW_LABEL
-                        || label == modules::search::POPUP_WINDOW_LABEL
-                        || label == modules::emoji::POPUP_WINDOW_LABEL
-                        || label == modules::timetracker::POPUP_WINDOW_LABEL
-                    {
-                        hide_after_blur_grace(window);
-                    } else if label == MAIN_WINDOW_LABEL {
+                    if label == MAIN_WINDOW_LABEL {
                         // 统一模式下点外部即隐藏主窗口（面板行为）
                         let unified = window
                             .app_handle()
@@ -1018,6 +1023,12 @@ modules::timetracker::commands::timetracker_get_category_breakdown_range,
                         if unified {
                             hide_after_blur_grace(window);
                         }
+                    } else if label == modules::clipboard::POPUP_WINDOW_LABEL
+                        || label == modules::search::POPUP_WINDOW_LABEL
+                        || label == modules::emoji::POPUP_WINDOW_LABEL
+                        || label == modules::timetracker::POPUP_WINDOW_LABEL
+                    {
+                        hide_after_blur_grace(window);
                     }
                 }
                 _ => {}

@@ -55,15 +55,12 @@ const importSearch = () =>
   import("@/modules/search/Page").then(m => ({ default: m.SearchPage }));
 const importTimetracker = () =>
   import("@/modules/timetracker/Page").then(m => ({ default: m.TimetrackerPage }));
-const importEasyask = () =>
-  import("@/modules/easyask/Page").then(m => ({ default: m.EasyaskPage }));
 
 const Clippage = lazy(loadPage("clipboard", importClipboard));
 const QuotaPage = lazy(loadPage("quota", importQuota));
 const EmojiPage = lazy(loadPage("emoji", importEmoji));
 const SearchPage = lazy(loadPage("search", importSearch));
 const TimetrackerPage = lazy(loadPage("timetracker", importTimetracker));
-const EasyaskPage = lazy(loadPage("easyask", importEasyask));
 
 // 模块 id → 分包加载器：与上方 lazy 共用同一 import（命中缓存，无额外请求）
 const PAGE_IMPORTS: Record<string, () => Promise<{ default: React.ComponentType<any> }>> = {
@@ -72,7 +69,6 @@ const PAGE_IMPORTS: Record<string, () => Promise<{ default: React.ComponentType<
   emoji: importEmoji,
   search: importSearch,
   timetracker: importTimetracker,
-  easyask: importEasyask,
 };
 
 // 落地面板 = 排序第一位且启用的模块（与下方 enabledModules 同规则）
@@ -288,11 +284,6 @@ function App() {
       {visited.has("timetracker") && (
         <div className={active === "timetracker" ? "h-full" : "hidden"}>
           <TimetrackerPage active={active === "timetracker"} />
-        </div>
-      )}
-      {visited.has("easyask") && (
-        <div className={active === "easyask" ? "h-full" : "hidden"}>
-          <EasyaskPage active={active === "easyask"} />
         </div>
       )}
     </div>
