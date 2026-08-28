@@ -6,14 +6,24 @@ const RELEASES = "https://github.com/Aliboder/EasyTool/releases";
 
 const LOG = [
   {
-    version: "v0.6.7",
+    version: "v0.6.8",
     date: "2026-08-28",
     highlight: true,
     color: "text-emerald-400",
     colorBg: "bg-emerald-500/15",
     tag: "latest",
-    summary: "底栏滚轮横向滚动；移除独立小窗，统一为单一主窗口 + 单一全局热键。",
-    detail: "窗口缩小时可悬停底栏滚动滚轮平移模块按钮并显示溢出提示；剪贴板/表情/搜索/时长统计的独立弹窗全部移除，功能收进唯一主面板，模块独立热键精简为单个主窗口呼出热键（Ctrl+Shift+E，可自定义）。",
+    summary: "移除独立小窗，统一为单一主窗口 + 单一全局热键。",
+    detail: "剪贴板/表情/搜索/时长统计的独立弹窗全部移除，功能收进唯一主面板；模块独立热键精简为单个主窗口呼出热键（Ctrl+Shift+E，可自定义），跟手粘贴/直输保留（收起时自动回到原窗口）。",
+  },
+  {
+    version: "v0.6.7",
+    date: "2026-08-28",
+    highlight: false,
+    color: "text-blue-400",
+    colorBg: "bg-blue-500/15",
+    tag: "ui",
+    summary: "底栏滚轮横向滚动：窗口缩小时悬停底栏滚动滚轮即可平移模块按钮。",
+    detail: "",
   },
   {
     version: "v0.6.0",
