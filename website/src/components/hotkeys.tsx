@@ -13,11 +13,7 @@ type Hotkey = {
 };
 
 const HOTKEYS: Hotkey[] = [
-  { action: "主面板", keys: ["Ctrl", "Shift", "E"], desc: "统一呼出模式下打开主窗口，集成全部模块。关闭统一模式后，此热键可自定义。", toast: "主面板已打开", module: "全部模块", color: "text-emerald-400", colorBg: "bg-emerald-500/15" },
-  { action: "剪贴板", keys: ["Ctrl", "Shift", "V"], desc: "直接呼出剪贴板弹窗，跟随鼠标。搜索、固定、复制一步到位。", toast: "剪贴板弹窗", module: "剪贴板历史", color: "text-blue-400", colorBg: "bg-blue-500/15" },
-  { action: "表情面板", keys: ["Ctrl", "Shift", "J"], desc: "弹出表情选择器，分类浏览 + 收藏夹，选中即直输到当前输入框。", toast: "表情面板已呼出", module: "表情面板", color: "text-amber-400", colorBg: "bg-amber-500/15" },
-  { action: "文件搜索", keys: ["Ctrl", "Shift", "F"], desc: "调用 Everything 引擎秒搜全盘文件名，结果支持复制路径/直接打开。", toast: "文件搜索已就绪", module: "文件秒搜", color: "text-cyan-400", colorBg: "bg-cyan-500/15" },
-  { action: "时长统计", keys: ["Ctrl", "Shift", "T"], desc: "呼出时长统计弹窗，查看今日/本周/本月排行与时间线。", toast: "时长统计已呼出", module: "时长统计", color: "text-violet-400", colorBg: "bg-violet-500/15" },
+  { action: "主面板", keys: ["Ctrl", "Shift", "E"], desc: "一个热键呼出主面板：剪贴板、额度监控、表情、文件秒搜、时长统计五个模块在底部导航间切换，全部操作在主窗口内完成。", toast: "主面板已打开", module: "全部模块", color: "text-emerald-400", colorBg: "bg-emerald-500/15" },
 ];
 
 const KB_ROWS = [
@@ -87,7 +83,7 @@ export function Hotkeys() {
             </div>
           </div>
           <p className="text-xs text-zinc-500">
-            默认统一呼出模式：仅 <kbd className="rounded border border-white/10 bg-zinc-800 px-1.5 py-0.5 font-display text-[10px]">Ctrl+Shift+E</kbd> 生效。关闭统一模式后各模块独立热键生效。均可在设置中录制修改。
+            唯一全局热键 <kbd className="rounded border border-white/10 bg-zinc-800 px-1.5 py-0.5 font-display text-[10px]">Ctrl+Shift+E</kbd> 呼出主面板；模块之间用底部导航切换，没有独立热键。可在设置中录制自定义。
           </p>
         </div>
 

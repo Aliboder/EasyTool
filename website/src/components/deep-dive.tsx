@@ -25,9 +25,9 @@ const MODULES: ModuleInfo[] = [
       { icon: "🖼️", text: "图片自动生成 256px 缩略图，悬停预览大图" },
       { icon: "📌", text: "固定常用条目，拖拽调整顺序，置顶永不挤掉" },
       { icon: "🔍", text: "内容指纹去重，自身写入不误记" },
-      { icon: "🎯", text: "弹窗跟随鼠标，失焦自动隐藏，选中即粘贴" },
+      { icon: "🎯", text: "点条目自动隐藏面板并粘贴回原窗口，跟手不打断" },
     ],
-    meta: ["Ctrl+Shift+V", "跟随鼠标", "SQLite", "WM_CLIPBOARDUPDATE"],
+    meta: ["跟手粘贴", "SQLite", "WM_CLIPBOARDUPDATE"],
   },
   {
     id: "quota", name: "额度监控", icon: Gauge,
@@ -53,7 +53,7 @@ const MODULES: ModuleInfo[] = [
       { icon: "🎨", text: "系统字体优先渲染，缺失时 Twemoji 兜底" },
       { icon: "✨", text: "图片表情自动写入并粘贴，全流程无感" },
     ],
-    meta: ["Ctrl+Shift+J", "跟随鼠标", "SendInput", "Twemoji"],
+    meta: ["SendInput", "Twemoji"],
   },
   {
     id: "search", name: "文件秒搜", icon: Search,
@@ -66,7 +66,7 @@ const MODULES: ModuleInfo[] = [
       { icon: "📐", text: "结果列与排序自定义，列表 / 网格双视图" },
       { icon: "🔗", text: "复制路径自动进入剪贴板历史，跨模块联动" },
     ],
-    meta: ["Ctrl+Shift+F", "Everything", "跟随鼠标", "DLL"],
+    meta: ["Everything", "DLL"],
   },
   {
     id: "timetracker", name: "时长统计", icon: Clock,
@@ -79,7 +79,7 @@ const MODULES: ModuleInfo[] = [
       { icon: "🏷️", text: "自动分类（效率/资源/视听/学习/游戏），可自定义规则" },
       { icon: "😴", text: "离开检测：无键鼠输入自动剔除 AFK 时间" },
     ],
-    meta: ["Ctrl+Shift+T", "跟随鼠标", "SQLite", "Win32 钩子"],
+    meta: ["SQLite", "Win32 钩子"],
   },
 ];
 

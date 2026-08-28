@@ -2,8 +2,6 @@ import { useState } from "react";
 import { Reveal } from "./reveal";
 import { SectionHead } from "./section-head";
 import { RealMainWindow } from "./real-main-window";
-import { RealClipboardPopup } from "./real-clipboard-popup";
-import { RealEmojiPopup } from "./real-emoji-popup";
 import { RealQuotaSettings } from "./real-quota-settings";
 import { RealAppShell } from "./real-app-shell";
 import { RealTimetracker } from "./real-timetracker";
@@ -11,8 +9,6 @@ import { RealTimetracker } from "./real-timetracker";
 const MODULES = [
   { id: "timetracker", label: "时长统计", desc: "排行 + 时间线 + 分类", color: "text-violet-400" },
   { id: "search", label: "文件搜索", desc: "Everything 引擎，输入即出结果", color: "text-emerald-400" },
-  { id: "clipboard", label: "剪贴板", desc: "历史记录，固定复制", color: "text-blue-400" },
-  { id: "emoji", label: "表情面板", desc: "1900+ 表情分类浏览", color: "text-amber-400" },
   { id: "quota", label: "额度监控", desc: "多账户余额追踪", color: "text-cyan-400" },
   { id: "shell", label: "App 外壳", desc: "底部导航模块切换", color: "text-zinc-400" },
 ];
@@ -24,8 +20,6 @@ export function Screenshots() {
     switch (MODULES[active].id) {
       case "timetracker": return <RealTimetracker />;
       case "search": return <RealMainWindow />;
-      case "clipboard": return <RealClipboardPopup />;
-      case "emoji": return <RealEmojiPopup />;
       case "quota": return <RealQuotaSettings />;
       case "shell": return <RealAppShell />;
       default: return <RealMainWindow />;

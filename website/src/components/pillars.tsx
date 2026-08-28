@@ -36,13 +36,12 @@ const PILLARS = [
     title: "热键驱动",
     color: "text-amber-400",
     colorBg: "bg-amber-500/15",
-    body: "全局热键一键呼出，弹窗跟随鼠标、失焦即隐。默认 Ctrl+Shift+E 统一呼出主面板；关闭统一模式后，各模块独立热键生效。所有快捷键均可录制自定义。",
-    highlights: ["全局热键", "跟随鼠标", "失焦即隐", "录制自定义"],
-    code: `Ctrl+Shift+E  →  主面板
-Ctrl+Shift+V  →  剪贴板
-Ctrl+Shift+J  →  表情
-Ctrl+Shift+F  →  文件搜索
-Ctrl+Shift+T  →  时长统计`,
+    body: "一个全局热键呼出主面板，置顶、点外部自动隐藏、可选跟随鼠标。剪贴板/表情收起时自动回到原窗口（隐藏窗口后注入），不打断工作流。",
+    highlights: ["单一全局热键", "主面板置顶", "点外部即隐", "跟手粘贴"],
+    code: `Ctrl+Shift+E  →  呼出主面板
+（剪贴板 / 额度 / 表情 /
+ 搜索 / 时长统计
+ 在面板底部导航间切换）`,
   },
 ];
 

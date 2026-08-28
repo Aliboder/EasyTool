@@ -1,4 +1,4 @@
-import { Pin } from "lucide-react";
+import { Clipboard, Clock, Gauge, Search, Settings, Smile } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ItemIcon, type ClipType } from "./minis/item-icon";
@@ -17,11 +17,20 @@ const POOL: Omit<Item, "id">[] = [
 // 时间标签按位置递推，最新一条永远是「刚刚」
 const TIMES = ["刚刚", "1 分钟前", "3 分钟前", "8 分钟前", "12 分钟前"];
 
+// 主面板底部模块栏（与真实 App 底栏一致：5 模块 + 设置）
+const MODULES = [
+  { id: "clipboard", label: "剪贴板", Icon: Clipboard },
+  { id: "quota", label: "额度", Icon: Gauge },
+  { id: "emoji", label: "表情", Icon: Smile },
+  { id: "search", label: "搜索", Icon: Search },
+  { id: "timetracker", label: "时长", Icon: Clock },
+];
+
 function seed(): Item[] {
   return POOL.slice(0, 4).map((it, i) => ({ ...it, id: i }));
 }
 
-export function MiniPopup() {
+export function MiniPanel() {
   const reduce = useReducedMotion();
   const [items, setItems] = useState<Item[]>(seed);
 
@@ -41,12 +50,12 @@ export function MiniPopup() {
       initial={reduce ? false : { opacity: 0, y: 28 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.7, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white shadow-xl shadow-zinc-900/5 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/30"
+      className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white shadow-xl shadow-zinc-900/5 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/30"
     >
       <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
         <div className="flex items-center gap-2 text-sm font-medium">
           <span className="size-2 rounded-full bg-emerald-500" />
-          EasyTool · 剪贴板
+          EasyTool · 主面板
         </div>
         <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-display text-xs text-zinc-500 tabular-nums dark:bg-zinc-800 dark:text-zinc-400">
           {items.length + 128} 条记录
@@ -56,8 +65,7 @@ export function MiniPopup() {
       <ul className="space-y-1 p-2">
         <li className="flex items-center gap-3 rounded-xl bg-emerald-500/10 px-3 py-2.5">
           <ItemIcon type="file" />
-          <span className="min-w-0 flex-1 truncate text-sm">EasyTool_0.6.0_x64-setup.exe</span>
-          <Pin className="size-3.5 shrink-0 fill-emerald-500 text-emerald-500" />
+          <span className="min-w-0 flex-1 truncate text-sm">EasyTool_0.6.7_x64-setup.exe</span>
         </li>
 
         <AnimatePresence initial={false} mode="popLayout">
@@ -82,6 +90,25 @@ export function MiniPopup() {
           ))}
         </AnimatePresence>
       </ul>
+
+      {/* 底部模块栏：一个主面板装下全部模块 */}
+      <div className="flex items-center gap-1 border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
+        {MODULES.map(({ id, label, Icon }, i) => (
+          <div
+            key={id}
+            className={`flex flex-1 flex-col items-center gap-0.5 rounded-md px-1 py-1 ${
+              i === 0 ? "bg-zinc-100 dark:bg-zinc-800" : ""
+            }`}
+          >
+            <Icon className="size-3.5 text-zinc-500 dark:text-zinc-400" />
+            <span className="text-[9px] text-zinc-500 dark:text-zinc-400">{label}</span>
+          </div>
+        ))}
+        <div className="flex flex-1 flex-col items-center gap-0.5 rounded-md px-1 py-1">
+          <Settings className="size-3.5 text-zinc-500 dark:text-zinc-400" />
+          <span className="text-[9px] text-zinc-500 dark:text-zinc-400">设置</span>
+        </div>
+      </div>
     </motion.div>
   );
 }

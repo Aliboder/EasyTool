@@ -1,5 +1,5 @@
 import { Download, Github } from "lucide-react";
-import { MiniPopup } from "./mini-popup";
+import { MiniPanel } from "./mini-panel";
 import { RippleLink } from "./ripple-link";
 import { MagneticLink } from "./magnetic-link";
 import { MouseSpotlight } from "./mouse-spotlight";
@@ -24,7 +24,7 @@ export function Hero() {
                 <ScrambleText text="EASYTOOL" delay={200} speed={40} />
               </span>
               <span>
-                vol. <span className="font-bold text-emerald-600 dark:text-emerald-400">0.6.0</span>{" "}
+                vol. <span className="font-bold text-emerald-600 dark:text-emerald-400">0.6.7</span>{" "}
                 <span className="text-zinc-400 dark:text-zinc-600">· 2026.08</span>
               </span>
             </div>
@@ -74,7 +74,7 @@ export function Hero() {
               {/* right: live demo (floating) */}
               <div className="flex items-center justify-center p-6 sm:p-10">
                 <div className="float-anim">
-                  <MiniPopup />
+                  <MiniPanel />
                 </div>
               </div>
             </div>
