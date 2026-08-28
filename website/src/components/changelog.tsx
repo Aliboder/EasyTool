@@ -6,6 +6,16 @@ const RELEASES = "https://github.com/Aliboder/EasyTool/releases";
 
 const LOG = [
   {
+    version: "v0.6.9",
+    date: "2026-08-28",
+    highlight: true,
+    color: "text-emerald-400",
+    colorBg: "bg-emerald-500/15",
+    tag: "latest",
+    summary: "性能与清理：剪贴板「全部」Tab 长列表虚拟化、缩略图分批加载；前端单测体系落地。",
+    detail: "剪贴板大历史下「全部」页签不再全量渲染（虚拟滚动）+ 缩略图按帧分批拉取；新增 vitest 前端单测（npm test）；启动自动清理历史遗留的废弃配置键；移除剪贴板焦点记录等死代码；发布流程适配 GitHub 新版 Actions。",
+  },
+  {
     version: "v0.6.8",
     date: "2026-08-28",
     highlight: true,

@@ -50,7 +50,7 @@ export function Download() {
               <DownloadIcon className="size-5" />
               下载 Windows 版
             </ShinyButton>
-            <p className="font-display text-xs text-zinc-500">v0.6.8 · 2026-08-28 发布 · NSIS 安装包 · 约 8 MB</p>
+            <p className="font-display text-xs text-zinc-500">v0.6.9 · 2026-08-28 发布 · NSIS 安装包 · 约 8 MB</p>
 
             <div className="flex items-start gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-4">
               <Info className="mt-0.5 size-4 shrink-0 text-amber-400" />
