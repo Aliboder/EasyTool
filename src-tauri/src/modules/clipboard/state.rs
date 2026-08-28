@@ -3,7 +3,7 @@
 use super::db::{now_ms, Db};
 use super::store::FileStore;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicIsize, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 pub struct AppState {
@@ -19,13 +19,6 @@ pub struct AppState {
     /// 待忽略的剪贴板内容指纹（自身写入时登记：(内容指纹, 时间戳)）。
     /// 监听侧比对"当前剪贴板内容指纹一致 + 时间窗口内"则跳过记录，避免表情/粘贴被记入历史。
     pub pending_ignore: Mutex<Option<(String, i64)>>,
-    /// 唤起弹出窗前的前台窗口句柄（HWND，0 表示无）
-    pub prev_foreground: AtomicIsize,
-    /// 唤起前台窗口内的焦点控件句柄（HWND，0 表示无）
-    pub prev_focus: AtomicIsize,
-    /// 焦点控件内选中的起始/结束位置（EM_GETSEL），用于恢复输入状态
-    pub prev_sel_start: AtomicU32,
-    pub prev_sel_end: AtomicU32,
 }
 
 impl AppState {
@@ -43,10 +36,6 @@ impl AppState {
             self_write: AtomicBool::new(false),
             last_self_write_ms: AtomicI64::new(0),
             pending_ignore: Mutex::new(None),
-            prev_foreground: AtomicIsize::new(0),
-            prev_focus: AtomicIsize::new(0),
-            prev_sel_start: AtomicU32::new(0),
-            prev_sel_end: AtomicU32::new(0),
         })
     }
 

@@ -172,15 +172,12 @@ fn save_main_window_size(app: &tauri::AppHandle) {
     }
 }
 
-/// 主热键：切换主窗口呼出/隐藏（呼出时记录唤起前窗口供跟手粘贴）
+/// 主热键：切换主窗口呼出/隐藏（呼出时可选择跟随鼠标定位）
 fn toggle_main(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         if win.is_visible().unwrap_or(false) {
             let _ = win.hide();
         } else {
-            if clipboard_enabled(app) {
-                modules::clipboard::record_foreground_state(app);
-            }
             // 可选手：呼出时跟随鼠标定位
             let follow_mouse = app
                 .state::<ConfigState>()
@@ -227,10 +224,10 @@ pub(crate) fn hide_after_blur_grace(win: &tauri::Window) {
     });
 }
 
-/// 计算弹出窗位置：跟随鼠标（横向居中于光标、纵向在光标下方），
+/// 计算主窗口跟随鼠标时的位置：横向居中于光标、纵向在光标下方，
 /// 全部使用 Win32 物理坐标（与 Tauri 的 DPI 换算无关），
 /// 并钳制在光标所在显示器的工作区内，窄屏时防护
-pub(crate) fn popup_position_physical(hwnd: windows::Win32::Foundation::HWND) -> (i32, i32) {
+pub(crate) fn position_at_cursor_physical(hwnd: windows::Win32::Foundation::HWND) -> (i32, i32) {
     unsafe {
         let mut rect = RECT::default();
         if GetWindowRect(hwnd, &mut rect).is_err() {
@@ -488,7 +485,10 @@ pub fn run() {
             });
             
             modules::merge_manifests(&mut cfg, &manifests);
-            let _ = config::save_config(app.handle(), &cfg);
+            // 清理已废弃的配置键（弹窗/模块热键时代的残留），有清理才写盘
+            if config::sanitize_legacy_keys(&mut cfg) {
+                let _ = config::save_config(app.handle(), &cfg);
+            }
             app.manage(ConfigState(std::sync::Mutex::new(cfg)));
 
             // 旧数据一次性迁移（在模块 setup 之前，避免与剪贴板模块同时打开新库）

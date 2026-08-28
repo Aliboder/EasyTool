@@ -1338,7 +1338,7 @@ mod tests {
         let dur0 = r0.0;
         let end0 = r0.1.clone();
         let act0 = r0.2;
-        let dur1 = r1.0;
+        let _dur1 = r1.0; // 该断言只关心 act/end 与封账语义，时长值未直接使用
         let end1 = r1.1.clone();
         let act1 = r1.2;
         assert!(dur0 >= 28 && dur0 <= 30, "旧活跃段时长≈30s，实际 {dur0}");

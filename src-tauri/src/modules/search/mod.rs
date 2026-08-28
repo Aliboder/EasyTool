@@ -181,10 +181,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn popup_position_clamps_to_workarea() {
+    fn position_at_cursor_clamps_to_workarea() {
         // 位置计算依赖真实 Win32 状态，仅验证函数存在与返回类型
         let _: fn(windows::Win32::Foundation::HWND) -> (i32, i32) =
-            crate::popup_position_physical;
+            crate::position_at_cursor_physical;
     }
 
     /// 真实环境探测：Everything 已安装时应能找到 exe（安装器写 Uninstall 键，非 App Paths）

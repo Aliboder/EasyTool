@@ -1,77 +1,14 @@
-//! 粘贴回上一窗口：写剪贴板 → 隐藏窗口等焦点自然恢复 → 模拟 Ctrl+V
+//! 粘贴回上一窗口：写剪贴板 → 隐藏主窗口等焦点自然恢复 → 模拟 Ctrl+V
 
 use super::clipboard;
 use super::models::{Item, ItemKind};
 use super::state::AppState;
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
     VK_CONTROL, VK_V,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetGUIThreadInfo, GetWindowThreadProcessId, SendMessageW,
-    GUITHREADINFO,
-};
 
 use tauri::Manager;
-
-/// 标准编辑控件消息：获取选中范围
-const EM_GETSEL: u32 = 0x00B0;
-
-/// 唤起前记录的信息：原前台窗口 + 其中的焦点控件 + 选中范围
-pub struct ForegroundContext {
-    pub hwnd: isize,
-    pub focus: isize,
-    pub sel_start: u32,
-    pub sel_end: u32,
-}
-
-/// 记录当前前台窗口、焦点控件及选中范围（唤起弹出窗前调用）
-pub fn record_foreground() -> ForegroundContext {
-    let hwnd = unsafe { GetForegroundWindow() };
-    let focus = get_focus_control(hwnd);
-    let (sel_start, sel_end) = get_selection(focus);
-    ForegroundContext {
-        hwnd: hwnd.0 as isize,
-        focus: focus.0 as isize,
-        sel_start,
-        sel_end,
-    }
-}
-
-/// 读取焦点控件的选中范围（非编辑控件返回 0,0，无副作用）
-fn get_selection(hwnd: HWND) -> (u32, u32) {
-    if hwnd.0.is_null() {
-        return (0, 0);
-    }
-    unsafe {
-        let r = SendMessageW(hwnd, EM_GETSEL, Some(WPARAM(0)), Some(LPARAM(0)));
-        // Win32 约定：返回值 LOWORD=起点、HIWORD=终点
-        ((r.0 & 0xFFFF) as u32, (r.0 >> 16) as u32)
-    }
-}
-
-/// 获取指定窗口线程当前获得焦点的控件
-fn get_focus_control(hwnd: HWND) -> HWND {
-    unsafe {
-        if hwnd.0.is_null() {
-            return HWND(std::ptr::null_mut());
-        }
-        let thread_id = GetWindowThreadProcessId(hwnd, None);
-        if thread_id == 0 {
-            return HWND(std::ptr::null_mut());
-        }
-        let mut gui = GUITHREADINFO {
-            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
-            ..Default::default()
-        };
-        if GetGUIThreadInfo(thread_id, &mut gui).is_ok() {
-            gui.hwndFocus
-        } else {
-            HWND(std::ptr::null_mut())
-        }
-    }
-}
 
 /// 把条目内容写入剪贴板（粘贴与"复制"共用），成功返回 Ok(())
 pub fn write_item_clipboard(state: &AppState, item: &Item) -> Result<(), String> {

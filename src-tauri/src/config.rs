@@ -84,6 +84,29 @@ pub fn save_config(app: &AppHandle, cfg: &AppConfig) -> Result<(), String> {
     fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
+/// 清理已废弃的历史配置键（独立弹窗移除后不再读取）：
+/// - 模块配置里的 `hotkey` / `follow_mouse` / `popup_size` / `fixed_pos`
+/// - `hotkeys` 表中非 `main` 的残留热键（模块独立热键已删除）
+/// 幂等：无残留时返回 false（调用方据此跳过写盘）。
+pub fn sanitize_legacy_keys(cfg: &mut AppConfig) -> bool {
+    let mut changed = false;
+    for m in cfg.modules.values_mut() {
+        if let Some(obj) = m.as_object_mut() {
+            for k in ["hotkey", "follow_mouse", "popup_size", "fixed_pos"] {
+                if obj.remove(k).is_some() {
+                    changed = true;
+                }
+            }
+        }
+    }
+    let before = cfg.hotkeys.len();
+    cfg.hotkeys.retain(|k, _| k == "main");
+    if cfg.hotkeys.len() != before {
+        changed = true;
+    }
+    changed
+}
+
 /// 读模块配置对象（缺失返回空对象）
 pub fn module_cfg(app: &AppHandle, id: &str) -> serde_json::Value {
     app.state::<ConfigState>()

@@ -47,10 +47,10 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 把窗口定位到鼠标附近（统一模式主窗口呼出用，与弹窗同口径）
+/// 把主窗口定位到鼠标附近（呼出时跟随鼠标用）
 pub(crate) fn position_at_cursor(win: &tauri::WebviewWindow) {
     if let Ok(hwnd) = win.hwnd() {
-        let (x, y) = crate::popup_position_physical(hwnd);
+        let (x, y) = crate::position_at_cursor_physical(hwnd);
         unsafe {
             let _ = SetWindowPos(
                 hwnd,
@@ -62,24 +62,6 @@ pub(crate) fn position_at_cursor(win: &tauri::WebviewWindow) {
                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
             );
         }
-    }
-}
-
-/// 记录唤起前的窗口上下文（供粘贴回原窗口），由任何窗口唤起入口调用
-pub fn record_foreground_state(app: &tauri::AppHandle) {    if let Some(state) = app.try_state::<AppState>() {
-        let ctx = paste::record_foreground();
-        state
-            .prev_foreground
-            .store(ctx.hwnd, std::sync::atomic::Ordering::SeqCst);
-        state
-            .prev_focus
-            .store(ctx.focus, std::sync::atomic::Ordering::SeqCst);
-        state
-            .prev_sel_start
-            .store(ctx.sel_start, std::sync::atomic::Ordering::SeqCst);
-        state
-            .prev_sel_end
-            .store(ctx.sel_end, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
