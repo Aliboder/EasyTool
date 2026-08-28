@@ -205,20 +205,32 @@ export function Clippage() {
     };
   }, [load]);
 
-  // 缩略图预载：独立 effect，只在 items 变化时执行，不阻塞搜索
+  // 缩略图预载：rAF 分片（每帧 6 张），避免图片历史多时全量并发 IPC
   useEffect(() => {
-    for (const it of items) {
-      if (it.kind === "image" && !thumbs[it.id]) {
-        invoke<string | null>("get_thumb", { id: it.id }).then((b) => {
-          if (b) {
-            setThumbs((prev) => ({ ...prev, [it.id]: b! }));
-          }
-        });
-      } else if (it.kind === "files" && isImageItem(it)) {
-        fileThumbOf(it.preview);
+    const images = items.filter(
+      (it) =>
+        (it.kind === "image" && !thumbs[it.id]) ||
+        (it.kind === "files" && isImageItem(it) && !fileThumbs[it.preview]),
+    );
+    if (!images.length) return;
+    let i = 0;
+    const BATCH = 6;
+    const tick = () => {
+      const end = Math.min(i + BATCH, images.length);
+      for (; i < end; i++) {
+        const it = images[i];
+        if (it.kind === "image") {
+          invoke<string | null>("get_thumb", { id: it.id }).then((b) => {
+            if (b) setThumbs((prev) => ({ ...prev, [it.id]: b! }));
+          });
+        } else {
+          fileThumbOf(it.preview);
+        }
       }
-    }
-  }, [items]);
+      if (i < images.length) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [items, thumbs, fileThumbs, fileThumbOf]);
 
   const onSearchChange = (v: string) => {
     setSearch(v);
@@ -758,7 +770,7 @@ export function Clippage() {
               )}
             </div>
           )}
-          <div className="flex-1 overflow-y-auto p-1">
+          <div ref={textListRef} className="flex-1 overflow-y-auto p-1">
             {ordered.length === 0 ? (
               <EmptyState
                 icon={search ? SearchX : ClipboardList}
@@ -787,11 +799,26 @@ export function Clippage() {
                 </SortableContext>
               </DndContext>
             ) : (
-              <ul className="space-y-2">
-                {textItems.map((item, i) =>
-                  textRow(item, imgItems.length + fileItems.length + i),
-                )}
-              </ul>
+              <div
+                className="relative w-full"
+                style={{ height: `${textVirtualizer.getTotalSize()}px` }}
+              >
+                {textVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const item = textItems[virtualRow.index];
+                  return (
+                    <div
+                      key={item.id}
+                      className="absolute left-0 top-0 w-full"
+                      style={{
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      {textRow(item, imgItems.length + fileItems.length + virtualRow.index)}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>

@@ -113,11 +113,11 @@ export function formatDurationShort(seconds: number): string {
   return `${m}m`;
 }
 
-/** 格式化秒数为「X小时Y分钟」（完整场景：排行、详情） */
+/** 格式化秒数为「X小时Y分钟」（完整场景：排行、详情）；整小时/整分钟时省略 0 */
 export function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}秒`;
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) return `${hours}小时${minutes}分钟`;
+  if (hours > 0) return minutes > 0 ? `${hours}小时${minutes}分钟` : `${hours}小时`;
   return `${minutes}分钟`;
 }
