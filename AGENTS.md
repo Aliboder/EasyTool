@@ -4,7 +4,6 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 
 > **文档导航**：开发前按需阅读——
 > - `docs/module-guide.md`：**新增模块完整指南**（步骤/规范/坑清单）
-> - `docs/lessons.md`：**踩坑经验 + 易踩坑速查表**（改代码前必读）
 > - `docs/website-guide.md`：**官网维护指南**（更新功能/版本时必读）
 > - `docs/deploy-guide.md`：**Vite+React+GitHub Pages 部署指南**（新项目部署参考）
 > - `docs/superpowers/specs/`：功能设计文档
@@ -155,5 +154,4 @@ npx tsc --noEmit       # 前端类型检查
 - 用户不写代码、不验代码、不用 git：代码由 AI 完成，编译/测试通过后**只告诉用户启动命令和手动验收清单**，用户亲自验证通过才算完成
 - git 提交由 AI 主动做；提交前 `git status`/`git diff` 检查，只提交相关文件
 - 大改动先汇报方案与改动范围，用户同意后实施
-- **每次修复 bug 或解决技术问题后，必须将经验教训记录到 `docs/lessons.md`**
 - 每次回答用户消息结束时，**单独一行**输出标签：`Aliboder`
