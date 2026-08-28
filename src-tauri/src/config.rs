@@ -9,11 +9,9 @@ pub struct AppConfig {
     pub hotkeys: HashMap<String, String>,
     pub theme: String,
     pub migrated: Vec<String>,
-    /// 统一呼出主窗口模式：开启时只注册主窗口热键，模块独立热键全部禁用
-    pub unified_hotkey: bool,
     /// 主窗口尺寸记忆 {w,h}（重启恢复）
     pub main_size: Option<serde_json::Value>,
-    /// 统一模式下呼出主窗口时是否跟随鼠标
+    /// 呼出主窗口时是否跟随鼠标
     pub main_follow_mouse: bool,
     /// 模块显示顺序（底部栏与设置页共用；缺失的模块启动时追加到末尾）
     pub module_order: Vec<String>,
@@ -27,8 +25,6 @@ impl Default for AppConfig {
             serde_json::json!({
                 "enabled": true,
                 "max_items": 500,
-                "hotkey": "Ctrl+Shift+V",
-                "follow_mouse": true,
                 "record_text": true,
                 "record_image": true,
                 "record_files": true,
@@ -40,12 +36,11 @@ impl Default for AppConfig {
         );
         modules.insert(
             "quota".into(),
-            serde_json::json!({ "enabled": true, "refresh_interval_sec": 30, "warn_threshold": 10.0, "hotkey": "" }),
+            serde_json::json!({ "enabled": true, "refresh_interval_sec": 30, "warn_threshold": 10.0 }),
         );
         let mut hotkeys = HashMap::new();
-        hotkeys.insert("clipboard".into(), "Ctrl+Shift+V".into());
         hotkeys.insert("main".into(), "Ctrl+Shift+E".into());
-        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], unified_hotkey: true, main_size: None, main_follow_mouse: false, module_order: vec![] }
+        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], main_size: None, main_follow_mouse: false, module_order: vec![] }
     }
 }
 
@@ -139,14 +134,12 @@ pub fn set_module_enabled(
         }
         save_config(&app, &cfg)?;
     }
-    // 模块启停影响全局热键注册：非统一模式下启用/禁用模块需重新注册/注销其热键
-    crate::reapply_hotkeys(&app);
     Ok(())
 }
 
 /// 通用模块配置 patch 保存：写入 modules.<module_id> 的指定键并落盘。
 /// 所有模块的设置保存统一走这里（替代各模块独立的 save_xxx_settings 命令）。
-/// 保存后 reapply_hotkeys：热键变更即时生效；未变更时重注册为幂等空操作。
+/// timetracker 的采集类设置（AFK 阈值、音频豁免等）保存后即时重应用，不必重启。
 #[tauri::command]
 pub fn set_module_config(
     app: AppHandle,
@@ -154,12 +147,6 @@ pub fn set_module_config(
     module_id: String,
     patch: serde_json::Value,
 ) -> Result<(), String> {
-    // 只有热键/启停字段变化才需要全局重注册；其它设置（尺寸、阈值等）不再 churn 热键
-    let needs_hotkey_reapply = patch
-        .as_object()
-        .map(|obj| obj.keys().any(|k| k == "hotkey" || k == "enabled"))
-        .unwrap_or(false);
-    // 采集类设置（AFK 阈值、音频豁免等）保存后即时重应用，不必重启
     let is_timetracker = module_id == "timetracker";
     {
         let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -170,9 +157,6 @@ pub fn set_module_config(
             }
         }
         save_config(&app, &cfg)?;
-    }
-    if needs_hotkey_reapply {
-        crate::reapply_hotkeys(&app);
     }
     if is_timetracker {
         crate::modules::timetracker::reapply_config(&app);
@@ -199,24 +183,7 @@ pub fn set_theme(app: AppHandle, state: State<ConfigState>, theme: String) -> Re
     save_config(&app, &cfg)
 }
 
-/// 切换统一呼出主窗口模式：改变后重新注册全局热键
-#[tauri::command]
-pub fn set_unified_hotkey(
-    app: AppHandle,
-    state: State<ConfigState>,
-    enabled: bool,
-) -> Result<(), String> {
-    {
-        let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        cfg.unified_hotkey = enabled;
-        save_config(&app, &cfg)?;
-    }
-    crate::reapply_hotkeys(&app);
-    crate::apply_main_window_mode(&app);
-    Ok(())
-}
-
-/// 自定义主窗口全局呼出热键（统一呼出模式下唯一热键），立即生效并持久化
+/// 自定义主窗口全局呼出热键（唯一热键），立即生效并持久化
 #[tauri::command]
 pub fn set_main_hotkey(
     app: AppHandle,
@@ -224,14 +191,6 @@ pub fn set_main_hotkey(
     hotkey: String,
 ) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
-    // 主窗口呼出热键仅在统一呼出模式下有效（非统一模式主窗口由托盘呼出，注册了也会被 reapply 注销）
-    let unified = {
-        let cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        cfg.unified_hotkey
-    };
-    if !unified {
-        return Err("主窗口呼出热键仅统一呼出模式可用。请先在设置开启「统一呼出主窗口」。".into());
-    }
     // 先验证新键可用，失败时旧热键仍有效
     app.global_shortcut()
         .register(hotkey.as_str())
@@ -242,7 +201,7 @@ pub fn set_main_hotkey(
     let saved = save_config(&app, &cfg);
     drop(cfg);
     // 落盘失败也必须先恢复热键注册再返回错误，
-    // 否则此刻已 unregister_all 且不再 reapply —— 全部热键静默失效直到重启
+    // 否则此刻已 unregister_all 且不再 reapply —— 热键静默失效直到重启
     crate::reapply_hotkeys(&app);
     saved?;
     log::info!("main hotkey changed to {hotkey}");
@@ -266,7 +225,7 @@ pub fn save_main_size(
     save_config(&app, &cfg)
 }
 
-/// 统一模式下呼出主窗口是否跟随鼠标
+/// 呼出主窗口时是否跟随鼠标
 #[tauri::command]
 pub fn set_main_follow_mouse(
     app: AppHandle,

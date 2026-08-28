@@ -21,10 +21,6 @@ export default defineConfig(async () => ({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, "index.html"),
-        clipboard_popup: path.resolve(__dirname, "clipboard_popup.html"),
-        emoji_popup: path.resolve(__dirname, "emoji_popup.html"),
-        search_popup: path.resolve(__dirname, "search_popup.html"),
-        timetracker_window: path.resolve(__dirname, "timetracker_window.html"),
       },
     },
   },

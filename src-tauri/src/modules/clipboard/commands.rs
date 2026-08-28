@@ -234,50 +234,6 @@ pub fn set_max_items(
     .map_err(CommandError::from)
 }
 
-/// 设置剪贴板弹窗位置模式：跟随鼠标 / 固定位置
-#[tauri::command]
-pub fn set_follow_mouse(app: AppHandle, follow: bool) -> CmdResult<()> {
-    crate::config::update_module(&app, "clipboard", |v| {
-        v["follow_mouse"] = serde_json::json!(follow);
-        Ok(())
-    })
-    .map_err(CommandError::from)
-}
-
-/// 设置全局呼出热键（立即生效并持久化）
-#[tauri::command]
-pub fn set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
-    use tauri_plugin_global_shortcut::GlobalShortcutExt;
-    // 统一呼出模式下模块热键被禁用
-    let unified = {
-        let state = app.state::<crate::config::ConfigState>();
-        let cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        cfg.unified_hotkey
-    };
-    if unified {
-        return Err(CommandError {
-            message: "统一呼出主窗口模式已开启，模块热键已禁用。可在设置中关闭该模式后使用。".into(),
-        });
-    }
-    // 先注册新键：失败时旧热键仍有效，不会出现"无热键"状态
-    app.global_shortcut()
-        .register(hotkey.as_str())
-        .map_err(|e| CommandError {
-            message: format!("快捷键无效或已被其他程序占用：{e}"),
-        })?;
-    // 写入 config
-    let cfg_state = app.state::<crate::config::ConfigState>();
-    let mut cfg = cfg_state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(v) = cfg.modules.get_mut("clipboard") {
-        v["hotkey"] = serde_json::json!(hotkey);
-    }
-    crate::config::save_config(&app, &cfg).map_err(|m| CommandError { message: m })?;
-    // 整体重注册：按新 config 恢复所有启用模块热键，避免只重注册剪贴板导致其它模块热键丢失
-    crate::reapply_hotkeys(&app);
-    log::info!("clipboard hotkey changed to {hotkey}");
-    Ok(())
-}
-
 /// 数据目录路径（设置展示用）
 #[tauri::command]
 pub fn get_data_dir(state: State<'_, AppState>) -> CmdResult<String> {

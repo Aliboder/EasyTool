@@ -15,8 +15,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
 };
 
-pub const POPUP_WINDOW_LABEL: &str = "clipboard_popup";
-
 pub fn max_items(app: &tauri::AppHandle) -> u64 {
     crate::config::module_cfg(app, "clipboard")
         .get("max_items")
@@ -85,30 +83,10 @@ pub fn record_foreground_state(app: &tauri::AppHandle) {    if let Some(state) =
     }
 }
 
-/// 确保弹窗窗口存在（延迟创建：首次呼出时才创建，避免启动闪现）
-fn ensure_popup_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
-    crate::ensure_popup_window(
-        app,
-        POPUP_WINDOW_LABEL,
-        "clipboard_popup.html",
-        (620.0, 480.0),
-        "clipboard",
-    )
-}
-
 /// 供 search 模块联动：把一个文件路径写入剪贴板历史
 pub fn record_file_to_history(app: &tauri::AppHandle, path: &str) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
     let _ = monitor::save_files_batch(&state, app, std::slice::from_ref(&path.to_string()));
-}
-
-/// 全局热键触发：记录唤起前的窗口上下文（供粘贴回原窗口），随后显示 popup 窗口
-pub fn on_hotkey(app: &tauri::AppHandle) {
-    record_foreground_state(app);
-    let Some(win) = ensure_popup_window(app) else {
-        return;
-    };
-    crate::show_popup_at(app, &win, "clipboard");
 }

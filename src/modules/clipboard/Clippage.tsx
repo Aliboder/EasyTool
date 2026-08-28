@@ -6,11 +6,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
-import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { CLIPBOARD_DEFAULTS } from "./config";
 import { Drawer } from "@/components/ui/drawer";
-import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, GripVertical, X, Loader2, Smile, MessageSquare, StickyNote, SearchX, ClipboardList, ImageOff, FileQuestion } from "lucide-react";
+import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, X, Loader2, Smile, MessageSquare, StickyNote, SearchX, ClipboardList, ImageOff, FileQuestion } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -32,7 +31,6 @@ import { useHorizontalWheel } from "@/lib/use-horizontal-wheel";
 import { toast } from "@/lib/toast";
 import { ClipSettings } from "./ClipSettings";
 import { LazyImage } from "@/components/LazyImage";
-import { useWindowEntrance } from "@/lib/use-window-entrance";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
@@ -142,8 +140,7 @@ function PinnedSortable({ id, children }: { id: string; children: React.ReactNod
   );
 }
 
-export function Clippage({ popup = true }: { popup?: boolean }) {
-  const entranceRef = useWindowEntrance(popup, ["animate-in", "fade-in-0"]);
+export function Clippage() {
   const [allItems, setAllItems] = useState<ItemDto[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -154,7 +151,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
   const { icons: fileIcons, thumbs: fileThumbs, loadIcon: fileIconOf, loadThumb: fileThumbOf } = useFileIcons();
   const [showSettings, setShowSettings] = useState(false);
   // 统一配置（共享 Hook：读写/键名映射/focus 重读全部内置）
-  const { cfg: clipCfg, update: updateClipCfg, reload: refreshClipCfg } = useModuleConfig("clipboard", CLIPBOARD_DEFAULTS);
+  const { cfg: clipCfg, update: updateClipCfg } = useModuleConfig("clipboard", CLIPBOARD_DEFAULTS);
   const [preview, setPreview] = useState<{ src: string; name: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -222,12 +219,6 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       }
     }
   }, [items]);
-
-  // 弹窗位置/尺寸记忆（固定位置模式下才记录移动；共享 Hook 内置防抖）
-  usePopupGeometry("clipboard", {
-    trackSize: popup,
-    trackPos: popup && clipCfg.followMouse === false,
-  });
 
   const onSearchChange = (v: string) => {
     setSearch(v);
@@ -613,11 +604,6 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (showSettings) return;
-    if (e.key === "Enter" && selected != null && popup) {
-      e.preventDefault();
-      doPaste(selected);
-      return;
-    }
     if (e.key === "Escape") {
       if (menu) {
         setMenu(null); // 右键菜单开着时 Esc 只关菜单，不隐藏整窗
@@ -625,10 +611,6 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       }
       if (preview) {
         setPreview(null);
-        return;
-      }
-      if (popup) {
-        hideWindow();
         return;
       }
     }
@@ -672,26 +654,13 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
 
   return (
     <div
-      ref={popup ? entranceRef : undefined}
       className={cn(
         "relative flex h-full flex-col bg-background text-foreground",
-        popup && "animate-in fade-in-0 duration-150",
       )}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
     >
       <ModuleHeader
-        leading={
-          popup && (
-            <div
-              data-tauri-drag-region
-              className="flex shrink-0 cursor-grab items-center self-stretch px-2 text-muted-foreground hover:text-foreground"
-              title="拖动窗口"
-            >
-              <GripVertical className="pointer-events-none size-4" />
-            </div>
-          )
-        }
         search={{
           value: search,
           onChange: onSearchChange,
@@ -995,14 +964,7 @@ export function Clippage({ popup = true }: { popup?: boolean }) {
       )}
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="剪贴板设置">
-        <ClipSettings
-          hotkey={clipCfg.hotkey}
-          followMouse={clipCfg.followMouse}
-          cfg={clipCfg}
-          onUpdate={updateClipCfg}
-          onHotkey={refreshClipCfg}
-          onFollowMouse={refreshClipCfg}
-        />
+        <ClipSettings cfg={clipCfg} onUpdate={updateClipCfg} />
       </Drawer>
     </div>
   );

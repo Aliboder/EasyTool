@@ -14,12 +14,10 @@ src/modules/<id>/                      # React 前端组件
 
 - 模块在设置页可独立**启用/禁用**，配置项随模块独立保存
 - 侧边栏/底部导航栏与模块页由 manifest 驱动，新增模块后**壳 UI 自动出现该模块**，无需改导航栏
-- 模块可拥有独立窗口（目前仅剪贴板弹窗），也可仅作为主窗口内的一个页面
+- 模块可拥有独立窗口，也可仅作为主窗口内的一个页面——**当前所有模块均为主窗口内的页面**（独立弹窗已移除）
 - **复用共享前端工具**（不要重复造轮子，按使用频率排序）：
   - `useModuleConfig`（`src/hooks/useModuleConfig.ts`）——**模块配置统一读写，新模块设置功能的地基，必用**（见「3. 配置管理标准」）
   - `useFileIcons`（`src/hooks/useFileIcons.ts`）——文件图标/缩略图按路径缓存 + 并发去重，返回 `{ icons, thumbs, loadIcon(path), loadThumb(path) }`
-  - `usePopupGeometry`（`src/hooks/usePopupGeometry.ts`）——弹窗位置/尺寸记忆：移动/缩放停止 400ms 后写回模块配置 `fixed_pos` / `popup_size` 键
-  - `mountPopup(<XxxPage />)`（`src/lib/popup-entry.tsx`）——独立弹窗窗口统一挂载入口：主题跟随 + createRoot 样板全内置（见 Step 5）
   - 网格公式库（`src/lib/grid.ts`）——`gridIconSize` / `gridFontScale` / `gridColumns` / `gridVerticalTarget`（见「5. 网格实现标准」）
   - 面板头三件套（`src/components/module-header.tsx`）——`ModuleHeader` / `HeaderButton` / `HeaderSort`，全模块顶栏唯一实现（见「6. 面板头标准」，**必用**）
   - `toast()`（`src/lib/toast.ts`）——操作反馈提示（规范见第 4 节「操作反馈」条目）
@@ -36,7 +34,6 @@ src/modules/<id>/                      # React 前端组件
 | `src-tauri/src/modules/mod.rs` / `lib.rs` | ✅ 有后端时 | 声明 + setup + 注册命令（Step 3） |
 | `src/modules/foo/Page.tsx` + `config.ts` + `Settings.tsx` | ✅ 必需 | 功能页 + 配置三件套（Step 4 + 第 3 节） |
 | `src/App.tsx` | ✅ 必需 | 页面路由 switch + 设置区挂载（Step 4） |
-| `foo_window.html` + `vite.config.ts` + `src/foo_window.tsx` + Rust 建窗 + capabilities | ⭕ 可选 | 独立弹窗五件套（Step 5） |
 
 ### Step 1：创建 manifest
 
@@ -48,7 +45,7 @@ src/modules/<id>/                      # React 前端组件
   "name": "示例模块",
   "icon": "clipboard",
   "enabled": true,
-  "default_config": { "max_items": 100, "hotkey": "Ctrl+Shift+F" }
+  "default_config": { "max_items": 100 }
 }
 ```
 
@@ -168,47 +165,13 @@ switch (activeModule.id) {
 
 侧边栏无需改动——manifest 已驱动。
 
-### Step 5（可选）：独立窗口
+### Step 5：权限声明（无独立窗口）
 
-若模块需要独立窗口（如弹窗）：
-
-1. 根目录新建 `foo_window.html`（参考 `clipboard_popup.html`），脚本指向新入口：
-   ```html
-   <script type="module" src="/src/foo_window.tsx"></script>
-   ```
-2. `vite.config.ts` 的 `rollupOptions.input` 增加：
-   ```ts
-   foo_window: path.resolve(__dirname, "foo_window.html"),
-   ```
-3. `src/foo_window.tsx`：入口只需一行（主题跟随、React 挂载由 `mountPopup` 全包）：
-   ```tsx
-   import { mountPopup } from "@/lib/popup-entry";
-   import { FooPage } from "@/modules/foo/Page";
-   mountPopup(<FooPage />);
-   ```
-4. Rust 侧动态建窗（参考 lib.rs 中 clipboard_popup）：
-   ```rust
-   let win = tauri::WebviewWindowBuilder::new(
-       app, "foo_win", tauri::WebviewUrl::App("foo_window.html".into()),
-   )
-   .decorations(false)
-   .skip_taskbar(true)
-   .always_on_top(true)
-   .inner_size(300.0, 200.0)
-   .build()?;
-   win.hide()?;
-   ```
-5. `src-tauri/capabilities/default.json`：`windows` 数组加入 `"foo_win"`，并按需补充权限（`core:window:allow-*`）
-
-> **弹窗几何记忆**：需要「记住位置/尺寸」时，页面内一行 `usePopupGeometry("foo", { trackSize: true, trackPos: true })` 即可（trackPos 仅固定位置模式开启）。**不要**自写 onMoved/onResized 防抖保存，也不要新增 save_xxx_geometry 类后端命令——写入统一走 `set_module_config`。
-
-### Step 6：权限声明
-
-模块前端用到的 Tauri 权限（窗口操作、全局快捷键、通知等）在 `capabilities/default.json` 的 `permissions` 中声明。新增窗口必须同时加入 `windows` 数组，否则窗口内所有 invoke 被拒。
+所有模块均作为主窗口内的一个页面（**独立弹窗已移除**：不要新增 HTML 入口、vite `rollupOptions.input` 条目、Rust 建窗或 capabilities `windows` 声明）。模块前端用到的 Tauri 权限在 `capabilities/default.json` 的 `permissions` 中声明。
 
 ### Step 7：测试
 
-后端纯逻辑加 `#[cfg(test)]` 单元测试（当前全项目 51 个，以 `cargo test` 输出为准），`cargo test` 全绿。前端无测试框架，靠人工验收（完成后给用户手动验收清单）。
+后端纯逻辑加 `#[cfg(test)]` 单元测试（当前全项目 66 个，以 `cargo test` 输出为准），`cargo test` 全绿。前端无测试框架，靠人工验收（完成后给用户手动验收清单）。
 
 ## 3. 配置管理标准（新模块必须遵守）
 
@@ -297,7 +260,6 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-header";
 
 <ModuleHeader
-  leading={popup && <拖拽把手 />}                       // 可选：弹窗拖拽把手
   search={{ value, onChange, placeholder, autoFocus }}  // 第一行：无边框输入框占满
   searchTrailing={<>加载圈/计数</>}                      // 搜索框行内右侧附属
   actions={                                             // 第一行右端按钮组（HeaderButton 统一样式）
@@ -317,7 +279,7 @@ import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-head
 
 规则：
 1. **无搜索框的模块**（如额度监控）第一行用 `title=` + `meta=` 占据搜索框位置，结构不变
-2. **设置齿轮全模式显示**（主窗与弹窗一致），且必须是该行最后一个按钮
+2. **设置齿轮为最后一个按钮**（所有模块一致）
 3. **Tab 放不下自动换行**（flex-wrap 已内置），不要为省高度隐藏或滚动 Tab
 4. **排序控件用 `HeaderSort`**：字段按钮点击按 fields 顺序循环、方向按钮翻转升降；字段集由模块自定义（参考 SearchView 的 `SORT_FIELDS`）
 5. 视觉规格已内置（border-b、p-2、Tab 选中态 bg-primary 等），调用方不要再叠样式
@@ -332,18 +294,18 @@ import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-head
 3. **同步网络请求**（如 reqwest blocking）必须在后台线程执行，禁止在 IPC 命令主路径直接调用
 4. **Windows 下不要给窗口开 `.transparent(true)`**：透明窗口 hide 后再 show 会崩溃（0xcfffffff）。要"悬浮"效果用深色不透明背景
 5. **热键匹配**：`shortcut.to_string()` 输出为 `shift+control+keya` 格式，与配置字符串不匹配。必须用 `Shortcut::from_str(&cfg).map(|s| s == *shortcut)` 做对象比较
-6. **新增前端入口**要同时改 4 处：vite `rollupOptions.input`、根目录 `.html`、Rust 建窗（`WebviewUrl::App`）、capabilities 的 `windows` 数组与权限
+6. **独立弹窗已移除**：不再需要新增前端入口 / Rust 建窗 / capabilities windows 声明（历史参考：先前的 4 处联动坑，仅适用于已删除的弹窗体系）
 7. **keyring 必须启用 `features = ["windows-native"]`**（Cargo.toml），否则 `Entry::new().unwrap()` 直接 panic
 8. **新增模块后跑 `codegraph init`** 重建索引，保持 `.codegraph/` 与磁盘一致
 9. **@dnd-kit 拖拽 + WebView2 渲染变形**：**大尺寸卡片 + opacity + transform 组合会让窗口形状变形**（压扁）。不要给被拖的大卡片加透明度；DragOverlay 方案也会出问题。额度面板用 `verticalListSortingStrategy` + `will-change: transform` + 拖动中禁 transition。**小尺寸条目（如剪贴板固定板块）拖拽安全**
 10. **ResizeObserver 绑定异步挂载节点要用回调 ref**：空依赖 `useEffect` 只在组件挂载时跑一次，若目标节点是异步渲染的（如数据加载后），观察器绑不上。用 `useCallback` 回调 ref（React 19 支持 ref 清理）
 11. **横向滚动**：滚轮→`scrollLeft` 用共享 `useHorizontalWheel`；注意 `overflow-x-auto` 会把 `overflow-y` 也变 auto，**悬浮元素（tooltip）别放超出滚动容器顶部**，否则被裁掉
-12. **热键录制格式**：global-hotkey crate 接受 `Ctrl/Shift/Alt/Super`（Windows 键是 **Super**，不是 Win）+ 键名（`A-Z/0-9/F1-F24/ArrowUp/Enter/Space` 等）。用共享 `HotkeyRecorder` 组件
+12. **热键录制格式**：global-hotkey crate 接受 `Ctrl/Shift/Alt/Super`（Windows 键是 **Super**，不是 Win）+ 键名（`A-Z/0-9/F1-F24/ArrowUp/Enter/Space` 等）。全局呼出热键用共享 `HotkeyRecorder` 组件（设置页）
 13. **版本号三处同步**：改版本需同时改 `package.json`、`tauri.conf.json`、`src-tauri/Cargo.toml`；当前 Tauri CLI **不支持 portable** 打包目标（仅 msi/nsis）
 14. **Windows 文件图标**：`SHGFI_USEFILEATTRIBUTES` 取不到格式专属图标（txt/图片等退化为通用图标），须访问真实文件再回退；缓存按路径而非扩展名
 15. **多账户密钥槽位必须独立**：quota 新增账户 `key_ref` 分配独立槽位（`quota-<id>`），绝不复用/回退旧槽位（否则所有同类账户串号共用同一密钥）。旧账户用 `migrate_account_keyrefs` 幂等迁移
 16. **窗口尺寸记忆要过滤脏数据**：窗口隐藏/最小化时 WebView2 报 0x0，`onResized`/保存/恢复都要校验最小尺寸（<400x300 忽略）；`minWidth/minHeight` 只约束用户拖拽，编程 `set_size` 不受限
-17. **独立窗口延迟创建**：不要在 setup 创建隐藏弹窗（`.visible(false)` 在 Windows WebView2 上仍会闪现），首次呼出时才建窗（参考 `clipboard::ensure_popup_window`）
+17. **独立弹窗已移除**（历史教训：`.visible(false)` 在 Windows WebView2 上仍会闪现，旧弹窗体系用延迟创建规避）
 18. **窗口入场动画**：用共享 `useWindowEntrance`（失焦置透明 + 聚焦重放），避免「先显示完整界面再补动画」的闪烁；不要重挂载根节点触发（会丢子组件状态）
 19. **SQLite 建索引必须在列添加之后**：索引引用的列若在版本迁移中才添加（如 `pin_order`），索引创建要放在迁移之后，否则新库建表直接失败
 20. **Tauri v2 invoke 参数 JS 侧必须 camelCase**：Rust 参数 `follow_mouse` ↔ JS 键名 `followMouse`。用 snake_case 键名调用会反序列化失败且**静默无报错**（emoji 曾因此所有设置存不上）。配置读写走 useModuleConfig 可天然避开；手写 invoke 其他命令时务必注意
@@ -355,11 +317,10 @@ import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-head
 - [ ] manifest.json 字段齐全（id/name/icon/enabled/default_config）
 - [ ] `modules/mod.rs` 已声明 `pub mod foo`；lib.rs setup 与 invoke_handler 已注册
 - [ ] 前端页面/设置已接入 App.tsx（导航栏自动出现）
-- [ ] 独立窗口的 4 处联动齐全，capabilities 权限完备
 - [ ] 配置读写走 `module_cfg` / `update_module`（config.rs 助手），无自建 module_config 副本、无持锁嵌套调用
 - [ ] **模块设置走统一地基**：config.ts + useModuleConfig + 受控 Settings（第 3 节），未自写 save_xxx_settings 纯配置命令
 - [ ] **用户操作有反馈**：失败必提示（toast/内联），成功无可见变化时补 toast；不得只 console.error
-- [ ] **弹窗**：入口用 mountPopup；几何记忆用 usePopupGeometry；图标/缩略图经 useFileIcons（未手写缓存、未新增重复命令）
+- [ ] **图标/缩略图经 useFileIcons**（未手写缓存、未新增重复命令）
 - [ ] **面板头用 ModuleHeader**（第 6 节）：未手写两行式头部；齿轮为最后一个按钮且全模式显示；Tab 溢出依赖内置换行；排序用 HeaderSort
 - [ ] Slider 用 onValueChange 直连 onUpdate（Hook 防抖落盘）；手写 invoke 的参数键名为 camelCase
 - [ ] 网络/耗时操作在后台线程
@@ -374,7 +335,7 @@ import { ModuleHeader, HeaderButton, HeaderSort } from "@/components/module-head
 新增模块时对照这些现成模块：
 
 - **search** 的 `SearchView.tsx` 同时是**面板头参照实现**（ModuleHeader 全功能：search + searchTrailing + actions + 图标 tabs + HeaderSort，见第 6 节）
-- **clipboard**：独立弹窗窗口（延迟创建）+ 系统剪贴板监听 + 文件存储（缩略图/图标）+ 固定板块拖拽排序（小条目 @dnd-kit）+ 弹窗位置/尺寸记忆 + 监听规则，最完整的模块参照
-- **quota**：后台轮询线程 + **多账户支持**（账户增删改 + 独立密钥槽位 key_ref + 独立余额/历史）+ 告警通知 + 消费历史按账户分文件 + 完整时间线（横向滚动）+ 面板卡片拖拽排序（@dnd-kit + will-change），后台任务/数据可视化/多实例类模块参照
-- **search**：动态加载第三方 DLL（`Everything64.dll`，MIT，从官方 SDK 下载打包进 `modules/search/`）+ SDK 全局状态用互斥锁串行 + 查询放后台线程 + 复用剪贴板图标/缩略图命令 + 弹窗模式复用 + 应用中心（已安装应用扫描/频率计数/启动），外部依赖/FFI 类模块参照。⚠️ Tauri 命令若与其他模块同名，**函数名须带模块前缀**（`search_get_status`），`#[tauri::command(rename=...)]` 无法解决宏符号冲突
-- **emoji**：`config.ts` + `useModuleConfig` + 受控 Settings 的**配置管理标准参照实现**（主窗 Page 与弹窗 Popup 共用同一 Hook 自动同步）；含内置表情/图片表情双网格 + 收藏/分组
+- **clipboard**：系统剪贴板监听 + 文件存储（缩略图/图标）+ 固定板块拖拽排序（小条目 @dnd-kit）+ 跟手粘贴（隐藏主窗口注入），最完整的模块参照
+- **quota**：后台轮询线程 + **多账户支持**（账户增删改 + 独立密钥槽位 key_ref + 独立余额/历史）+ 告警通知 + 消费历史落 SQLite + 完整时间线（横向滚动）+ 面板卡片拖拽排序（@dnd-kit + will-change），后台任务/数据可视化/多实例类模块参照
+- **search**：动态加载第三方 DLL（`Everything64.dll`，MIT，从官方 SDK 下载打包进 `modules/search/`）+ SDK 全局状态用互斥锁串行 + 查询放后台线程 + 复用剪贴板图标/缩略图命令 + 应用中心（已安装应用扫描/频率计数/启动），外部依赖/FFI 类模块参照。⚠️ Tauri 命令若与其他模块同名，**函数名须带模块前缀**（`search_get_status`），`#[tauri::command(rename=...)]` 无法解决宏符号冲突
+- **emoji**：`config.ts` + `useModuleConfig` + 受控 Settings 的**配置管理标准参照实现**；含内置表情/图片表情双网格 + 收藏/分组

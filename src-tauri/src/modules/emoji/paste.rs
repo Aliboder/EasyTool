@@ -1,22 +1,15 @@
 //! 粘贴到唤起前窗口：与剪贴板模块对齐的简化流程
-//! 隐藏弹窗/主窗口 → 等待 Windows 自然恢复焦点 → 直接发送键盘事件
+//! 隐藏主窗口 → 等待 Windows 自然恢复焦点 → 直接发送键盘事件
 use tauri::Manager;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
     VIRTUAL_KEY, VK_CONTROL, VK_V,
 };
 
-/// 记录唤起前窗口上下文（当前为 no-op，保留接口供 mod.rs 调用）
-pub fn record_foreground_state(_app: &tauri::AppHandle) {}
-
 /// 隐藏窗口并等待焦点恢复（与剪贴板模块 paste_item 完全对齐）
 fn hide_and_wait(app: &tauri::AppHandle) {
-    // 与剪贴板模块一致：隐藏弹窗或主窗口，焦点自动返回到唤起前窗口
-    let popup_win = app.get_webview_window(super::POPUP_WINDOW_LABEL);
-    let main_win = app.get_webview_window(crate::MAIN_WINDOW_LABEL);
-    if let Some(win) = popup_win {
-        let _ = win.hide();
-    } else if let Some(win) = main_win {
+    // 与剪贴板模块一致：隐藏主窗口，焦点自动返回到唤起前窗口
+    if let Some(win) = app.get_webview_window(crate::MAIN_WINDOW_LABEL) {
         let _ = win.hide();
     }
     // 与剪贴板模块一致：100ms 等待 Windows 自然把焦点还给上一个窗口

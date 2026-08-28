@@ -5,7 +5,7 @@
 
 use super::sdk::{self, SdkResult, SORT_DATE_MODIFIED_ASC, SORT_DATE_MODIFIED_DESC, SORT_NAME_ASC, SORT_NAME_DESC, SORT_PATH_ASC, SORT_PATH_DESC, SORT_SIZE_ASC, SORT_SIZE_DESC};
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 #[derive(Debug, Serialize)]
 pub struct CommandError {
@@ -214,32 +214,5 @@ pub fn search_copy_file(app: AppHandle, path: String) -> CmdResult<()> {
         return Err(CommandError::from("写入剪贴板失败".to_string()));
     }
     super::super::clipboard::record_file_to_history(&app, &path);
-    Ok(())
-}
-
-/// 设置搜索模块热键（统一呼出模式下禁用，与剪贴板一致）
-#[tauri::command]
-pub fn search_set_hotkey(app: AppHandle, hotkey: String) -> CmdResult<()> {
-    use tauri_plugin_global_shortcut::GlobalShortcutExt;
-    let unified = {
-        let state = app.state::<crate::config::ConfigState>();
-        let cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        cfg.unified_hotkey
-    };
-    if unified {
-        return Err(CommandError::from("统一呼出主窗口模式已开启，模块热键已禁用。可在设置中关闭该模式后使用。".to_string()));
-    }
-    app.global_shortcut()
-        .register(hotkey.as_str())
-        .map_err(|e| CommandError::from(format!("快捷键无效或已被其他程序占用：{e}")))?;
-    // 新键验证成功后写入 config
-    crate::config::update_module(&app, "search", |v| {
-        v["hotkey"] = serde_json::json!(hotkey);
-        Ok(())
-    })
-    .map_err(CommandError::from)?;
-    // 整体重注册：unregister_all 后按新 config 注册所有启用模块热键，避免其它模块热键丢失
-    crate::reapply_hotkeys(&app);
-    log::info!("search hotkey changed to {hotkey}");
     Ok(())
 }

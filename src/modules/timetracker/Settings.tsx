@@ -18,7 +18,6 @@ import {
 import type { TimetrackerConfig } from "./config";
 import type { AppListItem, CategoryRule } from "./types";
 import { CATEGORY_LABELS, categoryColor } from "./types";
-import { HotkeyRecorder } from "@/components/hotkey-recorder";
 
 interface Props {
   cfg: TimetrackerConfig;
@@ -85,22 +84,6 @@ export function TimetrackerSettings({ cfg, onUpdate }: Props) {
                 {cfg.topN}
               </span>
             </div>
-          </SettingRow>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">快捷键</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1">
-          <SettingRow title="呼出时长统计" hint="按此热键打开时长统计窗口">
-            <HotkeyRecorder
-              value={cfg.hotkey}
-              onSave={(v) => {
-                onUpdate({ hotkey: v });
-              }}
-            />
           </SettingRow>
         </CardContent>
       </Card>

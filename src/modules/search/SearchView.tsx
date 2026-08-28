@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { cn } from "@/lib/utils";
 import { ModuleHeader, HeaderButton, HeaderSort, type HeaderSortField } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
@@ -32,7 +31,6 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useWindowEntrance } from "@/lib/use-window-entrance";
 import {
   SearchSettings,
   SEARCH_DEFAULTS,
@@ -40,7 +38,6 @@ import {
 } from "./SearchSettings";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { AppsGrid, AppsSection, type ScannedApp } from "./AppsGrid";
-import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { toast } from "@/lib/toast";
 import { gridColumns, gridVerticalTarget, gridIconSize, gridFontScale, gridPadding } from "@/lib/grid";
@@ -144,8 +141,7 @@ interface SearchOptions {
   regex: boolean;
 }
 
-export function SearchView({ popup = true }: { popup?: boolean }) {
-  const entranceRef = useWindowEntrance(popup, ["animate-in", "fade-in-0"]);
+export function SearchView() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<SearchStatusDto | null>(null);
   const [results, setResults] = useState<SearchResultDto[]>([]);
@@ -350,9 +346,6 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilter, options]);
 
-  // 弹窗尺寸记忆（共享 Hook 内置防抖）
-  usePopupGeometry("search", { trackSize: popup });
-
   // 已安装应用库：「应用」Tab 数据源；30 秒内不重复扫描
   const [apps, setApps] = useState<ScannedApp[] | null>(null);
   const appsFetchedAt = useRef(0);
@@ -413,12 +406,10 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
 
   const doOpen = async (item: SearchResultDto) => {
     await invoke("search_open_file", { path: item.full_path });
-    if (popup) getCurrentWindow().hide();
   };
 
   const doOpenLocation = async (item: SearchResultDto) => {
     await invoke("search_open_file_location", { path: item.full_path });
-    if (popup) getCurrentWindow().hide();
   };
 
   const doCopyPath = async (item: SearchResultDto) => {
@@ -459,7 +450,6 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
         else doOpen(item);
       }
     } else if (e.key === "Escape") {
-      if (popup) getCurrentWindow().hide();
     }
   };
 
@@ -684,10 +674,8 @@ export function SearchView({ popup = true }: { popup?: boolean }) {
 
   return (
     <div
-      ref={popup ? entranceRef : undefined}
       className={cn(
         "relative flex h-full flex-col bg-background text-foreground",
-        popup && "animate-in fade-in-0 duration-150",
       )}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}

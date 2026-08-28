@@ -5,8 +5,6 @@
   "description": "基于 Everything 的全局文件名秒搜",
   "enabled": true,
   "default_config": {
-    "hotkey": "Ctrl+Shift+F",
-    "follow_mouse": true,
     "max_results": 200,
     "sort_by": "name",
     "sort_desc": false,

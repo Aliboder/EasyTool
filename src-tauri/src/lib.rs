@@ -16,9 +16,7 @@ use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
-};
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
 
@@ -174,7 +172,7 @@ fn save_main_window_size(app: &tauri::AppHandle) {
     }
 }
 
-/// 统一模式下：热键切换主窗口呼出/隐藏（呼出时记录唤起前窗口供跟手粘贴）
+/// 主热键：切换主窗口呼出/隐藏（呼出时记录唤起前窗口供跟手粘贴）
 fn toggle_main(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         if win.is_visible().unwrap_or(false) {
@@ -182,9 +180,6 @@ fn toggle_main(app: &tauri::AppHandle) {
         } else {
             if clipboard_enabled(app) {
                 modules::clipboard::record_foreground_state(app);
-            }
-            if emoji_enabled(app) {
-                modules::emoji::paste::record_foreground_state(app);
             }
             // 可选手：呼出时跟随鼠标定位
             let follow_mouse = app
@@ -201,15 +196,11 @@ fn toggle_main(app: &tauri::AppHandle) {
     }
 }
 
-/// 统一模式下把主窗口调成"面板"形态：置顶 + 隐藏任务栏图标；关闭模式时还原
+/// 主窗口恒按「面板」形态工作：置顶 + 隐藏任务栏图标
 pub fn apply_main_window_mode(app: &tauri::AppHandle) {
-    let unified = app
-        .try_state::<ConfigState>()
-        .map(|s| s.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).unified_hotkey)
-        .unwrap_or(false);
     if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        let _ = win.set_always_on_top(unified);
-        let _ = win.set_skip_taskbar(unified);
+        let _ = win.set_always_on_top(true);
+        let _ = win.set_skip_taskbar(true);
     }
 }
 
@@ -275,101 +266,6 @@ pub(crate) fn popup_position_physical(hwnd: windows::Win32::Foundation::HWND) ->
     }
 }
 
-/// 确保延迟创建的弹窗窗口存在，并恢复记住的尺寸（四模块共用）。
-/// 隐藏/最小化时 WebView2 会报 0x0 之类脏值，恢复前按最小尺寸过滤。
-pub(crate) fn ensure_popup_window(
-    app: &tauri::AppHandle,
-    label: &'static str,
-    html: &'static str,
-    size: (f64, f64),
-    cfg_key: &str,
-) -> Option<tauri::WebviewWindow> {
-    if let Some(win) = app.get_webview_window(label) {
-        return Some(win);
-    }
-    let win = tauri::WebviewWindowBuilder::new(
-        app,
-        label,
-        tauri::WebviewUrl::App(html.into()),
-    )
-    .decorations(false)
-    .skip_taskbar(true)
-    .visible(false)
-    .inner_size(size.0, size.1)
-    .min_inner_size(400.0, 300.0)
-    .resizable(true)
-    .always_on_top(true)
-    .build();
-    match win {
-        Ok(win) => {
-            let saved_size = app
-                .state::<ConfigState>()
-                .0
-                .lock()
-                .unwrap()
-                .modules
-                .get(cfg_key)
-                .and_then(|m| m.get("popup_size"))
-                .cloned();
-            if let Some(size) = saved_size {
-                if let (Some(w), Some(h)) = (
-                    size.get("w").and_then(|v| v.as_u64()),
-                    size.get("h").and_then(|v| v.as_u64()),
-                ) {
-                    if w >= 400 && h >= 300 {
-                        let _ = win.set_size(tauri::PhysicalSize::new(w as u32, h as u32));
-                    }
-                }
-            }
-            Some(win)
-        }
-        Err(e) => {
-            log::error!("failed to create popup window {label}: {e}");
-            None
-        }
-    }
-}
-
-/// 按模块配置定位（跟随鼠标 / 固定位置）并显示聚焦弹窗。
-pub(crate) fn show_popup_at(
-    app: &tauri::AppHandle,
-    win: &tauri::WebviewWindow,
-    cfg_key: &str,
-) {
-    if let Ok(hwnd) = win.hwnd() {
-        let cfg = config::module_cfg(app, cfg_key);
-        let follow_mouse = cfg
-            .get("follow_mouse")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let (x, y) = if follow_mouse {
-            popup_position_physical(hwnd)
-        } else {
-            cfg.get("fixed_pos")
-                .and_then(|p| {
-                    Some((
-                        p.get("x")?.as_i64()? as i32,
-                        p.get("y")?.as_i64()? as i32,
-                    ))
-                })
-                .unwrap_or_else(|| popup_position_physical(hwnd))
-        };
-        unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                None,
-                x,
-                y,
-                0,
-                0,
-                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-            );
-        }
-    }
-    let _ = win.show();
-    let _ = win.set_focus();
-}
-
 /// 读模块启用开关（统一实现；下方各模块包装名保留以便调用点自解释）
 fn module_enabled(app: &tauri::AppHandle, id: &str) -> bool {
     app.try_state::<ConfigState>()
@@ -406,32 +302,14 @@ fn timetracker_enabled(app: &tauri::AppHandle) -> bool {
 }
 
 struct Hotkeys {
-    unified: bool,
-    clip_hotkey: String,
-    search_hotkey: String,
-    emoji_hotkey: String,
-    timetracker_hotkey: String,
     main_hotkey: String,
 }
 
-/// 已解析热键缓存：避免每次按键回调重复解析字符串 + 持配置锁
+/// 已解析主热键缓存：避免每次按键回调重复解析字符串 + 持配置锁
 #[derive(Clone, Default)]
 struct ResolvedHotkeys {
-    unified: bool,
-    clip_enabled: bool,
-    search_enabled: bool,
-    emoji_enabled: bool,
-    timetracker_enabled: bool,
-    clip: Option<Shortcut>,
-    search: Option<Shortcut>,
-    emoji: Option<Shortcut>,
-    timetracker: Option<Shortcut>,
     main: Option<Shortcut>,
     /// 原始字符串（注册接口需要 &str 参数）
-    clip_str: Option<String>,
-    search_str: Option<String>,
-    emoji_str: Option<String>,
-    timetracker_str: Option<String>,
     main_str: Option<String>,
 }
 
@@ -441,20 +319,7 @@ static RESOLVED_HOTKEYS: OnceLock<Mutex<ResolvedHotkeys>> = OnceLock::new();
 fn refresh_resolved_hotkeys(app: &tauri::AppHandle) {
     let hk = read_hotkeys(app);
     let resolved = ResolvedHotkeys {
-        unified: hk.unified,
-        clip_enabled: clipboard_enabled(app),
-        search_enabled: search_enabled(app),
-        emoji_enabled: emoji_enabled(app),
-        timetracker_enabled: timetracker_enabled(app),
-        clip: Shortcut::from_str(&hk.clip_hotkey).ok(),
-        search: Shortcut::from_str(&hk.search_hotkey).ok(),
-        emoji: Shortcut::from_str(&hk.emoji_hotkey).ok(),
-        timetracker: Shortcut::from_str(&hk.timetracker_hotkey).ok(),
         main: Shortcut::from_str(&hk.main_hotkey).ok(),
-        clip_str: Some(hk.clip_hotkey.clone()),
-        search_str: Some(hk.search_hotkey.clone()),
-        emoji_str: Some(hk.emoji_hotkey.clone()),
-        timetracker_str: Some(hk.timetracker_hotkey.clone()),
         main_str: Some(hk.main_hotkey),
     };
     *RESOLVED_HOTKEYS
@@ -474,40 +339,7 @@ fn read_resolved_hotkeys() -> ResolvedHotkeys {
 fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
     let state = app.state::<ConfigState>();
     let cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let clip_hotkey = cfg
-        .modules
-        .get("clipboard")
-        .and_then(|m| m.get("hotkey"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Shift+V")
-        .to_string();
-    let search_hotkey = cfg
-        .modules
-        .get("search")
-        .and_then(|m| m.get("hotkey"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Shift+F")
-        .to_string();
-    let emoji_hotkey = cfg
-        .modules
-        .get("emoji")
-        .and_then(|m| m.get("hotkey"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Shift+J")
-        .to_string();
-    let timetracker_hotkey = cfg
-        .modules
-        .get("timetracker")
-        .and_then(|m| m.get("hotkey"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Shift+T")
-        .to_string();
     Hotkeys {
-        unified: cfg.unified_hotkey,
-        clip_hotkey,
-        search_hotkey,
-        emoji_hotkey,
-        timetracker_hotkey,
         main_hotkey: cfg
             .hotkeys
             .get("main")
@@ -542,72 +374,23 @@ fn notify_hotkey_failed(app: &tauri::AppHandle, hk: &str) {
         .show();
 }
 
-/// 按统一呼出模式重新注册全局热键：
-/// - unified=true：只注册主窗口热键，模块独立热键全部禁用
-/// - unified=false：只注册各模块独立热键，主窗口呼出热键失效（改用托盘呼出）
+/// 注册主窗口全局呼出热键（唯一热键；被占用时系统通知提示）
 pub fn reapply_hotkeys(app: &tauri::AppHandle) {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
     let _ = app.global_shortcut().unregister_all();
     // 先刷新缓存，再按缓存注册（保持 handler 匹配与注册一致）
     refresh_resolved_hotkeys(app);
     let resolved = read_resolved_hotkeys();
-    if resolved.unified {
-        if let Some(hk) = &resolved.main_str {
-            match app.global_shortcut().register(hk.as_str()) {
-                Ok(_) => log::info!("[unified] main hotkey registered: {hk}"),
-                    Err(e) => {
-                        log::error!("failed to register main hotkey: {e}");
-                        notify_hotkey_failed(app, hk);
-                    }
+    if let Some(hk) = &resolved.main_str {
+        match app.global_shortcut().register(hk.as_str()) {
+            Ok(_) => log::info!("main hotkey registered: {hk}"),
+            Err(e) => {
+                log::error!("failed to register main hotkey: {e}");
+                notify_hotkey_failed(app, hk);
             }
-        } else {
-            log::warn!("[unified] main hotkey invalid, nothing registered");
         }
     } else {
-        if resolved.clip_enabled {
-            if let Some(hk) = &resolved.clip_str {
-                match app.global_shortcut().register(hk.as_str()) {
-                    Ok(_) => log::info!("clipboard hotkey registered: {hk}"),
-                    Err(e) => {
-                        log::error!("failed to register clipboard hotkey: {e}");
-                        notify_hotkey_failed(app, hk);
-                    }
-                }
-            }
-        }
-        if resolved.search_enabled {
-            if let Some(hk) = &resolved.search_str {
-                match app.global_shortcut().register(hk.as_str()) {
-                    Ok(_) => log::info!("search hotkey registered: {hk}"),
-                    Err(e) => {
-                        log::error!("failed to register search hotkey: {e}");
-                        notify_hotkey_failed(app, hk);
-                    }
-                }
-            }
-        }
-        if resolved.emoji_enabled {
-            if let Some(hk) = &resolved.emoji_str {
-                match app.global_shortcut().register(hk.as_str()) {
-                    Ok(_) => log::info!("emoji hotkey registered: {hk}"),
-                    Err(e) => {
-                        log::error!("failed to register emoji hotkey: {e}");
-                        notify_hotkey_failed(app, hk);
-                    }
-                }
-            }
-        }
-        if resolved.timetracker_enabled {
-            if let Some(hk) = &resolved.timetracker_str {
-                match app.global_shortcut().register(hk.as_str()) {
-                    Ok(_) => log::info!("timetracker hotkey registered: {hk}"),
-                    Err(e) => {
-                        log::error!("failed to register timetracker hotkey: {e}");
-                        notify_hotkey_failed(app, hk);
-                    }
-                }
-            }
-        }
+        log::warn!("main hotkey invalid, nothing registered");
     }
 }
 
@@ -672,41 +455,9 @@ pub fn run() {
                     }
                     log::info!("global shortcut pressed: {shortcut}");
                     let resolved = read_resolved_hotkeys();
-                    if !resolved.unified
-                        && resolved.clip_enabled
-                        && resolved.clip.as_ref().is_some_and(|s| s == shortcut)
-                    {
-                        log::info!("clipboard hotkey matched, showing popup");
-                        modules::clipboard::on_hotkey(app);
-                    } else if !resolved.unified
-                        && resolved.search_enabled
-                        && resolved.search.as_ref().is_some_and(|s| s == shortcut)
-                    {
-                        log::info!("search hotkey matched, showing popup");
-                        modules::search::on_hotkey(app);
-                    } else if !resolved.unified
-                        && resolved.emoji_enabled
-                        && resolved.emoji.as_ref().is_some_and(|s| s == shortcut)
-                    {
-                        log::info!("emoji hotkey matched, showing popup");
-                        modules::emoji::on_hotkey(app);
-                    } else if !resolved.unified
-                        && resolved.timetracker_enabled
-                        && resolved.timetracker.as_ref().is_some_and(|s| s == shortcut)
-                    {
-                        log::info!("timetracker hotkey matched, showing popup");
-                        modules::timetracker::on_hotkey(app);
-                    } else if resolved.main.as_ref().is_some_and(|s| s == shortcut) {
-                        if resolved.unified {
-                            log::info!("main hotkey toggling main window");
-                            toggle_main(app);
-                        } else {
-                            // 主窗口呼出：先记录唤起前窗口，供剪贴板跟手粘贴
-                            if resolved.clip_enabled {
-                                modules::clipboard::record_foreground_state(app);
-                            }
-                            show_main(app);
-                        }
+                    if resolved.main.as_ref().is_some_and(|s| s == shortcut) {
+                        log::info!("main hotkey toggling main window");
+                        toggle_main(app);
                     }
                 })
                 .build(),
@@ -905,7 +656,6 @@ pub fn run() {
             config::set_module_config,
             config::set_module_order,
             config::set_theme,
-            config::set_unified_hotkey,
             config::set_main_hotkey,
             config::save_main_size,
             config::set_main_follow_mouse,
@@ -923,8 +673,6 @@ pub fn run() {
             modules::clipboard::commands::open_file_location,
             modules::clipboard::commands::open_file,
             modules::clipboard::commands::set_max_items,
-            modules::clipboard::commands::set_hotkey,
-            modules::clipboard::commands::set_follow_mouse,
             modules::clipboard::commands::get_data_dir,
             modules::clipboard::commands::open_data_dir,
             modules::clipboard::commands::get_stats,
@@ -952,7 +700,6 @@ pub fn run() {
             modules::search::commands::search_open_file_location,
             modules::search::commands::search_copy_path,
             modules::search::commands::search_copy_file,
-            modules::search::commands::search_set_hotkey,
             modules::search::commands::search_scan_apps,
             modules::search::commands::search_open_path,
             modules::emoji::commands::get_emoji_static,
@@ -1012,22 +759,7 @@ modules::timetracker::commands::timetracker_get_category_breakdown_range,
                 WindowEvent::Focused(false) => {
                     let label = window.label().to_string();
                     if label == MAIN_WINDOW_LABEL {
-                        // 统一模式下点外部即隐藏主窗口（面板行为）
-                        let unified = window
-                            .app_handle()
-                            .state::<ConfigState>()
-                            .0
-                            .lock()
-                            .unwrap()
-                            .unified_hotkey;
-                        if unified {
-                            hide_after_blur_grace(window);
-                        }
-                    } else if label == modules::clipboard::POPUP_WINDOW_LABEL
-                        || label == modules::search::POPUP_WINDOW_LABEL
-                        || label == modules::emoji::POPUP_WINDOW_LABEL
-                        || label == modules::timetracker::POPUP_WINDOW_LABEL
-                    {
+                        // 主窗口按「面板」工作：点外部即隐藏
                         hide_after_blur_grace(window);
                     }
                 }

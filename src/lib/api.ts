@@ -15,7 +15,6 @@ export interface AppConfig {
   hotkeys: Record<string, string>;
   theme: string;
   migrated: string[];
-  unified_hotkey: boolean;
   main_follow_mouse: boolean;
   module_order: string[];
 }
@@ -32,8 +31,6 @@ export const setModuleEnabled = (id: string, enabled: boolean) =>
   invoke<void>("set_module_enabled", { id, enabled });
 export const setModuleOrder = (ids: string[]) => invoke<void>("set_module_order", { ids });
 export const setTheme = (theme: string) => invoke<void>("set_theme", { theme });
-export const setUnifiedHotkey = (enabled: boolean) =>
-  invoke<void>("set_unified_hotkey", { enabled });
 export const setMainHotkey = (hotkey: string) => invoke<void>("set_main_hotkey", { hotkey });
 export const saveMainSize = (width: number, height: number) =>
   invoke<void>("save_main_size", { width, height });

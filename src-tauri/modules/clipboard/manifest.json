@@ -6,8 +6,6 @@
   "enabled": true,
   "default_config": {
     "max_items": 500,
-    "hotkey": "Ctrl+Shift+V",
-    "follow_mouse": true,
     "record_text": true,
     "record_image": true,
     "record_files": true,

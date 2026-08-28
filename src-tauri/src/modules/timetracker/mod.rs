@@ -8,8 +8,6 @@ use std::sync::OnceLock;
 use std::sync::Mutex;
 use tauri::Manager;
 
-pub const POPUP_WINDOW_LABEL: &str = "timetracker_window";
-
 pub struct TimetrackerState {
     pub db: db::TimetrackerDb,
 }
@@ -71,24 +69,4 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
 /// 设置保存后重新应用采集配置（AFK 阈值、音频豁免等，幂等）
 pub fn reapply_config(app: &tauri::AppHandle) {
     collector::apply_config(app);
-}
-
-/// 确保弹窗窗口存在（延迟创建）
-fn ensure_popup_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
-    crate::ensure_popup_window(
-        app,
-        POPUP_WINDOW_LABEL,
-        "timetracker_window.html",
-        (800.0, 600.0),
-        "timetracker",
-    )
-}
-
-/// 全局热键触发：显示弹窗
-pub fn on_hotkey(app: &tauri::AppHandle) {
-    let Some(win) = ensure_popup_window(app) else {
-        return;
-    };
-    let _ = win.show();
-    let _ = win.set_focus();
 }

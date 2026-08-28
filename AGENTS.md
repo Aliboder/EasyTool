@@ -10,11 +10,11 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 
 ## 当前模块
 
-- `clipboard` 剪贴板：监听系统剪贴板，记录文本/图片/文件，固定/拖拽排序/搜索/跟手粘贴；独立弹窗（延迟创建）
+- `clipboard` 剪贴板：监听系统剪贴板，记录文本/图片/文件，固定/拖拽排序/搜索/跟手粘贴
 - `quota` 额度监控：DeepSeek / OpenCode Go **多账户**，各账户独立密钥/余额/消费历史/告警；后台轮询
-- `emoji` 表情面板：1900+ 表情分类检索，中文/英文/shortcode 搜索，收藏置顶，SendInput 直输；支持导入/添加自定义表情与分组管理；独立弹窗
-- `search` 文件搜索：Everything 全文搜索（**需用户安装 Everything**），Everything64.dll 随应用打包；独立弹窗 + 模块页双入口。第一个「应用」Tab = **已安装应用中心**（扫描开始菜单，点击即启动，前台频率排序），搜索时匹配应用置顶显示
-- `timetracker` 时长统计：自动记录前台软件使用时长，今日/本周/本月总览与对比、应用排行（总/活跃时长）、每日甘特时间线、自动分类 + 自定义正则规则、AFK 离开检测；独立弹窗（延迟创建）
+- `emoji` 表情面板：1900+ 表情分类检索，中文/英文/shortcode 搜索，收藏置顶，SendInput 直输；支持导入/添加自定义表情与分组管理
+- `search` 文件搜索：Everything 全文搜索（**需用户安装 Everything**），Everything64.dll 随应用打包；第一个「应用」Tab = **已安装应用中心**（扫描开始菜单，点击即启动，前台频率排序），搜索时匹配应用置顶显示
+- `timetracker` 时长统计：自动记录前台软件使用时长，今日/本周/本月总览与对比、应用排行（总/活跃时长）、每日甘特时间线、自动分类 + 自定义正则规则、AFK 离开检测
 
 ## 技术栈
 
@@ -38,13 +38,9 @@ src-tauri/src/
 src-tauri/modules/  # 模块 manifest.json 目录
 src/
 ├── App.tsx        # 壳 UI：底部导航 + 模块页 + 设置页
-├── lib/           # api(ipc封装)/theme/toast/utils/grid/popup-entry/use-horizontal-wheel/use-window-entrance
-├── hooks/         # useModuleConfig(模块配置读写)/usePopupGeometry(弹窗位置记忆)/useFileIcons
+├── lib/           # api(ipc封装)/theme/toast/utils/grid/use-horizontal-wheel/use-window-entrance
+├── hooks/         # useModuleConfig(模块配置读写)/useFileIcons
 ├── components/    # ui(shadcn) + layout(Sidebar) + module-header/setting-row/settings-view + hotkey-recorder + LazyImage + ErrorBoundary + context-menu
-├── clipboard_popup.tsx   # 剪贴板弹窗入口（延迟创建）
-├── emoji_popup.tsx       # 表情弹窗入口（延迟创建）
-├── search_popup.tsx      # 搜索弹窗入口（延迟创建）
-├── timetracker_window.tsx  # 时长统计弹窗入口（延迟创建）
 └── modules/       # clipboard/ + quota/ + emoji/ + search/ + timetracker/ 前端
 website/           # 官网（独立工程，详见 docs/website-guide.md）
 ```
@@ -52,20 +48,18 @@ website/           # 官网（独立工程，详见 docs/website-guide.md）
 ## 关键机制
 
 ### 窗口
-- `main` 主窗口：关闭=隐藏到托盘；`unified_hotkey` 开启时按「面板」工作（点外部关闭/热键切换/置顶/跳过任务栏/可选跟随鼠标）
+- `main` 是**唯一窗口**，按「面板」工作：关闭=隐藏到托盘、置顶、跳过任务栏、点外部关闭（`hide_after_blur_grace`）、可选跟随鼠标（`main_follow_mouse`）
 - 显示时机：`visible:false` 冷启动 → 前端首屏就绪后调 `main_window_ready` 才 `show`（消除空白期；8s 超时兜底强制显示）
 - 呼出保护：托盘点击不授予前台权限，`show_main` 前注入一次 F24 按键 + `MAIN_FOCUSED_SINCE_SHOW` 守护（没真正聚焦过的「失焦」不算点外部）+ 150/400/900ms 焦点重试
-- 失焦隐藏：`hide_after_blur_grace`（200ms 宽限 + 拖动中左键按住不隐藏，面板与弹窗共用）
-- 弹窗统一 helper：`ensure_popup_window` / `show_popup_at` / `popup_position_physical`（Win32 物理坐标 + 光标所在显示器工作区钳制），四弹窗只传 label/html/尺寸
-- `clipboard_popup` / `emoji_popup` / `search_popup` / `timetracker_window`：跟随鼠标或固定位置，失焦自动隐藏；**延迟创建**（首次呼出才建窗，避免启动闪现）
-- **坑**：Windows 下透明窗口（`.transparent(true)`）hide 后再 show 会崩溃，已放弃透明方案
+- 跟随鼠标定位复用 `popup_position_physical`（Win32 物理坐标 + 光标所在显示器工作区钳制），由 `clipboard::position_at_cursor` 调用
+- **不存在独立弹窗**（已移除）；剪贴板/表情的收起操作为：隐藏主窗口 → 100ms 焦点回原窗口 → 注入（跟手粘贴/直输）
 
-### 全局热键与统一呼出
-- `unified_hotkey=true`（默认）：只注册主窗口热键（默认 Ctrl+Shift+E），各模块独立热键禁用；关闭则反之（独立模式主窗口靠托盘呼出）
+### 全局热键与呼出
+- 全局热键**只有一个**：主窗口呼出（默认 Ctrl+Shift+E，可自定义录制，`set_main_hotkey` → `reapply_hotkeys`）；托盘点击同样呼出
 - 解析缓存：热键字符串在 `reapply_hotkeys` 时解析进 `ResolvedHotkeys`，全局 handler 用 `Shortcut` 对象比较，**不每次按键重新解析/持配置锁**
 - 改热键入口顺序：先注册验证 → 写 config → `reapply_hotkeys` 整体重注册（**禁止**「unregister_all 后只重注册自己的」——会注销全部热键）
 - 录制格式：`Ctrl/Shift/Alt/Super + 键名`（Windows 键用 **Super** 不是 Win），见 `HotkeyRecorder`
-- 默认热键：主面板 Ctrl+Shift+E / 剪贴板 Ctrl+Shift+V / 表情 Ctrl+Shift+J / 搜索 Ctrl+Shift+F / 时长统计 Ctrl+Shift+T
+- 模块**没有**独立热键（已移除）；统一/独立呼出模式开关已删除
 
 ### 配置与数据
 - 数据目录 `%APPDATA%\com.aliboder.easytool\`：`config.json`、`clipboard.db`（含 `pin_order` 列）、`quota.db`、`apps.db`、`timetracker.db`（均 SQLite WAL）、`images/`、`thumbs/`、`easytool.log`

@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
-import { ChevronLeft, ChevronRight, GripVertical, Settings2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings2 } from "lucide-react";
 import { Drawer } from "@/components/ui/drawer";
 import type { CategoryBreakdown, DailyStat, DayOverview, Event, Period } from "./types";
 import type { TimetrackerConfig } from "./config";
 import { useFileIcons } from "@/hooks/useFileIcons";
-import { useWindowEntrance } from "@/lib/use-window-entrance";
-import { usePopupGeometry } from "@/hooks/usePopupGeometry";
 import { OverviewBar } from "./components/OverviewBar";
 import { AppRanking } from "./components/AppRanking";
 import { Timeline } from "./components/Timeline";
@@ -20,8 +17,7 @@ import { TimetrackerSettings } from "./Settings";
 interface Props {
   cfg: TimetrackerConfig;
   onUpdate: (patch: Partial<TimetrackerConfig>) => void;
-  popup?: boolean;
-  /** 主窗口 keep-alive：仅当前 Tab 活跃时轮询（弹窗不传默认始终跟随可见性） */
+  /** 主窗口 keep-alive：仅当前 Tab 活跃时轮询 */
   active?: boolean;
 }
 
@@ -51,12 +47,7 @@ const daysInMonth = () => {
 const buildDateRange = (start: string, count: number): string[] =>
   Array.from({ length: count }, (_, i) => shiftDate(start, i));
 
-export function TimetrackerView({ cfg, onUpdate, popup = false, active = true }: Props) {
-  // 弹窗呼出入场动画（主窗不播）
-  const entranceRef = useWindowEntrance(popup, ["animate-in", "fade-in-0"]);
-  // 弹窗尺寸记忆：缩放停止后写回模块配置
-  usePopupGeometry("timetracker", { trackSize: popup });
-
+export function TimetrackerView({ cfg, onUpdate, active = true }: Props) {
   const [period, setPeriod] = useState<Period>("today");
   // 日期回看：仅「今日」Tab 生效，可翻看任意一天
   const [viewDate, setViewDate] = useState(todayStr());
@@ -71,7 +62,7 @@ export function TimetrackerView({ cfg, onUpdate, popup = false, active = true }:
   const [loading, setLoading] = useState(false);
   // 页面可见性：窗口隐藏/最小化时停止 30s 轮询，避免 keep-alive 暗耗
   const [visible, setVisible] = useState(() => document.visibilityState === "visible");
-  const isShown = popup ? visible : active && visible;
+  const isShown = active && visible;
   const prevShown = useRef(isShown);
 
   // 共享图标缓存（排行/详情/甘特 tooltip 同源）
@@ -192,32 +183,12 @@ export function TimetrackerView({ cfg, onUpdate, popup = false, active = true }:
         ? `${weekStartStr().slice(5)}~${todayStr().slice(5)}`
         : monthStartStr().slice(0, 7);
 
-  // Esc 关闭弹窗（抽屉/设置打开时优先由其自身处理，不抢）
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape" && popup && !showSettings && selectedApp === null) {
-      getCurrentWindow().hide();
-    }
-  };
-
   return (
     <div
-      ref={popup ? entranceRef : undefined}
-      onKeyDown={onKeyDown}
       className="flex h-full flex-col bg-background text-foreground"
     >
       <ModuleHeader
         title={period === "today" ? `时长统计 · ${dateLabel}` : "时长统计"}
-        leading={
-          popup && (
-            <div
-              data-tauri-drag-region
-              className="flex shrink-0 cursor-grab items-center self-stretch px-2 text-muted-foreground hover:text-foreground"
-              title="拖动窗口"
-            >
-              <GripVertical className="pointer-events-none size-4" />
-            </div>
-          )
-        }
         actions={
           <>
             {/* 日期回看：仅今日 Tab（周/月时间线为整段周期） */}

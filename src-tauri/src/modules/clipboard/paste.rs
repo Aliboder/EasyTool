@@ -124,13 +124,8 @@ pub fn paste_item(state: &AppState, app: &tauri::AppHandle, id: i64) -> Result<(
     // 2. 写剪贴板
     write_item_clipboard(state, &item)?;
 
-    // 3. 隐藏 EasyTool 窗口（焦点自动返回到原窗口）
-    // 统一模式：隐藏主窗口；独立弹窗：隐藏弹窗
-    let main_win = app.get_webview_window(crate::MAIN_WINDOW_LABEL);
-    let popup_win = app.get_webview_window("clipboard_popup");
-    if let Some(win) = popup_win {
-        let _ = win.hide();
-    } else if let Some(win) = main_win {
+    // 3. 隐藏主窗口（焦点自动返回到原窗口）
+    if let Some(win) = app.get_webview_window(crate::MAIN_WINDOW_LABEL) {
         let _ = win.hide();
     }
 

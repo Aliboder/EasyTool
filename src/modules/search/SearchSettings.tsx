@@ -1,4 +1,3 @@
-import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { SettingRow } from "@/components/setting-row";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -13,8 +12,6 @@ import {
 import { cn } from "@/lib/utils";
 
 export interface SearchSettingsData {
-  hotkey: string;
-  followMouse: boolean;
   sortBy: "name" | "path" | "size" | "modified";
   sortDesc: boolean;
   columns: { path: boolean; size: boolean; modified: boolean; thumbnail: boolean };
@@ -30,8 +27,6 @@ export interface SearchSettingsData {
 }
 
 export const SEARCH_DEFAULTS: SearchSettingsData = {
-  hotkey: "Ctrl+Shift+F",
-  followMouse: true,
   sortBy: "name",
   sortDesc: false,
   columns: { path: true, size: true, modified: true, thumbnail: true },
@@ -76,23 +71,6 @@ export function SearchSettings({ cfg, onUpdate }: SearchSettingsProps) {
 
   return (
     <div className="space-y-6 p-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">通用</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1">
-          <SettingRow title="呼出搜索弹窗热键" hint="按此热键弹出搜索窗（统一呼出模式下禁用）">
-            <HotkeyRecorder
-              value={cfg.hotkey}
-              onSave={(combo) => onUpdate({ hotkey: combo })}
-            />
-          </SettingRow>
-          <SettingRow title="弹窗跟随鼠标" hint="呼出时出现在鼠标附近，否则停留在上次位置">
-            <Switch checked={cfg.followMouse} onCheckedChange={(v) => onUpdate({ followMouse: v })} />
-          </SettingRow>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle className="text-base">显示</CardTitle>

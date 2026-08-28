@@ -8,7 +8,6 @@ import {
   setModuleEnabled,
   setModuleOrder,
   setTheme,
-  setUnifiedHotkey,
   setMainHotkey,
   setMainFollowMouse,
   saveMainSize,
@@ -236,11 +235,6 @@ function App() {
     setConfig(await getConfig());
   };
 
-  const changeUnified = async (enabled: boolean) => {
-    await setUnifiedHotkey(enabled);
-    setConfig(await getConfig());
-  };
-
   const changeMainHotkey = async (hotkey: string) => {
     await setMainHotkey(hotkey);
     setConfig(await getConfig());
@@ -263,7 +257,7 @@ function App() {
     <div className="relative h-full">
       {visited.has("clipboard") && (
         <div className={active === "clipboard" ? "h-full" : "hidden"}>
-          <Clippage popup={false} />
+          <Clippage />
         </div>
       )}
       {visited.has("quota") && (
@@ -359,7 +353,6 @@ function App() {
                 onToggle={toggleModule}
                 onReorder={reorderModules}
                 onThemeChange={changeTheme}
-                onUnifiedChange={changeUnified}
                 onMainHotkey={changeMainHotkey}
                 onMainFollowMouse={changeMainFollowMouse}
               />

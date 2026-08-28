@@ -70,7 +70,6 @@ export function SettingsView({
   onToggle,
   onReorder,
   onThemeChange,
-  onUnifiedChange,
   onMainHotkey,
   onMainFollowMouse,
 }: {
@@ -79,7 +78,6 @@ export function SettingsView({
   onToggle: (id: string, enabled: boolean) => void;
   onReorder: (ids: string[]) => Promise<void>;
   onThemeChange: (theme: string) => void;
-  onUnifiedChange: (enabled: boolean) => void;
   onMainHotkey: (hotkey: string) => Promise<void>;
   onMainFollowMouse: (enabled: boolean) => Promise<void>;
 }) {
@@ -206,35 +204,24 @@ export function SettingsView({
           <CardTitle>窗口与呼出</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          <SettingRow title="统一呼出主窗口" hint="开启后只保留主窗口呼出热键，各模块独立热键全部禁用">
-            <Switch
-              checked={Boolean(config.unified_hotkey)}
-              onCheckedChange={onUnifiedChange}
-              aria-label="统一呼出主窗口"
+          <SettingRow title="全局呼出热键" hint="按此热键呼出 / 隐藏主窗口">
+            <HotkeyRecorder
+              value={(config.hotkeys.main as string) ?? "Ctrl+Shift+E"}
+              onSave={async (combo) => {
+                try {
+                  await onMainHotkey(combo);
+                } catch (e) {
+                  return String(e);
+                }
+              }}
             />
           </SettingRow>
-          {Boolean(config.unified_hotkey) && (
-            <>
-              <SettingRow title="全局呼出热键" hint="统一呼出模式下，此热键呼出主窗口">
-                <HotkeyRecorder
-                  value={(config.hotkeys.main as string) ?? "Ctrl+Shift+E"}
-                  onSave={async (combo) => {
-                    try {
-                      await onMainHotkey(combo);
-                    } catch (e) {
-                      return String(e);
-                    }
-                  }}
-                />
-              </SettingRow>
-              <SettingRow title="呼出窗口跟随鼠标" hint="呼出时窗口出现在鼠标附近，否则停留在上次位置">
-                <Switch
-                  checked={Boolean(config.main_follow_mouse)}
-                  onCheckedChange={(v) => onMainFollowMouse(v)}
-                />
-              </SettingRow>
-            </>
-          )}
+          <SettingRow title="呼出窗口跟随鼠标" hint="呼出时窗口出现在鼠标附近，否则停留在上次位置">
+            <Switch
+              checked={Boolean(config.main_follow_mouse)}
+              onCheckedChange={(v) => onMainFollowMouse(v)}
+            />
+          </SettingRow>
         </CardContent>
       </Card>
 

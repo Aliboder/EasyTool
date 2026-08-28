@@ -1,5 +1,3 @@
-import { HotkeyRecorder } from "@/components/hotkey-recorder";
-import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SettingRow } from "@/components/setting-row";
@@ -13,20 +11,6 @@ interface EmojiSettingsProps {
 export function EmojiSettings({ cfg, onUpdate }: EmojiSettingsProps) {
   return (
     <div className="space-y-4 p-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">通用</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1">
-          <SettingRow title="呼出表情面板热键" hint="按此热键弹出表情悬浮面板（统一呼出模式下禁用）">
-            <HotkeyRecorder
-              value={cfg.hotkey}
-              onSave={(combo) => onUpdate({ hotkey: combo })}
-            />
-          </SettingRow>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle className="text-base">显示</CardTitle>
@@ -82,12 +66,6 @@ export function EmojiSettings({ cfg, onUpdate }: EmojiSettingsProps) {
                 </button>
               ))}
             </div>
-          </SettingRow>
-          <SettingRow title="面板跟随鼠标" hint="呼出时出现在鼠标附近，否则停留在上次位置">
-            <Switch
-              checked={cfg.followMouse}
-              onCheckedChange={(checked) => onUpdate({ followMouse: checked })}
-            />
           </SettingRow>
         </CardContent>
       </Card>

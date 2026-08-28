@@ -1,15 +1,11 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { PhysicalSize } from "@tauri-apps/api/dpi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { toast } from "@/lib/toast";
 import type { ClipboardConfig } from "./config";
 import {
@@ -65,47 +61,23 @@ function Segmented<T extends number | string>({  value,
 }
 
 export function ClipSettings({
-  hotkey,
-  followMouse,
   cfg,
   onUpdate,
-  onHotkey,
-  onFollowMouse,
 }: {
-  hotkey: string;
-  followMouse: boolean;
   cfg: ClipboardConfig;
   onUpdate: (patch: Partial<ClipboardConfig>) => void;
-  onHotkey: () => void;
-  onFollowMouse: () => void;
 }) {
   const [stats, setStats] = useState<StatsDto | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
 
-  // 纯配置（监听规则/弹窗显示）由父组件 Clippage 的共享 Hook 持有，此处受控
+  // 纯配置（监听规则/显示设置）由父组件 Clippage 的共享 Hook 持有，此处受控
   const adv = cfg;
   const saveAdv = onUpdate;
 
   useEffect(() => {
     invoke<StatsDto>("get_stats").then(setStats).catch(console.error);
   }, []);
-
-  const saveHotkey = async (combo: string): Promise<string | void> => {
-    try {
-      await invoke("set_hotkey", { hotkey: combo });
-      onHotkey();
-    } catch (e) {
-      onHotkey();
-      return String(e);
-    }
-  };
-
-  const resetSize = async () => {
-    const w = await WebviewWindow.getByLabel("clipboard_popup");
-    await w?.setSize(new PhysicalSize(620, 480));
-    saveAdv({ popupSize: null });
-  };
 
   const clearHistory = async () => {
     const n = await invoke<number>("clear_history");
@@ -123,50 +95,6 @@ export function ClipSettings({
 
   return (
     <div className="space-y-6 p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">基础设置</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <Label>全局呼出热键</Label>
-            <HotkeyRecorder
-              value={hotkey}
-              onSave={saveHotkey}
-              hint="点击后按下组合键即可录制，支持 Ctrl / Shift / Alt / Win"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <Label>弹窗位置</Label>
-            <Segmented
-              value={followMouse ? "mouse" : "fixed"}
-              options={[
-                { value: "mouse", label: "跟随鼠标" },
-                { value: "fixed", label: "固定位置" },
-              ]}
-              onChange={async (v) => {
-                await invoke("set_follow_mouse", { follow: v === "mouse" });
-                onFollowMouse();
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              固定位置模式下，可拖动弹窗顶部手柄调整位置，位置自动保存。
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between pt-1">
-            <div className="space-y-0.5">
-              <Label>弹窗尺寸</Label>
-              <p className="text-xs text-muted-foreground">拖动弹窗边缘调整，尺寸自动保存</p>
-            </div>
-            <Button variant="outline" onClick={resetSize}>
-              恢复默认尺寸
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle className="text-base">监听规则</CardTitle>
@@ -217,7 +145,7 @@ export function ClipSettings({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">弹窗显示</CardTitle>
+          <CardTitle className="text-base">显示</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">

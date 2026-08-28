@@ -20,13 +20,13 @@ EasyTool 是一个 Windows 效率工具箱：剪贴板历史（文本/图片/文
 
 ## Operating Context
 
-Windows 10/11 x64 桌面环境；托盘驻留 + 全局热键（Ctrl+Shift+E 主面板，模块独立模式 Ctrl+Shift+V/J/F/T）；跟随鼠标弹窗、失焦自动隐藏；NSIS 安装包、无需管理员权限。数据目录 %APPDATA%\com.aliboder.easytool。
+Windows 10/11 x64 桌面环境；托盘驻留 + 单一全局热键（Ctrl+Shift+E，可自定义）呼出主面板；主面板置顶、点外部自动隐藏、可选跟随鼠标（无独立弹窗）；NSIS 安装包、无需管理员权限。数据目录 %APPDATA%\com.aliboder.easytool。
 
 ## Capabilities and Constraints
 
 - 模块：clipboard（WM_CLIPBOARDUPDATE + 500ms 轮询兜底、指纹去重、2s 自写守卫、256px 缩略图、pin_order 固定排序）、quota（后台线程轮询、预警/告警双阈值、5000 条历史、消费突增提醒）、emoji（系统字体优先 + canvas 像素检测 + Twemoji 兜底、SendInput 直输）、search（Everything64.dll 动态加载、全局互斥锁、后台线程查询、已安装应用中心）、timetracker（前台窗口钩子、每日甘特时间线、应用排行总/活跃时长、自动分类 + 自定义正则规则、AFK 离开检测）
 - 技术：Tauri 2 / Rust / React 19 / TS / Tailwind v4 / shadcn / Vite MPA / SQLite WAL / keyring / reqwest / chrono
-- 版本：v0.6.0（2026-08-26），MIT 许可，61 后端单元测试
+- 版本：v0.6.7（2026-08-28），MIT 许可，66 后端单元测试
 - 依赖：搜索模块需要用户安装 Everything（免费，MIT）
 
 ## Brand Commitments
@@ -49,7 +49,7 @@ Windows 10/11 x64 桌面环境；托盘驻留 + 全局热键（Ctrl+Shift+E 主�
 1. 真实优先：页面上出现的每个功能、配置、版本号都必须能在代码/仓库中验证
 2. 本地优先：数据本地、密钥进钥匙串、不依赖第三方服务器
 3. 模块化：扩展新功能 = 新增模块目录 + manifest，不动其他模块
-4. 性能敏感：弹窗延迟创建、增量渲染、分片检测，启动和交互不卡顿
+4. 性能敏感：增量渲染、分片检测、keep-alive 与可见性门控，启动和交互不卡顿
 
 ## Accessibility & Inclusion
 

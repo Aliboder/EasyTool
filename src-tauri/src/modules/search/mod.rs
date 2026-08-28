@@ -1,4 +1,4 @@
-//! 文件搜索模块：Everything 封装 + 搜索弹窗 + 热键
+//! 文件搜索模块：Everything 封装 + 已安装应用中心
 //!
 //! 依赖：用户需安装 Everything（免费，voidtools.com）。Everything64.dll 随应用打包，
 //! 通过窗口消息/共享内存与运行中的 Everything.exe 通信。
@@ -10,27 +10,6 @@ pub mod sdk;
 
 use tauri::Manager;
 use std::sync::Mutex;
-
-pub const POPUP_WINDOW_LABEL: &str = "search_popup";
-
-/// 确保弹窗窗口存在（延迟创建：首次呼出时才创建，避免启动闪现）
-fn ensure_popup_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
-    crate::ensure_popup_window(
-        app,
-        POPUP_WINDOW_LABEL,
-        "search_popup.html",
-        (680.0, 520.0),
-        "search",
-    )
-}
-
-/// 全局热键触发：显示搜索弹窗
-pub fn on_hotkey(app: &tauri::AppHandle) {
-    let Some(win) = ensure_popup_window(app) else {
-        return;
-    };
-    crate::show_popup_at(app, &win, "search");
-}
 
 /// 从 AppHandle 初始化搜索模块（用于并行初始化）
 pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
