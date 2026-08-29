@@ -581,7 +581,9 @@ impl CalendarDb {
                 let Some(inst_start) = inst_start else { continue };
                 tx.execute(
                     "INSERT INTO event_overrides (event_id, instance_date, variant, start_ms)
-                     VALUES (?1,?2,'delete',?3)",
+                     VALUES (?1,?2,'delete',?3)
+                     ON CONFLICT(event_id, instance_date) DO UPDATE SET variant='delete', start_ms=excluded.start_ms,
+                       title=NULL, location=NULL, notes=NULL, all_day=NULL, end_ms=NULL",
                     params![id, day_key, inst_start],
                 )
                 .map_err(|e| e.to_string())?;

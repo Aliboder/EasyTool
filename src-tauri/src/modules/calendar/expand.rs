@@ -114,14 +114,15 @@ pub fn parse_rule(rule: &str) -> Option<Rrule> {
 }
 
 fn parse_datetime_str(v: &str) -> Option<NaiveDateTime> {
-    if v.len() >= 8 {
+    if v.len() >= 8 && v.is_char_boundary(8) {
         let y: i32 = v[0..4].parse().ok()?;
         let m: u32 = v[4..6].parse().ok()?;
         let d: u32 = v[6..8].parse().ok()?;
-        let (h, mi, s) = if v.len() >= 15 {
+        let (h, mi, s) = if v.len() >= 15 && v.is_char_boundary(15) {
             (v[9..11].parse().ok()?, v[11..13].parse().ok()?, v[13..15].parse().ok()?)
         } else {
-            (0, 0, 0)
+            // date-only UNTIL → 16:00 UTC（= 北京当日 24:00，保证截止日全天包含，与前端 keyToUntil 对齐）
+            (16, 0, 0)
         };
         return NaiveDate::from_ymd_opt(y, m, d)?.and_hms_opt(h, mi, s);
     }

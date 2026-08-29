@@ -104,6 +104,19 @@ describe("calendar utils", () => {
     expect(b3.height).toBe(72);
   });
 
+  it("layoutDay 跨午夜事件只显示当日内可见段", () => {
+    const at = (h0: number, m0: number, h1: number, m1: number): TimedEventLike => ({
+      start_ms: new Date(2026, 8, 15, h0, m0).getTime(),
+      end_ms: new Date(2026, 8, 16, h1, m1).getTime(),
+      all_day: false,
+    });
+    // 23:00 → 次日 01:00：窗口内应显示 60 分钟（23:00–24:00），不是 8px 细条
+    const blocks = layoutDay([at(23, 0, 1, 0)], { startHour: 0, endHour: 24, hourHeight: 48 });
+    expect(blocks.length).toBe(1);
+    expect(blocks[0].top).toBe(23 * 48);
+    expect(blocks[0].height).toBe(48);
+  });
+
   it("layoutDay 全天事件不参与排布", () => {
     const evs: TimedEventLike[] = [
       { start_ms: new Date(2026, 8, 15, 9, 0).getTime(), end_ms: new Date(2026, 8, 15, 10, 0).getTime(), all_day: false },
@@ -214,5 +227,10 @@ describe("calendar utils", () => {
     expect(p.interval).toBe(2);
     const p1 = parseRrule("FREQ=WEEKLY;BYDAY=MO")!;
     expect(p1.interval).toBe(1);
+    // 倒数第 N 个星期几（负数符号保留，编辑保存不改变语义）
+    const neg = parseRrule("FREQ=MONTHLY;BYDAY=-1FR")!;
+    expect(neg.freq).toBe("monthlyNth");
+    expect(neg.nth).toBe(-1);
+    expect(buildRrule(neg)).toBe("FREQ=MONTHLY;BYDAY=-1FR");
   });
 });

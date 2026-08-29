@@ -623,6 +623,10 @@ pub async fn calendar_refresh_subscription(app: tauri::AppHandle, id: i64) -> Re
         // 网络抓取不持锁（最长 20s）
         let parsed = super::ics::fetch_feed(&url)?;
         let count = parsed.items.len();
+        // 抓取成功但 0 条事件不写入（避免合法的空日历响应清空已缓存数据）
+        if count == 0 {
+            return Ok(0);
+        }
         {
             let db_guard = app.state::<Mutex<CalendarDb>>();
             let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);

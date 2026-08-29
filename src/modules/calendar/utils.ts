@@ -158,11 +158,12 @@ export function parseRrule(rule: string): RruleForm | null {
       // 第 N 个星期 X（如 3MO / -1FR 取 1..5）
       const m = dayRaw.match(/^([+-]?\d+)([A-Z]{2})$/);
       if (m) {
-        const n = Math.abs(parseInt(m[1], 10));
+        const n = parseInt(m[1], 10);
+        const mag = Math.abs(n);
         return {
           freq: "monthlyNth",
           bydays: [],
-          nth: n >= 1 && n <= 5 ? n : 1,
+          nth: mag >= 1 && mag <= 5 ? n : (n < 0 ? -1 : 1), // 保留正/负号（负数=倒数第 N 个）
           nthDay: Math.max(0, WEEK_CODES.indexOf(m[2].toUpperCase())),
           untilKey,
           interval,
@@ -191,9 +192,10 @@ export function buildRrule(f: RruleForm): string | null {
     rule = `FREQ=WEEKLY${iv};BYDAY=${days.map((d) => WEEK_CODES[d]).join(",")}`;
   } else if (f.freq === "monthly") rule = `FREQ=MONTHLY${iv}`;
   else {
-    // monthlyNth
-    if (f.nthDay < 0 || f.nthDay > 6) return null;
-    rule = `FREQ=MONTHLY${iv};BYDAY=${Math.max(1, f.nth)}${WEEK_CODES[f.nthDay]}`;
+    // monthlyNth（nth 可为负 = 倒数第 N 个星期几）
+    const n = f.nth;
+    if (n === 0 || Math.abs(n) > 5 || f.nthDay < 0 || f.nthDay > 6) return null;
+    rule = `FREQ=MONTHLY${iv};BYDAY=${n}${WEEK_CODES[f.nthDay]}`;
   }
   if (f.untilKey != null) {
     rule += `;UNTIL=${keyToUntil(f.untilKey)}`;
@@ -271,7 +273,9 @@ export function fmtRruleSummary(f: RruleForm): string {
     case "monthly":
       return "每月同一天";
     case "monthlyNth":
-      return `每月第 ${f.nth} 个周${names[f.nthDay] ?? "一"}`;
+      return (f.nth ?? 1) < 0
+        ? `每月倒数第 ${Math.abs(f.nth ?? 1)} 个周${names[f.nthDay] ?? "一"}`
+        : `每月第 ${f.nth ?? 1} 个周${names[f.nthDay] ?? "一"}`;
   }
 }
 
@@ -486,7 +490,9 @@ export function layoutDay(
     const s = new Date(e.start_ms);
     const en = new Date(e.end_ms);
     const start = s.getHours() * 60 + s.getMinutes();
-    const end = en.getHours() * 60 + en.getMinutes() || start + 60;
+    let end = en.getHours() * 60 + en.getMinutes() || start + 60;
+    // 跨午夜（如 23:00→次日 01:00，end<start）→ 钳制到窗口末，显示当日内可见的那段
+    if (end < start) end = windowMax;
     if (end <= windowMin || start >= windowMax) return;
     const top = Math.max(0, ((Math.max(start, windowMin) - windowMin) / 60) * hourHeight);
     const rawH = ((Math.min(end, windowMax) - Math.max(start, windowMin)) / 60) * hourHeight;

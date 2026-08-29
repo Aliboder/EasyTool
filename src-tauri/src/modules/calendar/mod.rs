@@ -50,6 +50,11 @@ fn subscription_loop(app: AppHandle) {
         for (id, url) in due {
             match ics::fetch_feed(&url) {
                 Ok(parsed) => {
+                    // 抓取成功但 0 条事件不写入（避免合法的空日历响应清空已缓存数据）
+                    if parsed.items.is_empty() {
+                        log::warn!("subscription {id} returned 0 items; keeping cached data");
+                        continue;
+                    }
                     let db_guard = app.state::<Mutex<CalendarDb>>();
                     let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                     match db.replace_feed(id, &parsed.items) {
@@ -102,10 +107,10 @@ fn reminder_loop(app: AppHandle) {
             .unwrap_or(true);
 
         let now = db::now_ms();
-        // 睡眠补扫窗口：过去 1 小时（错过的事件仍补一条）→ 未来 24h（覆盖单条更大的提前量；
+        // 睡眠补扫窗口：过去 1 小时（错过的事件仍补一条）→ 未来 72h（覆盖单条提前量上限 4320 分钟；
         // 实际提醒时刻按每条事件自身的提前量判定）
         let window_start = now - 3_600_000;
-        let window_end = now + 24 * 3_600_000;
+        let window_end = now + 72 * 3_600_000;
 
         let mut alerts: Vec<(String, String)> = Vec::new();
         {

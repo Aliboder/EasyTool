@@ -258,14 +258,16 @@ fn parse_dt(v: &str, _tz: Option<&str>) -> Option<(NaiveDateTime, bool)> {
         let t = t.trim_end_matches('Z');
         (d, Some(t))
     };
-    if date_part.len() < 8 {
+    if date_part.len() < 8 || !date_part.is_char_boundary(8) {
         return None;
     }
     let y: i32 = date_part[0..4].parse().ok()?;
     let m: u32 = date_part[4..6].parse().ok()?;
     let d: u32 = date_part[6..8].parse().ok()?;
     let (h, mi, s) = match time_part {
-        Some(t) if t.len() >= 6 => (t[0..2].parse().ok()?, t[2..4].parse().ok()?, t[4..6].parse().ok()?),
+        Some(t) if t.len() >= 6 && t.is_char_boundary(6) => {
+            (t[0..2].parse().ok()?, t[2..4].parse().ok()?, t[4..6].parse().ok()?)
+        }
         _ => (0, 0, 0),
     };
     let ndt = NaiveDate::from_ymd_opt(y, m, d)?.and_hms_opt(h, mi, s)?;
@@ -644,7 +646,7 @@ pub fn import_json_text(db: &CalendarDb, text: &str) -> Result<JsonImportReport,
             start_ms: ev.start_ms,
             end_ms: ev.end_ms,
             rrule: ev.rrule.clone(),
-            remind_minutes: ev.remind_minutes,
+            remind_minutes: ev.remind_minutes.map(|m| m.clamp(0, 4320)),
             color: ev.color.clone(),
             ics_import_id: None,
             created_ms: ev.created_ms,

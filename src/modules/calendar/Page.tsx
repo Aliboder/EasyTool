@@ -1247,6 +1247,10 @@ function EventForm({
   // 重复设置（仅此一次模式不可改）
   const [recur, setRecur] = useState<RruleForm>(() => {
     const parsed = editing?.rrule ? parseRrule(editing.rrule) : null;
+    // 裸 FREQ=WEEKLY（无 BYDAY）等价「每周起始日」，补上起始星期避免编辑时被"至少选一天"卡死
+    if (parsed && parsed.freq === "weekly" && parsed.bydays.length === 0 && editing) {
+      parsed.bydays = [Math.max(0, (new Date(editing.start_ms).getDay() + 6) % 7)];
+    }
     return (
       parsed ?? {
         freq: "none",
@@ -1554,18 +1558,18 @@ function EventForm({
           )}
           {recur.freq === "monthlyNth" && (
             <div className="flex items-center gap-2">
-              <Label className="shrink-0 text-xs">每月第</Label>
+              <Label className="shrink-0 text-xs">{(recur.nth ?? 1) < 0 ? "每月倒数第" : "每月第"}</Label>
               <Select
                 value={String(recur.nth)}
                 onValueChange={(v) => setRecur((r) => ({ ...r, nth: Number(v) }))}
               >
-                <SelectTrigger className="w-20">
+                <SelectTrigger className="w-24">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[1, 2, 3, 4, 5].map((n) => (
+                  {[-5, -4, -3, -2, -1, 1, 2, 3, 4, 5].map((n) => (
                     <SelectItem key={n} value={String(n)}>
-                      第 {n}
+                      {n < 0 ? `倒数第 ${Math.abs(n)}` : `第 ${n}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
