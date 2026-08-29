@@ -1,7 +1,8 @@
 // 周 / 日 / 待办 三个视图（月视图留在 Page）。
 // 时间轴布局复用 utils.layoutDay 纯函数（重叠分列、窗口钳制），全部数据来自父组件。
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { CalendarPlus, ChevronDown, ChevronRight, ListTodo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,7 @@ function EventBlock({
   left,
   width,
   subColors,
+  dimmed,
   onClick,
   onMenu,
 }: {
@@ -100,19 +102,39 @@ function EventBlock({
   left: number;
   width: number;
   subColors: SubColors;
+  dimmed?: boolean;
   onClick: EventClick;
   onMenu: EventMenu;
 }) {
   const compact = height < 34;
   const tint = eventTint(event, subColors);
+  const [hover, setHover] = useState(false);
+  const [rect, setRect] = useState<{ x: number; y: number } | null>(null);
   // 空间分配：标题永远优先完整显示（不截断）；时间/地点只在卡片够高时出现；高卡片补备注填充
   const showMeta = height >= 54;
   const notesLines = height >= 110 ? 3 : height >= 80 ? 2 : 0;
   const showNotes = notesLines > 0 && !!event.notes;
+  const enter = (e: ReactMouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setRect({ x: r.left, y: r.bottom });
+    setHover(true);
+  };
+  const leave = () => {
+    setHover(false);
+    setRect(null);
+  };
+  // 悬停浮层定位：卡片下方 8px，左右钳制在视口内
+  const tipStyle = rect
+    ? {
+        top: Math.min(rect.y + 8, window.innerHeight - 130),
+        left: Math.max(8, Math.min(rect.x - 4, window.innerWidth - 236)),
+      }
+    : undefined;
   return (
     <div
       className={cn(
         "absolute overflow-hidden rounded-xl border border-black/15 bg-primary px-2 py-1.5 text-primary-foreground shadow-sm transition-all hover:z-20 hover:shadow-md",
+        dimmed && "opacity-40 saturate-[0.6]",
         !tint && "hover:bg-primary/95",
       )}
       style={{
@@ -128,7 +150,8 @@ function EventBlock({
           : {}),
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)",
       }}
-      title={`${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)} ${event.title}${event.subscription_id != null ? " · 订阅" : ""}${event.location ? " · " + event.location : ""}`}
+      onMouseEnter={enter}
+      onMouseLeave={leave}
       onClick={(e) => {
         e.stopPropagation();
         onClick(event);
@@ -168,6 +191,32 @@ function EventBlock({
           {event.notes}
         </div>
       )}
+      {/* 悬停浮层：置顶展示完整信息，避免被截断 */}
+      {hover && rect && tipStyle
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-[70] w-56 rounded-lg border bg-popover p-2.5 text-popover-foreground shadow-xl"
+              style={tipStyle}
+            >
+              <div
+                className={cn("break-words text-xs font-semibold", event.subscription_id != null && "text-primary")}
+              >
+                {event.title}
+              </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                {event.all_day ? "全天" : `${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)}`}
+                {event.subscription_id != null && " · 订阅"}
+              </div>
+              {event.location && <div className="mt-0.5 text-[11px] text-muted-foreground">📍 {event.location}</div>}
+              {event.notes && (
+                <div className="mt-1 whitespace-pre-wrap text-[11px] leading-snug text-muted-foreground">
+                  {event.notes}
+                </div>
+              )}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -198,6 +247,8 @@ export function WeekView({
   showWeekend,
   subColors,
   nowFocus,
+  focusTitle,
+  onFocusTitle,
   onSelectDay,
   onEventClick,
   onEventMenu,
@@ -209,6 +260,9 @@ export function WeekView({
   subColors: SubColors;
   /** 点「今天」时自增：触发时间轴滚动到当前时刻 */
   nowFocus: number;
+  /** 只看某门课聚焦（null=全部） */
+  focusTitle: string | null;
+  onFocusTitle: (t: string | null) => void;
   onSelectDay: (k: number) => void;
   onEventClick: EventClick;
   onEventMenu: EventMenu;
@@ -221,6 +275,16 @@ export function WeekView({
       showWeekend ? true : weekdayOfKey(k) < 5,
     );
   }, [selectedKey, showWeekend]);
+
+  // 课程图例：本视图内出现的课程名 → 颜色（去重）
+  const legend = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const e of events) {
+      if (e.all_day || seen.has(e.title)) continue;
+      seen.set(e.title, eventTint(e, subColors));
+    }
+    return [...seen.entries()];
+  }, [events, subColors]);
 
   const now = useNow();
   const today = localDayKey(now);
@@ -238,6 +302,34 @@ export function WeekView({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {/* 课程图例：点击只看某一门课（再点一次清除） */}
+      {legend.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-2 py-1">
+          <span className="text-[10px] text-muted-foreground">课程</span>
+          {legend.slice(0, 14).map(([title, color]) => {
+            const active = focusTitle === title;
+            return (
+              <button
+                key={title}
+                onClick={() => onFocusTitle(active ? null : title)}
+                className={cn(
+                  "flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] transition-colors",
+                  active ? "border-foreground/60 bg-accent text-foreground" : "border-border text-muted-foreground hover:bg-accent",
+                )}
+                title={`只看「${title}」`}
+              >
+                <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
+                <span className="max-w-16 truncate">{title}</span>
+              </button>
+            );
+          })}
+          {focusTitle && (
+            <button onClick={() => onFocusTitle(null)} className="text-[10px] text-muted-foreground hover:text-foreground">
+              清除
+            </button>
+          )}
+        </div>
+      )}
       {/* 列头：第一行 MM/DD 日期（今天主题圆底色），第二行 星期（周一~周日） */}
       <div className="flex shrink-0 border-b">
         <div className="w-10 shrink-0" />
@@ -283,6 +375,7 @@ export function WeekView({
                 key={e.id}
                 className={cn(
                   "flex min-w-0 items-center gap-1 truncate rounded-full border border-black/10 bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm",
+                  focusTitle != null && e.title !== focusTitle && "opacity-40 saturate-[0.6]",
                   !tint && "hover:bg-primary/95",
                 )}
                 style={tint ? { backgroundColor: tint, color: "#ffffff" } : undefined}
@@ -332,6 +425,7 @@ export function WeekView({
                     left={b.left}
                     width={b.width}
                     subColors={subColors}
+                    dimmed={focusTitle != null && ev.title !== focusTitle}
                     onClick={onEventClick}
                     onMenu={onEventMenu}
                   />
@@ -365,6 +459,7 @@ export function DayView({
   dayKey,
   subColors,
   nowFocus,
+  focusTitle,
   onEventClick,
   onEventMenu,
   onToggleTodo,
@@ -378,6 +473,7 @@ export function DayView({
   dayKey: number;
   subColors: SubColors;
   nowFocus: number;
+  focusTitle: string | null;
   onEventClick: EventClick;
   onEventMenu: EventMenu;
   onToggleTodo: TodoToggle;
@@ -434,6 +530,7 @@ export function DayView({
                   key={e.id}
                   className={cn(
                     "flex items-center gap-1.5 rounded-lg border border-black/10 bg-primary px-2 py-1 text-xs font-medium text-primary-foreground shadow-sm",
+                    focusTitle != null && e.title !== focusTitle && "opacity-40 saturate-[0.6]",
                     !tint && "hover:bg-primary/95",
                   )}
                   style={tint ? { backgroundColor: tint, color: "#ffffff" } : undefined}
@@ -488,6 +585,7 @@ export function DayView({
                   left={b.left}
                   width={b.width}
                   subColors={subColors}
+                  dimmed={focusTitle != null && ev.title !== focusTitle}
                   onClick={onEventClick}
                   onMenu={onEventMenu}
                 />

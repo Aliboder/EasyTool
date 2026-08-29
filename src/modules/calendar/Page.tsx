@@ -68,6 +68,8 @@ type DrawerState =
       instance?: { eventId: number; instanceDate: number } | null;
       /** 双击时间轴预填的开始时刻 */
       presetStartMs?: number;
+      /** 悬停「+」预填全天事件 */
+      presetAllDay?: boolean;
     }
   | { mode: "todo"; editing: TodoDto | null }
   | null;
@@ -127,6 +129,8 @@ export function CalendarPage() {
   const [nowFocus, setNowFocus] = useState(0);
   // 视图切换方向（1=日→周→月 前推，-1=后退），用于滑动方向
   const [viewDir, setViewDir] = useState<1 | -1>(1);
+  // 只看某门课聚焦（null=全部）
+  const [focusTitle, setFocusTitle] = useState<string | null>(null);
 
   const loadSubs = useCallback(() => {
     invoke<{ id: number; color: string; name: string }[]>("calendar_list_subscriptions")
@@ -218,6 +222,9 @@ export function CalendarPage() {
     }
     // 切到月视图时把月份同步到所选日所在月，周/日保持所选日
     setTab(id);
+    if (id === "day" && selectedKey === todayKey()) {
+      setNowFocus((n) => n + 1); // 从月视图点今天/日期进日视图 → 自动滚到当前时刻
+    }
     if (id === "month") {
       const d = new Date(dayStartMs(selectedKey));
       setYm({ y: d.getFullYear(), m: d.getMonth() });
@@ -261,6 +268,11 @@ export function CalendarPage() {
   /// 双击时间轴空白处：按点位时刻预填新建事件
   const createEventAt = (startMs: number) => {
     setDrawer({ mode: "event", editing: null, dayKey: localDayKey(startMs), instance: null, presetStartMs: startMs });
+  };
+
+  /// 月视图悬停「+」：新建该日全天事件
+  const createAllDayAt = (dayKey: number) => {
+    setDrawer({ mode: "event", editing: null, dayKey, instance: null, presetAllDay: true });
   };
 
   const saveEvent = async (input: {
@@ -509,7 +521,7 @@ export function CalendarPage() {
                       switchTab("day");
                     }}
                     className={cn(
-                      "flex min-h-[62px] cursor-pointer flex-col gap-0.5 rounded-md p-1 text-left transition-colors",
+                      "group relative flex min-h-[62px] cursor-pointer flex-col gap-0.5 rounded-md p-1 text-left transition-colors",
                       cell.inMonth ? "bg-card" : "bg-card/40 opacity-50",
                       selected && "ring-2 ring-primary/60",
                       isToday && "bg-primary/10",
@@ -523,8 +535,22 @@ export function CalendarPage() {
                     >
                       {cell.dayOfMonth}
                     </span>
+                    {cell.inMonth && (
+                      <span
+                        role="button"
+                        title="新建全天事件"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          createAllDayAt(cell.key);
+                        }}
+                        className="absolute right-1 top-1 hidden size-4 items-center justify-center rounded bg-primary text-[10px] font-semibold text-primary-foreground shadow-sm group-hover:flex"
+                      >
+                        +
+                      </span>
+                    )}
                     {evs.slice(0, 3).map((e) => {
                       const tint = e.subscription_id != null ? subColors[e.subscription_id] : (e.color ?? courseColor(e.title));
+                      const dimmed = focusTitle != null && e.title !== focusTitle;
                       return (
                         <span
                           key={e.id}
@@ -532,6 +558,7 @@ export function CalendarPage() {
                           className={cn(
                             "truncate rounded px-1 py-px text-[10px]",
                             e.all_day ? "bg-primary/25 text-primary" : "bg-secondary text-secondary-foreground",
+                            dimmed && "opacity-40",
                           )}
                           style={tint ? { backgroundColor: `${tint}26`, color: tint } : undefined}
                         >
@@ -561,6 +588,8 @@ export function CalendarPage() {
             showWeekend={cfg.weekShowWeekend !== false}
             subColors={subColors}
             nowFocus={nowFocus}
+            focusTitle={focusTitle}
+            onFocusTitle={setFocusTitle}
             onSelectDay={setSelectedKey}
             onEventClick={onEventTap}
             onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
@@ -575,6 +604,7 @@ export function CalendarPage() {
             dayKey={selectedKey}
             subColors={subColors}
             nowFocus={nowFocus}
+            focusTitle={focusTitle}
             onEventClick={onEventTap}
             onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
             onToggleTodo={toggleTodo}
@@ -697,6 +727,7 @@ export function CalendarPage() {
               busy={busy}
               globalRemindMinutes={cfg.eventRemindMinutes}
               presetStartMs={drawer.presetStartMs}
+              presetAllDay={drawer.presetAllDay}
               onSave={saveEvent}
               onCancel={() => setDrawer(null)}
               heading={drawer.instance ? "仅此一次：编辑这一天" : drawer.editing ? "编辑事件" : "新建事件"}
@@ -908,6 +939,7 @@ function EventForm({
   busy,
   globalRemindMinutes,
   presetStartMs,
+  presetAllDay,
   onSave,
   onCancel,
 }: {
@@ -918,6 +950,7 @@ function EventForm({
   busy: boolean;
   globalRemindMinutes: number;
   presetStartMs?: number;
+  presetAllDay?: boolean;
   onSave: (input: {
     title: string;
     location: string;
@@ -936,7 +969,7 @@ function EventForm({
   const [title, setTitle] = useState(editing?.title ?? "");
   const [location, setLocation] = useState(editing?.location ?? "");
   const [notes, setNotes] = useState(editing?.notes ?? "");
-  const [allDay, setAllDay] = useState(editing?.all_day ?? false);
+  const [allDay, setAllDay] = useState(editing?.all_day ?? presetAllDay ?? false);
   const [start, setStart] = useState(
     editing
       ? toDateTimeInput(editing.start_ms)
