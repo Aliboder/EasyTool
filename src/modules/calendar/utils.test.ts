@@ -20,6 +20,7 @@ import {
   courseColor,
   buildTimeline,
   TL_HEADER_H,
+  TL_CLUSTER_GAP,
   type TimedEventLike,
 } from "./utils";
 
@@ -164,13 +165,15 @@ describe("calendar utils", () => {
       ev(day(2026, 9, 15, 14, 0), day(2026, 9, 15, 15, 0)),
       ev(day(2026, 9, 17, 9, 0), day(2026, 9, 17, 10, 0)),
     ];
-    // 跳过空闲（hideEmpty=true）：15 日与 17 日有课，16 日被跳过
+    // 跳过空闲（hideEmpty=true）：15 日有上午(10-11)与下午(14-15)两簇，16 日被跳过；17 日一簇
     const r = buildTimeline(events, { startMs: day(2026, 9, 14, 0, 0), endMs: day(2026, 9, 17, 12, 0), hourHeight: 48, hideEmpty: true });
     expect(r.days.length).toBe(2);
     expect(r.days[0].dayKey).toBe(20260915);
     expect(r.days[1].dayKey).toBe(20260917);
-    expect(r.days[0].windowStartHour).toBe(9.5); // 最早 10 点，前留半小时间隔
-    expect(r.days[0].height).toBe(TL_HEADER_H + 6 * 48); // 日期头 + 9.5~15.5
+    expect(r.days[0].clusters.length).toBe(2); // 10-11 与 14-15 间隔>1.5h → 两簇
+    expect(r.days[0].windowStartHour).toBe(9.75); // 首簇起点(10-0.25)
+    // 15 日：头(30) + 簇0(1.5h*48=72) + 簇间隔(16) + 簇1(1.5h*48=72)
+    expect(r.days[0].height).toBe(TL_HEADER_H + 72 + TL_CLUSTER_GAP + 72);
     // 真实连续（hideEmpty=false）：14~17 每天 24h
     const r2 = buildTimeline(events, { startMs: day(2026, 9, 14, 0, 0), endMs: day(2026, 9, 17, 12, 0), hourHeight: 48, hideEmpty: false });
     expect(r2.days.length).toBe(4);

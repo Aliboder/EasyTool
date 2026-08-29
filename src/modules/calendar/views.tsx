@@ -782,57 +782,74 @@ export function TimeLineView({
                     );
                   })}
                 </div>
-                {/* 分时事件轴 */}
-                <div
-                  className="absolute inset-x-0 top-2"
-                  style={{ top: TL_HEADER_H, height: Math.max(0, axisH) }}
-                  onDoubleClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const hh = (e.clientY - rect.top) / hourHeight + d.windowStartHour;
-                    const snapped = Math.max(d.windowStartHour, Math.min(24 - 0.5, Math.round(hh * 2) / 2));
-                    onCreateAt?.(dayStartMs(d.dayKey) + snapped * 3_600_000);
-                  }}
-                >
-                  {Array.from({ length: Math.floor(axisH / hourHeight) + 1 }, (_, i) => i).map((i) => (
-                    <div key={i} className="absolute inset-x-0 border-t border-border/40" style={{ top: i * hourHeight }}>
-                      <span className="absolute -top-1.5 left-1.5 text-[9px] tabular-nums text-muted-foreground">
-                        {String(Math.floor(d.windowStartHour + i)).padStart(2, "0")}:00
-                      </span>
-                    </div>
-                  ))}
-                  {layoutDay(
-                    d.events.map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
-                    { startHour: d.windowStartHour, endHour: d.windowStartHour + axisH / hourHeight, hourHeight },
-                  ).map((b) => {
-                    const ev = d.events[b.index];
+                {/* 时间轴主体：逐簇渲染（左小时尺 + 内容区） */}
+                <div className="absolute inset-x-0" style={{ top: TL_HEADER_H, height: Math.max(0, axisH) }}>
+                  {d.clusters.map((c, ci) => {
+                    const hours = Math.max(1, Math.ceil(c.endHour - c.startHour));
                     return (
-                      <EventBlock
-                        key={`${ev.id}-${d.dayKey}`}
-                        event={ev}
-                        top={b.top}
-                        height={b.height}
-                        left={b.left}
-                        width={b.width}
-                        subColors={subColors}
-                        onClick={onEventClick}
-                        onMenu={onEventMenu}
-                      />
+                      <div key={ci} className="absolute inset-x-0" style={{ top: c.top, height: c.height }}>
+                        {/* 左小时尺 */}
+                        <div className="absolute inset-y-0 left-0 w-10 border-r border-border/40">
+                          {Array.from({ length: hours + 1 }, (_, i) => i).map((i) => (
+                            <span
+                              key={i}
+                              className="absolute -top-1.5 right-1.5 text-[9px] tabular-nums text-muted-foreground"
+                              style={{ top: i * hourHeight }}
+                            >
+                              {String(Math.floor(c.startHour + i)).padStart(2, "0")}:00
+                            </span>
+                          ))}
+                        </div>
+                        {/* 内容区 */}
+                        <div
+                          className="absolute inset-y-0 left-10 right-0"
+                          onDoubleClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const hh = (e.clientY - rect.top) / hourHeight + c.startHour;
+                            const snapped = Math.max(c.startHour, Math.min(24 - 0.5, Math.round(hh * 2) / 2));
+                            onCreateAt?.(dayStartMs(d.dayKey) + snapped * 3_600_000);
+                          }}
+                        >
+                          {Array.from({ length: hours + 1 }, (_, i) => i).map((i) => (
+                            <div key={i} className="absolute inset-x-0 border-t border-border/40" style={{ top: i * hourHeight }} />
+                          ))}
+                          {layoutDay(
+                            c.events.map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
+                            { startHour: c.startHour, endHour: c.endHour, hourHeight },
+                          ).map((b) => {
+                            const ev = c.events[b.index];
+                            return (
+                              <EventBlock
+                                key={`${ev.id}-${d.dayKey}-${ci}`}
+                                event={ev}
+                                top={b.top}
+                                height={b.height}
+                                left={b.left}
+                                width={b.width}
+                                subColors={subColors}
+                                onClick={onEventClick}
+                                onMenu={onEventMenu}
+                              />
+                            );
+                          })}
+                          {isToday &&
+                            (() => {
+                              const nowH = (now - dayStartMs(d.dayKey)) / 3_600_000;
+                              const y = (nowH - c.startHour) * hourHeight;
+                              if (y < 0 || y > c.height) return null;
+                              return (
+                                <div className="absolute inset-x-0 z-10" style={{ top: y }}>
+                                  <div className="h-px bg-red-500" />
+                                  <span className="absolute -top-2 -right-0 rounded bg-red-500 px-1 text-[9px] text-white">
+                                    {nowTime(now)}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                        </div>
+                      </div>
                     );
                   })}
-                  {isToday &&
-                    (() => {
-                      const nowH = (now - dayStartMs(d.dayKey)) / 3_600_000;
-                      const y = (nowH - d.windowStartHour) * hourHeight;
-                      if (y < 0 || y > axisH) return null;
-                      return (
-                        <div className="absolute inset-x-0 z-10" style={{ top: y }}>
-                          <div className="h-px bg-red-500" />
-                          <span className="absolute -top-2 -right-0 rounded bg-red-500 px-1 text-[9px] text-white">
-                            {nowTime(now)}
-                          </span>
-                        </div>
-                      );
-                    })()}
                 </div>
               </div>
             );

@@ -312,19 +312,35 @@ export interface TlEventLike {
 /** 时间线每日的日期头高度（px） */
 export const TL_HEADER_H = 30;
 
-interface TlDay<T> {
+/** 簇与簇之间的分隔高度（px） */
+export const TL_CLUSTER_GAP = 16;
+
+/** 相邻事件间隔超过该小时数即拆成两个簇（跳过空闲用） */
+export const TL_CLUSTER_GAP_H = 1.5;
+
+export interface TlCluster<T> {
+  startHour: number;
+  endHour: number;
+  top: number; // 相对当天 body 顶部的像素偏移
+  height: number;
+  events: T[];
+}
+
+export interface TlDay<T> {
   dayKey: number;
   top: number; // 相对时间轴顶部的像素偏移
   height: number;
-  windowStartHour: number; // 该日可视窗口起点（小时，0-24）
-  events: T[]; // 分时事件
+  windowStartHour: number; // 首簇起点（兼容旧字段）
+  events: T[]; // 当天所有分时事件
   allDay: T[];
   hasEvents: boolean;
+  clusters: TlCluster<T>[];
 }
 
 /**
  * 由事件数组和缩放/跳过空闲构建时间线布局（纯函数）。返回各日分段与总高度。
- * 泛型保留完整事件类型，便于上层原样渲染。
+ * hideEmpty=true：按「簇」打包（间隔≤1.5h 聚成一簇、紧凑排布，簇间留薄分隔），跳过无事件的天。
+ * hideEmpty=false：每天 0-24 连续真实时间。泛型保留完整事件类型。
  */
 export function buildTimeline<T extends TlEventLike>(
   events: T[],
@@ -340,9 +356,40 @@ export function buildTimeline<T extends TlEventLike>(
     byDay.set(k, bucket);
   }
 
+  const makeClusters = (timed: T[]): TlCluster<T>[] => {
+    if (!hideEmpty) {
+      return [{ startHour: 0, endHour: 24, top: 0, height: 24 * hourHeight, events: timed }];
+    }
+    if (timed.length === 0) return [];
+    const sorted = [...timed].sort((a, b) => a.start_ms - b.start_ms);
+    const raw: { startHour: number; endHour: number; events: T[] }[] = [];
+    for (const e of sorted) {
+      const dayMs = dayStartMs(localDayKey(e.start_ms));
+      const sh = (e.start_ms - dayMs) / 3_600_000;
+      const eh = Math.max((e.end_ms - dayMs) / 3_600_000, sh + 0.25);
+      const last = raw[raw.length - 1];
+      if (last && sh - last.endHour <= TL_CLUSTER_GAP_H) {
+        last.endHour = Math.max(last.endHour, eh);
+        last.events.push(e);
+      } else {
+        raw.push({ startHour: sh, endHour: eh, events: [e] });
+      }
+    }
+    const out: TlCluster<T>[] = [];
+    let top = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      const start = Math.max(0, Math.floor(c.startHour) - 0.25);
+      const end = Math.min(24, Math.ceil(c.endHour) + 0.25);
+      const h = Math.max(30, (end - start) * hourHeight);
+      out.push({ startHour: start, endHour: end, top, height: h, events: c.events });
+      top += h + (i < raw.length - 1 ? TL_CLUSTER_GAP : 0);
+    }
+    return out;
+  };
+
   const days: TlDay<T>[] = [];
   let top = 0;
-  // startMs 为毫秒，先取其本地日键再取当日零点，逐日推进
   let cursor = dayStartMs(localDayKey(startMs));
   while (cursor <= endMs) {
     const k = localDayKey(cursor);
@@ -354,22 +401,19 @@ export function buildTimeline<T extends TlEventLike>(
       cursor += 86_400_000;
       continue;
     }
-    let ws = 0;
-    let we = 24;
-    if (hideEmpty && timed.length > 0) {
-      let min = Infinity;
-      let max = -Infinity;
-      for (const e of timed) {
-        const h = (e.start_ms - dayStartMs(k)) / 3_600_000;
-        const he = (e.end_ms - dayStartMs(k)) / 3_600_000;
-        min = Math.min(min, h);
-        max = Math.max(max, he);
-      }
-      ws = Math.max(0, Math.floor(min) - 0.5);
-      we = Math.min(24, Math.ceil(max) + 0.5);
-    }
-    const height = TL_HEADER_H + (we - ws) * hourHeight;
-    days.push({ dayKey: k, top, height, windowStartHour: ws, events: timed, allDay, hasEvents });
+    const clusters = makeClusters(timed);
+    const body = clusters.length > 0 ? clusters[clusters.length - 1].top + clusters[clusters.length - 1].height : 0;
+    const height = TL_HEADER_H + body;
+    days.push({
+      dayKey: k,
+      top,
+      height,
+      windowStartHour: clusters[0]?.startHour ?? 0,
+      events: timed,
+      allDay,
+      hasEvents,
+      clusters,
+    });
     top += height;
     cursor += 86_400_000;
   }
