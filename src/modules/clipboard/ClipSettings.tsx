@@ -145,6 +145,26 @@ export function ClipSettings({
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">粘贴</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">粘贴为纯文本</div>
+              <div className="text-xs text-muted-foreground">
+                粘贴与复制时去掉富文本（HTML）格式，只保留纯文本
+              </div>
+            </div>
+            <Switch
+              checked={adv.pastePlain}
+              onCheckedChange={(v) => saveAdv({ pastePlain: v })}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">显示</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">

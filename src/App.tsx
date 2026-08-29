@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "@/components/layout/Sidebar";
 import {
   getBootstrap,
@@ -201,6 +202,27 @@ function App() {
         .map((m) => ({ id: m.id, name: m.name, icon: m.icon })),
     [orderedManifests, config],
   );
+
+  // 托盘菜单快速入口：后端 emit tray://nav（打开剪贴板/时长统计）→ 切到对应模块页；
+  // tray://check-update → 静默检查更新并展示横幅（与启动时逻辑一致）
+  useEffect(() => {
+    const unNav = listen<{ page: string }>("tray://nav", (e) => {
+      const page = e.payload?.page;
+      if (page && enabledModules.some((m) => m.id === page)) selectModule(page);
+    });
+    const unUpdate = listen("tray://check-update", () => {
+      checkForUpdate()
+        .then((u) => {
+          if (u) setUpdateBanner({ version: u.version, notes: u.notes ?? "" });
+        })
+        .catch(() => {});
+    });
+    return () => {
+      unNav.then((fn) => fn());
+      unUpdate.then((fn) => fn());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectModule, enabledModules]);
 
   // 模块禁用后从 keep-alive 卸载（不再空跑 effect/监听）；当前停在被禁用模块时回退到首个可用模块
   useEffect(() => {

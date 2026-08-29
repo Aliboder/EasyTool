@@ -28,6 +28,7 @@ import {
   Archive,
   Clock,
   X,
+  Pin,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -153,6 +154,8 @@ export function SearchView() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; item: SearchResultDto } | null>(null);
+  // 应用条目的右键菜单（「应用」Tab / 搜索结果置顶区共用）
+  const [appMenu, setAppMenu] = useState<{ x: number; y: number; app: ScannedApp } | null>(null);
   const [filter, setFilter] = useState(APPS_TAB);
   const [options, setOptions] = useState<SearchOptions>({
     matchCase: false,
@@ -391,6 +394,32 @@ export function SearchView() {
     },
     [ensureApps],
   );
+
+  // 置顶应用集合（路径小写，用于排序与角标）
+  const pinnedSet = useMemo(() => new Set(cfg.pinnedApps), [cfg.pinnedApps]);
+
+  const togglePinApp = useCallback(
+    (app: ScannedApp) => {
+      const key = app.path.toLowerCase();
+      setAppMenu(null);
+      const next = cfg.pinnedApps.includes(key)
+        ? cfg.pinnedApps.filter((p) => p !== key)
+        : [...cfg.pinnedApps, key];
+      updateCfg({ pinnedApps: next });
+      toast(next.includes(key) ? `已置顶「${app.name}」` : `已取消置顶「${app.name}」`);
+    },
+    [cfg.pinnedApps, updateCfg],
+  );
+
+  const openAppLocation = useCallback(
+    (app: ScannedApp) => {
+      setAppMenu(null);
+      invoke("search_open_file_location", { path: app.path }).catch((e) =>
+        toast(`打开失败：${e}`),
+      );
+    },
+    [],
+  );
   const appsKeyHandler = useRef<((e: React.KeyboardEvent) => void) | null>(null);
 
   // 搜索选项菜单关闭逻辑（点击外部关闭）
@@ -606,6 +635,8 @@ export function SearchView() {
       registerKeyHandler={(fn) => {
         appsKeyHandler.current = fn;
       }}
+      pinned={pinnedSet}
+      onContextMenuApp={(e, app) => setAppMenu({ x: e.clientX, y: e.clientY, app })}
     />
   ) : null;
 
@@ -898,6 +929,8 @@ export function SearchView() {
             gridSize={cfg.gridSize}
             icons={icons}
             loadIcon={loadIcon}
+            pinned={pinnedSet}
+            onContextMenuApp={(e, app) => setAppMenu({ x: e.clientX, y: e.clientY, app })}
           />
         )}
         {body}
@@ -947,6 +980,37 @@ export function SearchView() {
           label="复制文件"
           onClick={() => menu && doCopyFile(menu.item)}
         />
+      </ContextMenu>
+
+      {/* 应用条目右键（「应用」Tab 与搜索结果置顶区） */}
+      <ContextMenu
+        visible={!!appMenu}
+        x={appMenu?.x ?? 0}
+        y={appMenu?.y ?? 0}
+        onClose={() => setAppMenu(null)}
+      >
+        <ContextMenuItem
+          icon={<ExternalLink className="size-3.5" />}
+          label="打开"
+          onClick={() => {
+            if (appMenu) {
+              openApp(appMenu.app.path);
+              setAppMenu(null);
+            }
+          }}
+        />
+        <ContextMenuItem
+          icon={<FolderOpen className="size-3.5" />}
+          label="打开所在位置"
+          onClick={() => appMenu && openAppLocation(appMenu.app)}
+        />
+        {appMenu && (
+          <ContextMenuItem
+            icon={<Pin className="size-3.5" />}
+            label={pinnedSet.has(appMenu.app.path.toLowerCase()) ? "取消置顶" : "置顶"}
+            onClick={() => appMenu && togglePinApp(appMenu.app)}
+          />
+        )}
       </ContextMenu>
     </div>
   );

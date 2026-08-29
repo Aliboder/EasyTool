@@ -178,8 +178,13 @@ pub async fn paste_item(app: AppHandle, id: i64) -> CmdResult<()> {
 }
 
 /// 复制条目到剪贴板（不粘贴，右键菜单用）
+/// `plain` 为 true 时只复制纯文本（跳过富文本格式）
 #[tauri::command]
-pub fn copy_item(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+pub fn copy_item(
+    state: State<'_, AppState>,
+    id: i64,
+    plain: Option<bool>,
+) -> CmdResult<()> {
     let item = {
         let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         db.get_item(id)
@@ -190,7 +195,8 @@ pub fn copy_item(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
                 message: "item not found".into(),
             })?
     };
-    super::paste::write_item_clipboard(&state, &item).map_err(|m| CommandError { message: m })
+    super::paste::write_item_clipboard(&state, &item, plain.unwrap_or(false))
+        .map_err(|m| CommandError { message: m })
 }
 
 /// 打开文件所在位置（资源管理器定位）

@@ -11,12 +11,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use tauri::Manager;
 
 /// 把条目内容写入剪贴板（粘贴与"复制"共用），成功返回 Ok(())
-pub fn write_item_clipboard(state: &AppState, item: &Item) -> Result<(), String> {
-    // 按类型写剪贴板（文本含富文本时同时写 CF_HTML）
+/// `plain_text` 为 true 时文本条目只写纯文本（跳过 CF_HTML 富文本）
+pub fn write_item_clipboard(state: &AppState, item: &Item, plain_text: bool) -> Result<(), String> {
+    // 按类型写剪贴板（文本含富文本时同时写 CF_HTML；纯文本模式下省略 HTML）
     let ok = match item.kind {
         ItemKind::Text => clipboard::write_text_rich(
             item.content.as_deref().unwrap_or_default(),
-            item.html.as_deref(),
+            if plain_text { None } else { item.html.as_deref() },
         ),
         ItemKind::Image => match &item.image_path {
             Some(path) => {
@@ -58,8 +59,12 @@ pub fn paste_item(state: &AppState, app: &tauri::AppHandle, id: i64) -> Result<(
             .ok_or("item not found")?
     };
 
-    // 2. 写剪贴板
-    write_item_clipboard(state, &item)?;
+    // 2. 写剪贴板（纯文本模式：不写富文本格式）
+    let plain = crate::config::module_cfg(app, "clipboard")
+        .get("paste_plain")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    write_item_clipboard(state, &item, plain)?;
 
     // 3. 隐藏主窗口（焦点自动返回到原窗口）
     if let Some(win) = app.get_webview_window(crate::MAIN_WINDOW_LABEL) {

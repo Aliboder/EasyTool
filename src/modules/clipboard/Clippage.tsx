@@ -9,7 +9,7 @@ import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { CLIPBOARD_DEFAULTS } from "./config";
 import { Drawer } from "@/components/ui/drawer";
-import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, X, Loader2, Smile, MessageSquare, StickyNote, SearchX, ClipboardList, ImageOff, FileQuestion } from "lucide-react";
+import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, X, Loader2, Smile, MessageSquare, StickyNote, SearchX, ClipboardList, ImageOff, FileQuestion, Type, ExternalLink } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -88,22 +88,28 @@ function fmtTime(ts: number): string {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function highlight(text: string, q: string): React.ReactNode {
-  if (!q) return text;
-  const kw = q.trim().toLowerCase();
-  if (!kw) return text;
-  const lower = text.toLowerCase();
-  const idx = lower.indexOf(kw);
-  if (idx < 0) return text;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <mark className="rounded-sm bg-emerald-500/25 px-0.5 text-inherit">
-        {text.slice(idx, idx + q.length)}
-      </mark>
-      {text.slice(idx + q.length)}
-    </>
-  );
+function highlight(text: string, kws: string[]): React.ReactNode {
+  const keys = kws.filter((k) => k.length > 0);
+  if (!keys.length) return text;
+  // 高亮全部命中（多关键词、多位置）；关键词可能含正则特殊字符，需转义
+  const pattern = keys
+    .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const re = new RegExp(`(${pattern})`, "gi");
+  const parts: React.ReactNode[] = [];
+  let lastIdx = 0;
+  for (const m of text.matchAll(re)) {
+    const idx = m.index ?? 0;
+    if (idx > lastIdx) parts.push(text.slice(lastIdx, idx));
+    parts.push(
+      <mark key={`${idx}-${m[0]}`} className="rounded-sm bg-emerald-500/25 px-0.5 text-inherit">
+        {m[0]}
+      </mark>,
+    );
+    lastIdx = idx + m[0].length;
+  }
+  if (lastIdx < text.length) parts.push(text.slice(lastIdx));
+  return parts.length ? parts : text;
 }
 
 function EmptyState({ icon: Icon, title, description }: { icon: React.ComponentType<{ className?: string }>; title: string; description?: string }) {
@@ -180,6 +186,12 @@ export function Clippage() {
     }
     return result;
   }, [allItems, search, filter]);
+
+  // 搜索关键词（供高亮与空结果提示共用）
+  const searchKws = useMemo(
+    () => search.trim().toLowerCase().split(/\s+/).filter(Boolean),
+    [search],
+  );
 
   // 加载全部数据（一次性，不再每次搜索都调用）
   const load = useCallback(async () => {
@@ -275,6 +287,36 @@ export function Clippage() {
       toast(String(e));
     } finally {
       setMenu(null);
+    }
+  };
+
+  // 复制为纯文本（不保留富文本格式）
+  const copyPlain = async (id: number) => {
+    try {
+      await invoke("copy_item", { id, plain: true });
+      toast("已复制为纯文本");
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setMenu(null);
+    }
+  };
+
+  // 用系统默认程序打开原图（图片条目存的是应用内部副本，交给系统看图）
+  const openImageExternal = async (item: ItemDto) => {
+    setMenu(null);
+    try {
+      const path =
+        item.kind === "files"
+          ? item.preview
+          : await invoke<string | null>("get_image_path", { id: item.id });
+      if (!path) {
+        toast("图片文件不存在");
+        return;
+      }
+      await invoke("open_file", { path });
+    } catch (e) {
+      toast(String(e));
     }
   };
 
@@ -549,7 +591,7 @@ export function Clippage() {
           )}
           title={item.full ?? item.preview}
         >
-          {highlight(item.preview, search)}
+          {highlight(item.preview, searchKws)}
         </div>
         {editingNoteId === item.id ? (
           <input
@@ -569,7 +611,7 @@ export function Clippage() {
         ) : item.note ? (
           <div className="mt-1 flex items-center gap-1 truncate text-[10px] text-muted-foreground" title={item.note}>
             <StickyNote className="size-3 shrink-0" />
-            <span className="truncate">{highlight(item.note, search)}</span>
+            <span className="truncate">{highlight(item.note, searchKws)}</span>
           </div>
         ) : null}
       </div>
@@ -697,6 +739,13 @@ export function Clippage() {
       />
 
       <>
+
+      {allItems.length >= 500 && (
+        <div className="flex shrink-0 items-center justify-center gap-1 border-b bg-amber-500/10 px-3 py-1 text-[10px] text-amber-600 dark:text-amber-400">
+          <ClipboardList className="size-3" />
+          已达 500 条上限，复制新内容会自动替换最旧记录
+        </div>
+      )}
 
       {composite ? (
         <div className="flex flex-1 flex-col overflow-hidden">
@@ -897,6 +946,13 @@ export function Clippage() {
           label="复制到剪贴板"
           onClick={() => menu && copy(menu.item.id)}
         />
+        {menu?.item.kind === "text" && (
+          <ContextMenuItem
+            icon={<Type className="size-3.5" />}
+            label="复制为纯文本"
+            onClick={() => menu && copyPlain(menu.item.id)}
+          />
+        )}
         {menu?.item && isImageItem(menu.item) && (
           <ContextMenuItem
             icon={<Smile className="size-3.5" />}
@@ -909,6 +965,13 @@ export function Clippage() {
             icon={<Eye className="size-3.5" />}
             label="查看大图"
             onClick={() => menu && viewImage(menu.item)}
+          />
+        )}
+        {menu?.item && isImageItem(menu.item) && (
+          <ContextMenuItem
+            icon={<ExternalLink className="size-3.5" />}
+            label="用系统看图打开"
+            onClick={() => menu && openImageExternal(menu.item)}
           />
         )}
         {menu?.item.kind === "files" && (

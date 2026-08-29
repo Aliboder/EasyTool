@@ -23,6 +23,8 @@ export interface SearchSettingsData {
   /** 「应用」Tab 独立排序记忆 */
   appSortBy: "name" | "usage";
   appSortDesc: boolean;
+  /** 置顶应用（快捷方式路径小写），排序时恒定排最前 */
+  pinnedApps: string[];
   searchHistory: string[];
 }
 
@@ -37,6 +39,7 @@ export const SEARCH_DEFAULTS: SearchSettingsData = {
   clickToOpen: false,
   appSortBy: "name",
   appSortDesc: false,
+  pinnedApps: [],
   searchHistory: [],
 };
 

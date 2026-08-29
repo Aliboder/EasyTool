@@ -6,7 +6,7 @@ use config::ConfigState;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, WindowEvent,
+    Emitter, Manager, WindowEvent,
 };
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -100,8 +100,11 @@ fn init_logger() {
 
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let clipboard = MenuItem::with_id(app, "clipboard", "打开剪贴板", true, None::<&str>)?;
+    let timetracker = MenuItem::with_id(app, "timetracker", "打开时长统计", true, None::<&str>)?;
+    let check_update = MenuItem::with_id(app, "check-update", "检查更新", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let menu = Menu::with_items(app, &[&show, &clipboard, &timetracker, &check_update, &quit])?;
 
     let icon = app.default_window_icon().cloned().expect("no window icon");
     TrayIconBuilder::new()
@@ -110,6 +113,19 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main(app),
+            // 快速入口：先发导航事件再呼出窗口（前端监听切到对应模块页）
+            "clipboard" => {
+                let _ = app.emit("tray://nav", serde_json::json!({ "page": "clipboard" }));
+                show_main(app);
+            }
+            "timetracker" => {
+                let _ = app.emit("tray://nav", serde_json::json!({ "page": "timetracker" }));
+                show_main(app);
+            }
+            "check-update" => {
+                let _ = app.emit("tray://check-update", serde_json::json!({}));
+                show_main(app);
+            }
             "quit" => {
                 save_main_window_size(app);
                 app.exit(0);
