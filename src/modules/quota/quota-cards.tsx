@@ -252,8 +252,9 @@ function UsageBody({ account, ringRemaining }: { account: AccountStatusPayload; 
 }
 
 /** 账户卡拖拽排序包装：整卡可拖（PointerSensor 距离阈值避免误触），拖时半透明置顶。
- * h-full：网格单元被拉伸到行高，卡片必须撑满单元，否则 dnd-kit 的排序矩形
- * 会比可见卡片高出一截（幽灵空白），跨不同高度的卡片拖动时会互相压叠变形 */
+ * 固定高度 h-[12.5rem]（硬编码统一，随界面缩放等比）：网格每行严格等高，
+ * 所有厂商卡片（Go/DeepSeek/自定义/Coding Plan）高度完全一致；内容超出由
+ * Card 的 overflow-hidden 截断兜底，绝不撑破行高 */
 export function SortableCard({ id, children }: { id: string; children: ReactNode }) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id,
@@ -271,7 +272,7 @@ export function SortableCard({ id, children }: { id: string; children: ReactNode
       style={style}
       title="拖拽排序"
       className={cn(
-        "group relative h-full cursor-grab select-none active:cursor-grabbing",
+        "group relative h-[12.5rem] cursor-grab select-none active:cursor-grabbing",
         isDragging && "z-10 opacity-80",
       )}
     >
@@ -298,9 +299,8 @@ export function AccountCard({
   const meta = getKindMeta(account.kind);
   const Icon = meta.icon;
   return (
-    // min-h-[12rem]：以 Go 卡（环形布局）为基准的统一高度（随界面缩放等比变化），
-    // 所有厂商卡片——无论内容多寡——都至少到达该高度，网格各行因此完全齐平
-    <Card className="h-full min-h-[12rem]">
+    // 卡撑满 SortableCard 的固定高度；overflow-hidden 兜底截断，绝不撑破行高
+    <Card className="h-full">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Icon className="size-4 shrink-0 text-muted-foreground" />
