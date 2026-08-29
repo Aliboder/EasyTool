@@ -20,16 +20,24 @@
   - `task_plan.md` / `findings.md` / `progress.md`
 
 ### 阶段 3 · 批次 1：基础台账 + 月视图
-- **状态：** in_progress
+- **状态：** complete（待用户手动验收）
 - 执行的操作：
-  - （本批开始，见 task_plan 批次 1 清单）
+  - manifest、后端 db（events/todos/overrides/reminder_logs 全表）、8 条命令、lib.rs 注册、App.tsx 四处接入、Sidebar 图标
+  - 月视图（周一起始、今天高亮、选中圈出、事件胶囊/待办点）、当天面板、事件/待办表单抽屉、右键菜单
+  - 修正：upsert 先查后插（delete 变体撞 UNIQUE）、窗口命中语义（重叠）、批次 3/4 预留代码 allow(dead_code)
 - 创建/修改的文件：
-  - （待实施）
+  - `src-tauri/modules/calendar/manifest.json`
+  - `src-tauri/src/modules/calendar/{mod,db,commands}.rs`、`src-tauri/src/modules/mod.rs`、`src-tauri/src/lib.rs`
+  - `src/modules/calendar/{config.ts,utils.ts,utils.test.ts,Page.tsx}`
+  - `src/App.tsx`、`src/components/layout/Sidebar.tsx`
 
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
-| （批次 1 验证时记录） | | | | |
+| cargo test（含 calendar 5 个 db 测试） | 全量 | 全绿 | 97 passed / 0 failed / 2 ignored | ✅ |
+| vitest（含 calendar utils 4 个） | 全量 | 全绿 | 37 passed（6 文件） | ✅ |
+| tsc / npm run build | 全量 | 无错 | 通过 | ✅ |
+| cargo build 警告 | 全量 | 零警告 | EXIT=0 无 warning | ✅ |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |

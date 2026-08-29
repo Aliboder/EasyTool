@@ -1,0 +1,14 @@
+{
+  "id": "calendar",
+  "name": "日程表",
+  "icon": "calendar",
+  "description": "事件 + 待办合一日历，重复日程与到期提醒",
+  "enabled": true,
+  "default_config": {
+    "reminder_enabled": true,
+    "event_remind_minutes": 10,
+    "todo_overdue_remind": true,
+    "default_view": "month",
+    "week_show_weekend": true
+  }
+}

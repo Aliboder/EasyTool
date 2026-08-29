@@ -4,6 +4,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::config::AppConfig;
 
+pub mod calendar;
 pub mod clipboard;
 pub mod emoji;
 pub mod quota;

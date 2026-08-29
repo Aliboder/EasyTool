@@ -19,12 +19,13 @@
 - **状态：** complete
 
 ### 阶段 3：实现（分 5 批，每批完整验证后交付验收）
-#### 批次 1：基础台账 + 月视图（当前）
-- [ ] manifest.json + Sidebar ICON + App.tsx lazy/PAGE_IMPORTS/renderModules 四处接入
-- [ ] 后端：calendar.db（events/todos 表）、CRUD 命令、get_range、setup_from_handle、lib.rs 注册
-- [ ] 前端：config.ts + Page（月视图 + 右侧抽屉表单 + 右键菜单）+ 月/日切换入场
-- [ ] 验证：cargo test / build 零警告 / tsc / vitest / build；手动验收清单
-- **状态：** in_progress
+#### 批次 1：基础台账 + 月视图（✅ 已完成，待用户验收）
+- [x] manifest.json + Sidebar ICON + App.tsx lazy/PAGE_IMPORTS/renderModules 四处接入
+- [x] 后端：calendar.db（events/todos 全表含预留）、CRUD 命令、get_range、setup_from_handle、lib.rs 注册
+- [x] 前端：config.ts + Page（月视图 + 当天面板 + 事件/待办表单 + 右键菜单）
+- [x] 验证：cargo 97 测试 / build 零警告 / tsc / vitest 37 / build；异常：upsert UNIQUE 已修
+- [ ] 用户手动验收（交付验收清单）
+- **状态：** complete
 
 #### 批次 2：周/日视图 + 待办体验
 - [ ] 周视图时间轴（课表样色块 + 全天区 + 当前时刻线 + 周末折叠设置）

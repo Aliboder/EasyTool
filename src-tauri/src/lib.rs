@@ -335,6 +335,10 @@ fn timetracker_enabled(app: &tauri::AppHandle) -> bool {
     module_enabled(app, "timetracker")
 }
 
+fn calendar_enabled(app: &tauri::AppHandle) -> bool {
+    module_enabled(app, "calendar")
+}
+
 struct Hotkeys {
     main_hotkey: String,
 }
@@ -587,6 +591,17 @@ pub fn run() {
                 None
             };
 
+            let calendar_handle = if calendar_enabled(app.handle()) {
+                log::info!("[setup] initializing calendar module");
+                let app_clone = app.handle().clone();
+                Some(std::thread::spawn(move || {
+                    modules::calendar::setup_from_handle(&app_clone)
+                }))
+            } else {
+                log::info!("[setup] calendar module disabled, skipping");
+                None
+            };
+
             // 等待剪贴板模块初始化完成（弹窗窗口延迟到首次呼出时创建，避免启动闪现）
             if let Some(handle) = clipboard_handle {
                 match handle.join() {
@@ -693,6 +708,13 @@ pub fn run() {
                         Err(e) => log::error!("timetracker module thread panicked: {:?}", e),
                     }
                 }
+                if let Some(handle) = calendar_handle {
+                    match handle.join() {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => log::error!("calendar module init failed: {e}"),
+                        Err(e) => log::error!("calendar module thread panicked: {:?}", e),
+                    }
+                }
             });
             Ok(())
         })
@@ -793,6 +815,14 @@ modules::timetracker::commands::timetracker_get_week_overview,
 modules::timetracker::commands::timetracker_get_month_overview,
 modules::timetracker::commands::timetracker_get_category_breakdown_range,
             modules::timetracker::commands::timetracker_clear_history,
+            modules::calendar::commands::calendar_get_range,
+            modules::calendar::commands::calendar_create_event,
+            modules::calendar::commands::calendar_update_event,
+            modules::calendar::commands::calendar_delete_event,
+            modules::calendar::commands::calendar_create_todo,
+            modules::calendar::commands::calendar_update_todo,
+            modules::calendar::commands::calendar_toggle_todo,
+            modules::calendar::commands::calendar_delete_todo,
         ])
         .on_window_event(|window, event| {
             match event {

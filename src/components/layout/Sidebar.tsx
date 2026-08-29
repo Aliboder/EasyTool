@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Clipboard, Clock, Gauge, Settings, Smile, Search } from "lucide-react";
+import { Bot, Calendar, Clipboard, Clock, Gauge, Settings, Smile, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHorizontalWheel } from "@/lib/use-horizontal-wheel";
 
@@ -16,6 +16,7 @@ const ICONS: Record<string, typeof Clipboard> = {
   smile: Smile,
   search: Search,
   bot: Bot,
+  calendar: Calendar,
 };
 
 interface Props {
