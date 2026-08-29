@@ -296,8 +296,8 @@ export function Timeline({
                   </span>
                 </>
               )}
-              {/* 堆叠柱 */}
-              <div className="flex h-36 items-end gap-[2px] pr-8">
+              {/* 堆叠柱（无 gap，便于刻度精确对齐） */}
+              <div className="flex h-36 items-end pr-8">
                 {columns.map((col, i) => {
                   const { key, segments, idleSec, idlePct, label } = col;
                   return (
@@ -353,26 +353,30 @@ export function Timeline({
               {/* 当前时刻指示线（仅今天小时视图） */}
               {isHour && isToday && legend.length > 0 && <NowLine />}
             </div>
-            {/* X 轴标签 */}
-            <div className="relative mt-1 flex gap-[2px] pr-8 text-[9px] tabular-nums text-muted-foreground">
-              {columns.map((col, i) => (
-                <span
-                  key={col.key}
-                  className="flex-1 text-center"
-                >
-                  {isHour || i % labelEvery === 0 ? col.label : ""}
-                </span>
-              ))}
-              {/* 小时轴尾端刻度 24:00：左缘对齐柱区右缘（pr-8 预留区），不占 flex 份额 */}
-              {isHour && (
-                <span
-                  className="absolute"
-                  style={{ left: "calc(100% - 2rem)" }}
-                >
-                  24
-                </span>
-              )}
-            </div>
+            {/* X 轴标签：小时图整点对齐在相邻两柱的边界（柱间中线），日粒度居中于柱 */}
+            {isHour ? (
+              <div className="relative mt-1 h-4 pr-8 text-[9px] tabular-nums text-muted-foreground">
+                <div className="absolute inset-y-0 left-0 right-8">
+                  {Array.from({ length: 25 }, (_, k) => k).map((k) => (
+                    <span
+                      key={k}
+                      className="absolute -translate-x-1/2"
+                      style={{ left: `${(k / 24) * 100}%` }}
+                    >
+                      {String(k).padStart(2, "0")}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="relative mt-1 flex pr-8 text-[9px] tabular-nums text-muted-foreground">
+                {columns.map((col, i) => (
+                  <span key={col.key} className="flex-1 text-center">
+                    {i % labelEvery === 0 ? col.label : ""}
+                  </span>
+                ))}
+              </div>
+            )}
           </>
         )}
         {/* 图例：图标 + 短时长；悬停联动高亮柱段，点击打开应用详情 */}
