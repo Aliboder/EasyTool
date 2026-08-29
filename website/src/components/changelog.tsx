@@ -152,7 +152,7 @@ export function Changelog() {
     <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <SectionHead eyebrow="更新日志" title="持续更新" sub="小步快跑，每个版本都解决真实问题。" />
+          <SectionHead title="持续更新" sub="小步快跑，每个版本都解决真实问题。" />
           <a href={RELEASES} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-400 hover:text-emerald-300">
             完整更新日志 <ArrowRight className="size-4" />
           </a>

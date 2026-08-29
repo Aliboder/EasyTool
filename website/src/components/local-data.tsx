@@ -32,7 +32,7 @@ export function LocalData() {
   return (
     <section id="data" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
-        <SectionHead eyebrow="数据所有权" title="数据只属于你" sub="你的每一条复制记录、每一笔消费历史，都落在下面这个文件夹里，删了就是真没了。" />
+        <SectionHead title="数据只属于你" sub="你的每一条复制记录、每一笔消费历史，都落在下面这个文件夹里，删了就是真没了。" />
       </Reveal>
 
       <div className="mt-12 grid gap-8 lg:grid-cols-2">

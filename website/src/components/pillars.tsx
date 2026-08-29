@@ -53,7 +53,7 @@ export function Pillars() {
   return (
     <section id="design" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
-        <SectionHead eyebrow="设计哲学" title="每个决策都有理由" sub="EasyTool 不只是功能的堆砌，每个设计选择都对应一个真实问题。" />
+        <SectionHead title="每个决策都有理由" sub="EasyTool 不只是功能的堆砌，每个设计选择都对应一个真实问题。" />
       </Reveal>
 
       <div className="mt-12 space-y-5">

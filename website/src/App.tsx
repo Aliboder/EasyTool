@@ -4,7 +4,7 @@ import { StatsTicker } from "./components/stats-ticker";
 import { TechMarquee } from "./components/tech-marquee";
 import { Bento } from "./components/bento";
 import { DeepDive } from "./components/deep-dive";
-import { Hotkeys } from "./components/hotkeys";
+import { Workflows } from "./components/workflows";
 import { Pillars } from "./components/pillars";
 import { LocalData } from "./components/local-data";
 import { DevZone } from "./components/dev-zone";
@@ -33,7 +33,7 @@ export default function App() {
           </div>
           <DeepDive />
           <div className="section-divider mx-auto max-w-6xl" />
-          <Hotkeys />
+          <Workflows />
           <div className="section-divider mx-auto max-w-6xl" />
           <Pillars />
           <LocalData />

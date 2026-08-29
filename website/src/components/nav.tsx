@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 const LINKS = [
   { href: "#modules", label: "模块" },
-  { href: "#hotkeys", label: "快捷键" },
+  { href: "#workflows", label: "场景" },
   { href: "#design", label: "设计" },
   { href: "#data", label: "数据" },
   { href: "#screenshots", label: "界面" },
