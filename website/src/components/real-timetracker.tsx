@@ -28,7 +28,7 @@ export function RealTimetracker() {
   const max = Math.max(...ROWS.map((r) => r.total));
 
   return (
-    <div className="flex h-[500px] w-full max-w-md flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950 font-sans text-zinc-100 shadow-2xl shadow-black/40">
+    <div className="flex h-[480px] w-full max-w-xl flex-col overflow-hidden rounded-2xl border-2 border-white/10 bg-zinc-950 font-sans text-zinc-100 shadow-2xl shadow-black/40">
       {/* header */}
       <div className="flex items-center gap-2 border-b border-white/5 bg-zinc-900 px-3 py-2.5">
         <GripVertical className="size-4 shrink-0 text-zinc-600" />

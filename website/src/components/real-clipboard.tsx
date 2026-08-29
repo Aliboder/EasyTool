@@ -44,7 +44,7 @@ export function RealClipboard() {
   const remove = (id: number) => setItems((prev) => prev.filter((it) => it.id !== id));
 
   return (
-    <div className="flex h-[480px] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white font-sans shadow-2xl shadow-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/40">
+    <div className="flex h-[480px] w-full max-w-xl flex-col overflow-hidden rounded-2xl border-2 border-zinc-200 bg-white font-sans shadow-2xl shadow-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/40">
       {/* 标题栏 */}
       <div className="flex items-center gap-2 border-b border-zinc-100 px-4 py-2.5 dark:border-zinc-800">
         <span className="flex gap-1.5">

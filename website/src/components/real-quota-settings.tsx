@@ -1,6 +1,6 @@
 export function RealQuotaSettings() {
   return (
-    <div className="flex h-[420px] flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-900 font-sans text-zinc-100 shadow-2xl shadow-black/40">
+    <div className="flex h-[480px] w-full max-w-xl flex-col overflow-hidden rounded-2xl border-2 border-white/10 bg-zinc-900 font-sans text-zinc-100 shadow-2xl shadow-black/40">
       {/* header */}
       <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
         <span className="text-sm font-semibold">设置</span>

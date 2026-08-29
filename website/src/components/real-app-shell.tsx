@@ -13,7 +13,7 @@ export function RealAppShell() {
   const [active, setActive] = useState("clipboard");
 
   return (
-    <div className="flex h-[420px] flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950 font-sans text-zinc-100 shadow-2xl shadow-black/40">
+    <div className="flex h-[480px] w-full max-w-xl flex-col overflow-hidden rounded-2xl border-2 border-white/10 bg-zinc-950 font-sans text-zinc-100 shadow-2xl shadow-black/40">
       {/* main content area */}
       <div className="flex-1 overflow-hidden bg-zinc-900 p-4">
         <div className="flex h-full flex-col items-center justify-center text-center">

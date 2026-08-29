@@ -27,7 +27,7 @@ export function RealMainWindow() {
   });
 
   return (
-    <div className="flex h-[480px] flex-col overflow-hidden rounded-2xl border-2 border-white/10 bg-zinc-900 font-sans text-zinc-100 shadow-2xl shadow-black/40">
+    <div className="flex h-[480px] w-full max-w-xl flex-col overflow-hidden rounded-2xl border-2 border-white/10 bg-zinc-900 font-sans text-zinc-100 shadow-2xl shadow-black/40">
       {/* title bar */}
       <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3">
         <div className="flex gap-1.5">
