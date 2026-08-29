@@ -229,7 +229,7 @@ function HourAxis({ startHour, endHour }: { startHour: number; endHour: number }
       {Array.from({ length: n + 1 }, (_, i) => i).map((i) => (
         <span
           key={i}
-          className="absolute -top-1.5 right-1.5 text-[10px] tabular-nums text-muted-foreground"
+          className="absolute right-1.5 -translate-y-1/2 text-[10px] tabular-nums text-muted-foreground"
           style={{ top: i * HOUR_HEIGHT }}
         >
           {startHour + i}:00
@@ -771,7 +771,7 @@ export function TimeLineView({
                         {hourMarks.map((m) => (
                           <span
                             key={m}
-                            className="absolute -top-1.5 right-1.5 text-[9px] tabular-nums text-muted-foreground"
+                            className="absolute right-1.5 -translate-y-1/2 text-[9px] tabular-nums text-muted-foreground"
                             style={{ top: (m - c.startHour) * hourHeight }}
                           >
                             {String(m).padStart(2, "0")}:00
