@@ -1,9 +1,9 @@
 // 日程表设置抽屉（受控组件；配置走 Page 的 useModuleConfig；数据管理自取数据）
-// 日程账号：订阅源（自动同步、只读）与导入的日历文件（一次导入、可编辑）统一在一个板块管理
-import { useEffect, useMemo, useState } from "react";
+// 布局：提醒 / 视图 / 日程账号 / 数据 四分区；日程账号 = 订阅源（自动同步、只读）+ 导入文件（一次导入、可编辑）
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { Search, Trash2 } from "lucide-react";
+import { Bell, CalendarPlus, CalendarX2, Database, Download, Eye, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -82,6 +82,43 @@ function threeMonthsAgo(): string {
   d.setMonth(d.getMonth() - 3);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/// 分区标题：图标 + 文字 + 右侧分隔线
+function SectionHeader({ icon, title, desc }: { icon: ReactNode; title: string; desc?: string }) {
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1.5 text-sm font-medium">
+        <span className="text-muted-foreground">{icon}</span>
+        {title}
+        <div className="ml-1 h-px flex-1 bg-border" />
+      </div>
+      {desc && <p className="text-xs text-muted-foreground">{desc}</p>}
+    </div>
+  );
+}
+
+/// 设置行：左侧标题/说明，右侧控件（统一间距）
+function SettingRow({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-sm font-medium">{title}</div>
+        {desc && <div className="text-xs text-muted-foreground">{desc}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+/// 小分组标题（数据区内的「清理 / 备份导出 / 事件管理」）
+function MiniLabel({ icon, text }: { icon: ReactNode; text: string }) {
+  return (
+    <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+      {icon}
+      {text}
+    </div>
+  );
 }
 
 /// 账号类型小标签：订阅=蓝，文件=灰
@@ -287,7 +324,7 @@ export function CalendarSettings({
 
   // ---------- 日程账号：导入文件 ----------
 
-  /// 在设置里直接导入 .ics / 备份（与页面顶部「导入」同流程）
+  /// 在设置里直接导入 .ics / 备份（与页面顶部原「导入」同流程）
   const pickImport = async () => {
     const sel = await open({
       title: "导入日程（.ics 日历 / .json 备份）",
@@ -356,75 +393,66 @@ export function CalendarSettings({
   };
 
   return (
-    <div className="space-y-5 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-medium">事件提醒</div>
-          <div className="text-xs text-muted-foreground">事件开始前按提前量发系统通知（电脑开着才收得到）</div>
-        </div>
-        <Switch checked={cfg.reminderEnabled} onCheckedChange={(v) => onUpdate({ reminderEnabled: v })} />
+    <div className="space-y-6 p-6">
+      {/* 提醒 */}
+      <div className="space-y-2.5">
+        <SectionHeader icon={<Bell className="size-3.5" />} title="提醒" desc="事件和待办的系统通知" />
+        <SettingRow title="事件提醒" desc="事件开始前按提前量发系统通知（电脑开着才收得到）">
+          <Switch checked={cfg.reminderEnabled} onCheckedChange={(v) => onUpdate({ reminderEnabled: v })} />
+        </SettingRow>
+        {cfg.reminderEnabled && (
+          <SettingRow title="提前量" desc="像手机闹钟的「提前提醒」">
+            <Select
+              value={String(cfg.eventRemindMinutes)}
+              onValueChange={(v) => onUpdate({ eventRemindMinutes: Number(v) })}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REMIND_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={String(o.value)}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
+        <SettingRow title="待办过期提醒" desc="今天截止还没做的待办，当日提醒一次">
+          <Switch checked={cfg.todoOverdueRemind} onCheckedChange={(v) => onUpdate({ todoOverdueRemind: v })} />
+        </SettingRow>
       </div>
-      {cfg.reminderEnabled && (
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-medium">提前量</div>
-            <div className="text-xs text-muted-foreground">像手机闹钟的「提前提醒」</div>
-          </div>
-          <Select value={String(cfg.eventRemindMinutes)} onValueChange={(v) => onUpdate({ eventRemindMinutes: Number(v) })}>
+
+      {/* 视图 */}
+      <div className="space-y-2.5">
+        <SectionHeader icon={<Eye className="size-3.5" />} title="视图" desc="日程表页面的显示方式" />
+        <SettingRow title="默认视图" desc="打开日程表先看到哪个视图">
+          <Select value={cfg.defaultView} onValueChange={(v) => onUpdate({ defaultView: v as CalendarConfig["defaultView"] })}>
             <SelectTrigger className="w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {REMIND_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={String(o.value)}>
+              {VIEW_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
                   {o.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
-      )}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-medium">待办过期提醒</div>
-          <div className="text-xs text-muted-foreground">今天截止还没做的待办，当日提醒一次</div>
-        </div>
-        <Switch checked={cfg.todoOverdueRemind} onCheckedChange={(v) => onUpdate({ todoOverdueRemind: v })} />
-      </div>
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-medium">默认视图</div>
-          <div className="text-xs text-muted-foreground">打开日程表先看到哪个视图</div>
-        </div>
-        <Select value={cfg.defaultView} onValueChange={(v) => onUpdate({ defaultView: v as CalendarConfig["defaultView"] })}>
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {VIEW_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-medium">周视图显示周末</div>
-          <div className="text-xs text-muted-foreground">关闭后只显示周一到周五</div>
-        </div>
-        <Switch checked={cfg.weekShowWeekend} onCheckedChange={(v) => onUpdate({ weekShowWeekend: v })} />
+        </SettingRow>
+        <SettingRow title="周视图显示周末" desc="关闭后只显示周一到周五">
+          <Switch checked={cfg.weekShowWeekend} onCheckedChange={(v) => onUpdate({ weekShowWeekend: v })} />
+        </SettingRow>
       </div>
 
-      {/* 日程账号：订阅源 + 导入文件 */}
+      {/* 日程账号 */}
       <div className="space-y-2">
-        <div>
-          <div className="text-sm font-medium">日程账号</div>
-          <div className="text-xs text-muted-foreground">
-            订阅源（自动同步、只读显示）和导入的日历文件（一次导入、可编辑）统一在这里管理
-          </div>
-        </div>
+        <SectionHeader
+          icon={<CalendarPlus className="size-3.5" />}
+          title="日程账号"
+          desc="订阅源（自动同步、只读）与导入的日历文件（可编辑）统一管理"
+        />
         <div className="space-y-1.5 rounded-lg border border-dashed p-2">
           <div className="grid grid-cols-2 gap-1.5">
             <Input
@@ -592,12 +620,13 @@ export function CalendarSettings({
         )}
       </div>
 
-      {/* 数据管理 */}
-      <div className="space-y-2">
-        <div>
-          <div className="text-sm font-medium">数据管理</div>
-          <div className="text-xs text-muted-foreground">批量清理与逐条管理，删除不可恢复</div>
-        </div>
+      {/* 数据 */}
+      <div className="space-y-2.5">
+        <SectionHeader
+          icon={<Database className="size-3.5" />}
+          title="数据"
+          desc="统计、清理、备份与事件逐条管理，删除不可恢复"
+        />
         {stats && (
           <div className="grid grid-cols-4 gap-1.5 text-center">
             {[
@@ -614,45 +643,52 @@ export function CalendarSettings({
           </div>
         )}
 
-        <div className="flex items-center gap-2">
-          <Input
-            type="date"
-            value={purgeDate}
-            onChange={(e) => setPurgeDate(e.target.value)}
-            className="w-36"
-            title="删除此日期之前的单次事件"
-          />
-          <Button variant="outline" size="sm" onClick={purgeOld}>
-            删除此日期前的旧事件
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => clearTodos(true)}>
-            清除已完成待办
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => clearTodos(false)}>
-            清空全部待办
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-red-500/40 text-red-600 hover:bg-red-500/10 hover:text-red-600"
-            onClick={clearAll}
-          >
-            清空全部数据
-          </Button>
-        </div>
-        <div className="flex flex-wrap gap-2 border-t pt-2">
-          <Button variant="outline" size="sm" onClick={() => exportFile("ics")}>
-            导出 ICS（可导入手机日历）
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => exportFile("json")}>
-            导出 JSON 备份（可完整恢复）
-          </Button>
+        <div className="space-y-2">
+          <MiniLabel icon={<CalendarX2 className="size-3" />} text="清理" />
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              value={purgeDate}
+              onChange={(e) => setPurgeDate(e.target.value)}
+              className="w-36"
+              title="删除此日期之前的单次事件"
+            />
+            <Button variant="outline" size="sm" onClick={purgeOld}>
+              删除此日期前的旧事件
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => clearTodos(true)}>
+              清除已完成待办
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => clearTodos(false)}>
+              清空全部待办
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-red-500/40 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+              onClick={clearAll}
+            >
+              清空全部数据
+            </Button>
+          </div>
         </div>
 
-        {/* 精细管理：事件列表 */}
+        <div className="space-y-2">
+          <MiniLabel icon={<Download className="size-3" />} text="备份导出" />
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => exportFile("ics")}>
+              导出 ICS（可导入手机日历）
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => exportFile("json")}>
+              导出 JSON 备份（可完整恢复）
+            </Button>
+          </div>
+        </div>
+
         <div className="space-y-1.5">
+          <MiniLabel icon={<Search className="size-3" />} text="事件管理" />
           <div className="flex items-center gap-2 border-b pb-1.5">
             <Search className="size-3.5 text-muted-foreground" />
             <Input
