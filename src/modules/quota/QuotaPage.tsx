@@ -4,12 +4,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy } from "@dnd-kit/sortable";
 import { Settings2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Drawer } from "@/components/ui/drawer";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { QuotaSettings } from "./QuotaSettings";
-import { AccountCard } from "./quota-cards";
+import { AccountCard, SortableCard } from "./quota-cards";
 import { type AccountStatusPayload, getKindMeta, knownKinds, fmtMoney } from "./registry";
 import { tierAt, nextBoundary, fmtRemaining } from "./pricing";
 
@@ -144,6 +153,36 @@ export function QuotaPage() {
     }))
     .filter((g) => g.accounts.length > 0);
 
+  // 组内拖拽排序：重排该 kind 的账户 → 重建全局顺序 → 本地乐观更新 + 持久化
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+  const handleGroupDragEnd = (kind: string) => (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const ids = (status?.accounts.filter((a) => a.kind === kind) ?? []).map((a) => a.id);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    const moved = arrayMove(ids, from, to);
+    // 按当前展示的分组顺序重建完整 id 列表
+    const order: string[] = [];
+    for (const g of groups) {
+      order.push(...(g.kind === kind ? moved : g.accounts.map((a) => a.id)));
+    }
+    setStatus((prev) => {
+      if (!prev) return prev;
+      const byId = new Map(prev.accounts.map((a) => [a.id, a]));
+      return {
+        ...prev,
+        accounts: order
+          .map((id) => byId.get(id))
+          .filter((a): a is AccountStatusPayload => !!a),
+      };
+    });
+    invoke("save_account_order", { ids: order }).catch(console.error);
+  };
+
   return (
     <div className="relative flex h-full flex-col">
       <ModuleHeader
@@ -197,16 +236,29 @@ export function QuotaPage() {
                   <span className="text-xs text-muted-foreground">{g.accounts.length} 个账户</span>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {g.accounts.map((acc) => (
-                    <AccountCard
-                      key={acc.id}
-                      account={acc}
-                      threshold={thresholds.threshold}
-                      critical={thresholds.critical}
-                      ringRemaining={thresholds.ringRemaining}
-                      balanceMax={thresholds.balanceMax}
-                    />
-                  ))}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleGroupDragEnd(g.kind)}
+                  >
+                    <SortableContext
+                      items={g.accounts.map((a) => a.id)}
+                      strategy={rectSortingStrategy}
+                    >
+                      {g.accounts.map((acc) => (
+                        <SortableCard key={acc.id} id={acc.id}>
+                          <AccountCard
+                            account={acc}
+                            threshold={thresholds.threshold}
+                            critical={thresholds.critical}
+                            ringRemaining={thresholds.ringRemaining}
+                            balanceMax={thresholds.balanceMax}
+                            dragHandle
+                          />
+                        </SortableCard>
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 </div>
               </section>
             ))

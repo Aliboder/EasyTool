@@ -414,6 +414,29 @@ pub fn set_account_custom(
     Ok(())
 }
 
+/// 保存账户展示顺序（按传入的 id 列表重排 config.accounts 数组）。
+/// 拖拽排序后由前端一次性提交完整顺序；未列出的账户保持原相对顺序追加在末尾（容错）。
+#[tauri::command]
+pub fn save_account_order(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
+    crate::config::update_module(&app, "quota", |v| {
+        if let Some(accounts) = v.get_mut("accounts").and_then(|a| a.as_array_mut()) {
+            let mut rest = accounts.clone();
+            let mut order: Vec<serde_json::Value> = Vec::with_capacity(ids.len());
+            for id in &ids {
+                if let Some(pos) = rest
+                    .iter()
+                    .position(|a| a.get("id").and_then(|i| i.as_str()) == Some(id.as_str()))
+                {
+                    order.push(rest.remove(pos));
+                }
+            }
+            order.extend(rest);
+            *accounts = order;
+        }
+        Ok(())
+    })
+}
+
 /// 各账户类型的默认展示名
 pub fn default_account_name(kind: AccountKind, count: usize) -> String {
     let base = match kind {

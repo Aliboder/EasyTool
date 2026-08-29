@@ -1,11 +1,13 @@
 // 账户卡片：按供应商指标形态（balance / usage）分派渲染。全部字段来自后端真实数据。
 // AccountCard 提供共享 Card + 头部（图标/名称/徽章）；BalanceCard / UsageCard 只渲染内容体。
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { RefreshCw } from "lucide-react";
+import { GripVertical, RefreshCw } from "lucide-react";
 import {
   getKindMeta,
   type AccountStatusPayload,
@@ -239,18 +241,47 @@ function UsageBody({ account, ringRemaining }: { account: AccountStatusPayload; 
   );
 }
 
+/** 账户卡拖拽排序包装：整卡可拖（PointerSensor 距离阈值避免误触），拖时半透明置顶 */
+export function SortableCard({ id, children }: { id: string; children: ReactNode }) {
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
+    id,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    willChange: "transform",
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={style}
+      title="拖拽排序"
+      className={cn(
+        "group relative cursor-grab active:cursor-grabbing",
+        isDragging && "z-10 opacity-80",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function AccountCard({
   account,
   threshold,
   critical,
   ringRemaining,
   balanceMax,
+  dragHandle,
 }: {
   account: AccountStatusPayload;
   threshold: number;
   critical: number;
   ringRemaining: boolean;
   balanceMax: number;
+  dragHandle?: boolean;
 }) {
   const meta = getKindMeta(account.kind);
   const Icon = meta.icon;
@@ -259,8 +290,11 @@ export function AccountCard({
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Icon className="size-4 text-muted-foreground" />
-          <span className="min-w-0 truncate">{account.name}</span>
+          <span className="min-w-0 flex-1 truncate">{account.name}</span>
           <StatusBadge account={account} threshold={threshold} critical={critical} />
+          {dragHandle && (
+            <GripVertical className="size-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent>
