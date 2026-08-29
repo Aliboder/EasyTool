@@ -15,6 +15,13 @@ pub struct AppConfig {
     pub main_follow_mouse: bool,
     /// 模块显示顺序（底部栏与设置页共用；缺失的模块启动时追加到末尾）
     pub module_order: Vec<String>,
+    /// 启动时是否静默检查更新（默认开）
+    #[serde(default = "default_true")]
+    pub check_update_on_start: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppConfig {
@@ -40,7 +47,7 @@ impl Default for AppConfig {
         );
         let mut hotkeys = HashMap::new();
         hotkeys.insert("main".into(), "Ctrl+Shift+E".into());
-        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], main_size: None, main_follow_mouse: false, module_order: vec![] }
+        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], main_size: None, main_follow_mouse: false, module_order: vec![], check_update_on_start: true }
     }
 }
 
@@ -266,6 +273,18 @@ pub fn set_main_follow_mouse(
 ) -> Result<(), String> {
     let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     cfg.main_follow_mouse = enabled;
+    save_config(&app, &cfg)
+}
+
+/// 启动时是否静默检查更新
+#[tauri::command]
+pub fn set_check_update_on_start(
+    app: AppHandle,
+    state: State<ConfigState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    cfg.check_update_on_start = enabled;
     save_config(&app, &cfg)
 }
 

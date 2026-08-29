@@ -17,6 +17,7 @@ export interface AppConfig {
   migrated: string[];
   main_follow_mouse: boolean;
   module_order: string[];
+  check_update_on_start: boolean;
 }
 
 export interface Bootstrap {
@@ -36,6 +37,8 @@ export const saveMainSize = (width: number, height: number, x?: number, y?: numb
   invoke<void>("save_main_size", { width, height, x, y });
 export const setMainFollowMouse = (enabled: boolean) =>
   invoke<void>("set_main_follow_mouse", { enabled });
+export const setCheckUpdateOnStart = (enabled: boolean) =>
+  invoke<void>("set_check_update_on_start", { enabled });
 
 export interface UpdateInfo {
   version: string;

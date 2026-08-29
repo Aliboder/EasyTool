@@ -212,3 +212,11 @@ pub fn timetracker_reset_app_category(app: AppHandle, app_id: i64) -> Result<(),
     let s = state.lock().map_err(|e| format!("获取状态失败: {e}"))?;
     s.db.reset_app_category(app_id)
 }
+
+/// 清空全部时长统计历史（事件与应用记录；保留分类规则与手动归类）
+#[tauri::command]
+pub fn timetracker_clear_history(app: AppHandle) -> Result<u32, String> {
+    let state = app.state::<Mutex<TimetrackerState>>();
+    let s = state.lock().map_err(|e| format!("获取状态失败: {e}"))?;
+    s.db.clear_history().map_err(|e| e.to_string())
+}

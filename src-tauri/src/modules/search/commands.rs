@@ -204,6 +204,18 @@ pub fn search_open_file_location(path: String) -> CmdResult<()> {
     Ok(())
 }
 
+/// 重置全部应用使用频率（数据管理用）
+#[tauri::command]
+pub fn search_reset_apps(app: AppHandle) -> CmdResult<u32> {
+    use tauri::Emitter;
+    let removed = match app.try_state::<Mutex<super::apps::AppsState>>() {
+        Some(state) => state.lock().unwrap().db.reset_usage().map_err(CommandError::from)?,
+        None => 0,
+    };
+    let _ = app.emit("search://apps_dirty", serde_json::json!({}));
+    Ok(removed)
+}
+
 /// 复制文件路径文本到系统剪贴板 + 联动写入剪贴板历史
 #[tauri::command]
 pub fn search_copy_path(app: AppHandle, path: String) -> CmdResult<()> {

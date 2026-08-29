@@ -252,6 +252,22 @@ pub fn remove_account(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 清空全部额度消费历史（余额/Go 用量/周期；账户与密钥保留），返回清理行数
+#[tauri::command]
+pub fn quota_clear_history(app: AppHandle) -> Result<u32, String> {
+    use tauri::Emitter;
+    let total = {
+        let db_guard = app.state::<Mutex<QuotaDb>>();
+        let db = db_guard.lock().map_err(|e| e.to_string())?;
+        db.clear_history().map_err(|e| e.to_string())?
+    };
+    // 前端监听 quota://updated 刷新卡片
+    let _ = app.emit("quota://updated", serde_json::json!({}));
+    let app2 = app.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || super::fetch_once(&app2));
+    Ok(total)
+}
+
 /// 重命名账户
 #[tauri::command]
 pub fn rename_account(app: AppHandle, id: String, name: String) -> Result<(), String> {

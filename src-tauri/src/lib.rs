@@ -765,6 +765,7 @@ pub fn run() {
             config::set_main_hotkey,
             config::save_main_size,
             config::set_main_follow_mouse,
+            config::set_check_update_on_start,
             modules::clipboard::commands::github_latest_release,
             get_bootstrap,
             modules::clipboard::commands::get_history,
@@ -800,6 +801,7 @@ pub fn run() {
             modules::quota::commands::get_stats_data,
             modules::quota::commands::get_daily_history,
             modules::quota::commands::get_go_cycles,
+            modules::quota::commands::quota_clear_history,
             modules::search::commands::search,
             modules::search::commands::search_get_status,
             modules::search::commands::search_start_everything,
@@ -809,6 +811,7 @@ pub fn run() {
             modules::search::commands::search_copy_file,
             modules::search::commands::search_scan_apps,
             modules::search::commands::search_open_path,
+            modules::search::commands::search_reset_apps,
             modules::emoji::commands::get_emoji_static,
             modules::emoji::commands::get_emoji_dynamic,
             modules::emoji::commands::get_groups,
@@ -850,6 +853,7 @@ modules::timetracker::commands::timetracker_reset_app_category,
 modules::timetracker::commands::timetracker_get_week_overview,
 modules::timetracker::commands::timetracker_get_month_overview,
 modules::timetracker::commands::timetracker_get_category_breakdown_range,
+            modules::timetracker::commands::timetracker_clear_history,
         ])
         .on_window_event(|window, event| {
             match event {

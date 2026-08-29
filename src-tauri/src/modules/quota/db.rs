@@ -280,6 +280,22 @@ impl QuotaDb {
         Ok(())
     }
 
+    /// 清空全部消费历史（所有账户；账户配置与密钥保留）
+    pub fn clear_history(&self) -> DbResult<u32> {
+        let mut total = 0u32;
+        for sql in [
+            "DELETE FROM balance_history",
+            "DELETE FROM go_snapshots",
+            "DELETE FROM go_cycles",
+        ] {
+            total += self
+                .conn
+                .execute(sql, [])
+                .map_err(|e| e.to_string())? as u32;
+        }
+        Ok(total)
+    }
+
     /// 本次写入前的上一份快照
     pub fn prev_go_snapshot(
         &self,

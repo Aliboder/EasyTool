@@ -1091,6 +1091,18 @@ impl TimetrackerDb {
         Ok(())
     }
 
+    /// 清空全部历史（事件与应用记录），保留分类规则与手动归类。返回删除的事件数
+    pub fn clear_history(&self) -> Result<u32, String> {
+        let events = self
+            .conn
+            .execute("DELETE FROM events", [])
+            .map_err(|e| format!("清理事件失败: {e}"))?;
+        self.conn
+            .execute("DELETE FROM apps", [])
+            .map_err(|e| format!("清理应用失败: {e}"))?;
+        Ok(events as u32)
+    }
+
     /// 设置页：列出所有应用（含累计时长，按时长降序）。
     pub fn list_apps(&self) -> Result<Vec<AppListItem>, String> {
         let mut stmt = self

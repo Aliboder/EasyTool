@@ -12,13 +12,14 @@ import {
   setTheme,
   setMainHotkey,
   setMainFollowMouse,
+  setCheckUpdateOnStart,
   saveMainSize,
   type AppConfig,
   type Manifest,
 } from "@/lib/api";
 import { SettingsView } from "@/components/settings-view";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { applyTheme } from "@/lib/theme";
+import { applyAccent, applyTheme, applyUiScale } from "@/lib/theme";
 import { checkForUpdate } from "@/lib/api";
 import { useWindowEntrance } from "@/lib/use-window-entrance";
 
@@ -99,6 +100,8 @@ function App() {
     setActive(id);
     if (id !== "settings") {
       setVisited((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+      // 记住上次使用的模块：下次启动直接恢复
+      localStorage.setItem("easytool_last_module", id);
     }
   }, []);
   const [notice, setNotice] = useState<string | null>(null);
@@ -115,9 +118,24 @@ function App() {
       .then(async ({ manifests: m, config: c }) => {
         setManifests(m);
         setConfig(c);
-        // 只等落地面板分包就绪 + 两帧（主题应用、首帧绘制完成）→ 通知 Rust 显示主窗口。
-        // keep-alive 初始仅挂载落地面板，其余分包后台预载不阻塞首屏（冷缓存省 ~400ms）
-        const landing = landingModule(m, c);
+        // 应用持久化的外观偏好（强调色 / 界面缩放）
+        const storedAccent = localStorage.getItem("easytool_accent") as
+          | "emerald"
+          | "sky"
+          | "violet"
+          | "amber"
+          | "";
+        if (storedAccent) applyAccent(storedAccent);
+        const storedScale = Number(localStorage.getItem("easytool_ui_scale"));
+        if ([90, 100, 110, 120].includes(storedScale)) applyUiScale(storedScale);
+        // 落地面板：优先恢复上次使用的模块（启用中才生效）
+        const storedModule = localStorage.getItem("easytool_last_module");
+        const landing =
+          storedModule &&
+          m.some((x) => x.id === storedModule) &&
+          c.modules[storedModule]?.enabled !== false
+            ? storedModule
+            : landingModule(m, c);
         await Promise.allSettled(
           landing && PAGE_IMPORTS[landing] ? [PAGE_IMPORTS[landing]()] : [],
         );
@@ -135,14 +153,16 @@ function App() {
           level: "info",
           msg: "[diag] bootstrap done",
         }).catch(() => {});
-        // 后台静默检查更新（不阻塞启动），有新版本时显示顶部横幅
-        checkForUpdate()
-          .then((update) => {
-            if (update) {
-              setUpdateBanner({ version: update.version, notes: update.notes ?? "" });
-            }
-          })
-          .catch(() => {});
+        // 后台静默检查更新（可设置关闭；不阻塞启动），有新版本时显示顶部横幅
+        if (c.check_update_on_start !== false) {
+          checkForUpdate()
+            .then((update) => {
+              if (update) {
+                setUpdateBanner({ version: update.version, notes: update.notes ?? "" });
+              }
+            })
+            .catch(() => {});
+        }
       })
       .catch(e => {
         console.error(e);
@@ -252,16 +272,21 @@ function App() {
     // 判断依据必须是「清单是否就绪」而非「启用列表是否为空」——全部禁用是合法状态，照常清理
     if (!orderedManifests.length) return;
     const ids = new Set(enabledModules.map((m) => m.id));
+    // 初始选中偏好：上次使用的模块（仍在启用列表内才生效），否则回退到排序首位
+    const stored = localStorage.getItem("easytool_last_module");
+    const preferred =
+      stored && ids.has(stored) ? stored : (enabledModules[0]?.id ?? "clipboard");
     setVisited((prev) => {
       // 名单为空（启动首次就绪/全部禁用后重新启用）→ 补入排序第一位且启用的模块，
       // 保证落地面板的组件会挂载
-      if (prev.size === 0 && enabledModules.length) return new Set([enabledModules[0].id]);
+      if (prev.size === 0 && enabledModules.length) return new Set([preferred]);
       const next = new Set([...prev].filter((id) => ids.has(id)));
       return next.size === prev.size ? prev : next;
     });
     setActive((cur) =>
       cur !== "settings" && !ids.has(cur) ? (enabledModules[0]?.id ?? "clipboard") : cur,
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabledModules]);
 
   const toggleModule = async (id: string, enabled: boolean) => {
@@ -286,6 +311,11 @@ function App() {
 
   const changeMainFollowMouse = async (enabled: boolean) => {
     await setMainFollowMouse(enabled);
+    setConfig(await getConfig());
+  };
+
+  const changeCheckUpdateOnStart = async (enabled: boolean) => {
+    await setCheckUpdateOnStart(enabled);
     setConfig(await getConfig());
   };
 
@@ -419,6 +449,7 @@ function App() {
                 onThemeChange={changeTheme}
                 onMainHotkey={changeMainHotkey}
                 onMainFollowMouse={changeMainFollowMouse}
+                onCheckUpdateOnStart={changeCheckUpdateOnStart}
               />
             )}
 

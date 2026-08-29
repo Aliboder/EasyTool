@@ -32,6 +32,8 @@ import { HotkeyRecorder } from "@/components/hotkey-recorder";
 import { SettingRow } from "@/components/setting-row";
 import type { AppConfig, Manifest } from "@/lib/api";
 import { checkForUpdate } from "@/lib/api";
+import { applyAccent, applyUiScale, type AccentKey } from "@/lib/theme";
+import { toast } from "@/lib/toast";
 
 const GITHUB_ISSUES = "https://github.com/Aliboder/EasyTool/issues";
 
@@ -72,6 +74,7 @@ export function SettingsView({
   onThemeChange,
   onMainHotkey,
   onMainFollowMouse,
+  onCheckUpdateOnStart,
 }: {
   config: AppConfig;
   manifests: Manifest[];
@@ -80,6 +83,7 @@ export function SettingsView({
   onThemeChange: (theme: string) => void;
   onMainHotkey: (hotkey: string) => Promise<void>;
   onMainFollowMouse: (enabled: boolean) => Promise<void>;
+  onCheckUpdateOnStart: (enabled: boolean) => Promise<void>;
 }) {
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [version, setVersion] = useState("");
@@ -162,6 +166,52 @@ export function SettingsView({
       )
     : manifests;
 
+  // 外观：强调色 + 界面缩放（localStorage 持久化，启动时在 App 侧应用）
+  const [accent, setAccent] = useState<AccentKey>(() => {
+    const v = localStorage.getItem("easytool_accent") as AccentKey | null;
+    return v && ["emerald", "sky", "violet", "amber"].includes(v) ? v : "";
+  });
+  const [uiScale, setUiScale] = useState(() => {
+    const v = Number(localStorage.getItem("easytool_ui_scale"));
+    return [90, 100, 110, 120].includes(v) ? v : 100;
+  });
+  useEffect(() => {
+    applyAccent(accent);
+    localStorage.setItem("easytool_accent", accent);
+  }, [accent]);
+  useEffect(() => {
+    applyUiScale(uiScale);
+    localStorage.setItem("easytool_ui_scale", String(uiScale));
+  }, [uiScale]);
+
+  // 数据管理：各类历史一键清理
+  const clearData = async (kind: string) => {
+    const labels: Record<string, string> = {
+      clipboard: "剪贴板历史（保留固定条目）",
+      timetracker: "全部时长统计历史",
+      quota: "全部额度消费历史",
+      apps: "全部应用使用频率",
+    };
+    if (!window.confirm(`确定清空${labels[kind]}？此操作不可撤销。`)) return;
+    try {
+      if (kind === "clipboard") {
+        const n = await invoke<number>("clear_history");
+        toast(`已清空 ${n} 条剪贴板记录（固定条目保留）`);
+      } else if (kind === "timetracker") {
+        const n = await invoke<number>("timetracker_clear_history");
+        toast(`已清空 ${n} 条时长记录`);
+      } else if (kind === "quota") {
+        const n = await invoke<number>("quota_clear_history");
+        toast(`已清空 ${n} 条额度记录`);
+      } else {
+        const n = await invoke<number>("search_reset_apps");
+        toast(`已重置 ${n} 条应用频率`);
+      }
+    } catch (e) {
+      toast(String(e));
+    }
+  };
+
   return (
     <div className="mx-auto w-full max-w-xl space-y-6 p-6">
       <div>
@@ -223,7 +273,55 @@ export function SettingsView({
 
       <Card>
         <CardHeader>
-          <CardTitle>窗口与呼出</CardTitle>
+          <CardTitle>外观</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="主题" hint="界面配色方案">
+            <Select value={config.theme} onValueChange={onThemeChange}>
+              <SelectTrigger id="theme" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dark">深色</SelectItem>
+                <SelectItem value="light">浅色</SelectItem>
+                <SelectItem value="system">跟随系统</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+          <SettingRow title="强调色" hint="按钮、选中态与焦点色">
+            <Select value={accent} onValueChange={(v) => setAccent(v as AccentKey)}>
+              <SelectTrigger id="accent" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">默认</SelectItem>
+                <SelectItem value="emerald">翡翠绿</SelectItem>
+                <SelectItem value="sky">天空蓝</SelectItem>
+                <SelectItem value="violet">紫罗兰</SelectItem>
+                <SelectItem value="amber">琥珀橙</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+          <SettingRow title="界面缩放" hint="整体缩放界面（90% - 120%）">
+            <Select value={String(uiScale)} onValueChange={(v) => setUiScale(Number(v))}>
+              <SelectTrigger id="uiScale" className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[90, 100, 110, 120].map((s) => (
+                  <SelectItem key={s} value={String(s)}>
+                    {s}%
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>行为与窗口</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
           <SettingRow title="全局呼出热键" hint="按此热键呼出 / 隐藏主窗口">
@@ -244,14 +342,6 @@ export function SettingsView({
               onCheckedChange={(v) => onMainFollowMouse(v)}
             />
           </SettingRow>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>通用</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1">
           <SettingRow title="开机自启动" hint="登录 Windows 后自动启动 EasyTool">
             <Switch
               checked={autostart ?? false}
@@ -259,17 +349,60 @@ export function SettingsView({
               onCheckedChange={toggleAutostart}
             />
           </SettingRow>
-          <SettingRow title="主题" hint="界面配色方案">
-            <Select value={config.theme} onValueChange={onThemeChange}>
-              <SelectTrigger id="theme" className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="dark">深色</SelectItem>
-                <SelectItem value="light">浅色</SelectItem>
-                <SelectItem value="system">跟随系统</SelectItem>
-              </SelectContent>
-            </Select>
+          <SettingRow title="启动时检查更新" hint="启动时在后台静默检查新版本">
+            <Switch
+              checked={config.check_update_on_start !== false}
+              onCheckedChange={(v) => onCheckUpdateOnStart(v)}
+            />
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>数据管理</CardTitle>
+          <CardDescription>清空记录而不删除配置与账户，操作前会二次确认</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="剪贴板历史" hint="清空非固定条目，固定条目保留">
+            <button
+              onClick={() => clearData("clipboard")}
+              className="rounded border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
+            >
+              清空
+            </button>
+          </SettingRow>
+          <SettingRow title="时长统计" hint="删除全部事件与应用记录，保留分类规则">
+            <button
+              onClick={() => clearData("timetracker")}
+              className="rounded border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
+            >
+              清空
+            </button>
+          </SettingRow>
+          <SettingRow title="额度消费历史" hint="删除余额 / Go 用量历史，保留账户与密钥">
+            <button
+              onClick={() => clearData("quota")}
+              className="rounded border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
+            >
+              清空
+            </button>
+          </SettingRow>
+          <SettingRow title="应用使用频率" hint="重置应用中心的启动次数与最近启动">
+            <button
+              onClick={() => clearData("apps")}
+              className="rounded border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
+            >
+              重置
+            </button>
+          </SettingRow>
+          <SettingRow title="数据目录" hint="%APPDATA%\com.aliboder.easytool">
+            <button
+              onClick={() => invoke("open_data_dir").catch((e) => toast(String(e)))}
+              className="rounded border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              打开
+            </button>
           </SettingRow>
         </CardContent>
       </Card>

@@ -119,6 +119,15 @@ impl AppsDb {
         Ok(())
     }
 
+    /// 重置全部应用频率（数据管理用；快捷方式缓存保留）
+    pub fn reset_usage(&self) -> Result<u32, String> {
+        let n = self
+            .conn
+            .execute("DELETE FROM app_usage", [])
+            .map_err(|e| format!("重置失败: {e}"))?;
+        Ok(n as u32)
+    }
+
     /// 读取快捷方式解析缓存：.lnk 路径 → (解析目标, 文件修改时间 ms)
     pub fn load_shortcut_cache(
         &self,
