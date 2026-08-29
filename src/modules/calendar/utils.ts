@@ -56,23 +56,25 @@ export function monthGrid(year: number, month0: number): MonthCell[] {
   return cells;
 }
 
-/** 日键 → 展示文字（如 8/29）；跨年带年份 */
+/** 日键 → 展示文字（如 08/29）；跨年带年份（月日两位） */
 export function fmtKey(key: number): string {
   const y = Math.floor(key / 10000);
   const m = Math.floor((key % 10000) / 100);
   const d = key % 100;
   const now = new Date();
-  return now.getFullYear() === y ? `${m}/${d}` : `${y}/${m}/${d}`;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return now.getFullYear() === y ? `${p(m)}/${p(d)}` : `${y}/${p(m)}/${p(d)}`;
 }
 
-/** 日键 → 「M月D日 周X」（详情标题用） */
+/** 日键 → 「08月29日 周六」（月日两位；详情标题用） */
 export function fmtKeyLong(key: number): string {
   const y = Math.floor(key / 10000);
   const m = Math.floor((key % 10000) / 100);
   const d = key % 100;
   const weekday = new Date(y, m - 1, d).getDay();
   const names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  return `${m}月${d}日 ${names[weekday]}`;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(m)}月${p(d)}日 ${names[weekday]}`;
 }
 
 /** 毫秒 → 本地日期 yyyy-MM-dd（date input 用） */
@@ -231,8 +233,8 @@ export function weekStartKey(key: number): number {
   return start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate();
 }
 
-/** 周范围展示文字：days=7 整周、days=5 周一至周五（隐藏周末）。
- * 同一月 "8月24日–30日"；跨月 "8月31日–9月6日"；跨年两端带年份 */
+/** 周范围展示文字：days=7 整周、days=5 周一至周五（隐藏周末；月日两位）。
+ * 同一月 "08月24日–30日"；跨月 "08月31日–09月06日"；跨年两端带年份 */
 export function fmtWeekRange(key: number, days: number): string {
   const start = weekStartKey(key);
   const end = addDaysKey(start, days - 1);
@@ -242,14 +244,15 @@ export function fmtWeekRange(key: number, days: number): string {
   const em = Math.floor((end % 10000) / 100);
   const sd = start % 100;
   const ed = end % 100;
-  if (sy === ey && sm === em) return `${sm}月${sd}日–${ed}日`;
-  if (sy === ey) return `${sm}月${sd}日–${em}月${ed}日`;
-  return `${sy}年${sm}月${sd}日–${ey}年${em}月${ed}日`;
+  const p = (n: number) => String(n).padStart(2, "0");
+  if (sy === ey && sm === em) return `${p(sm)}月${p(sd)}日–${p(ed)}日`;
+  if (sy === ey) return `${p(sm)}月${p(sd)}日–${p(em)}月${p(ed)}日`;
+  return `${sy}年${p(sm)}月${p(sd)}日–${ey}年${p(em)}月${p(ed)}日`;
 }
 
-/** 月标题展示文字：2026年8月 */
+/** 月标题展示文字：2026年08月 */
 export function fmtMonth(y: number, m0: number): string {
-  return `${y}年${m0 + 1}月`;
+  return `${y}年${String(m0 + 1).padStart(2, "0")}月`;
 }
 
 /** RruleForm → 可读的重复规则摘要（如「每周一、三、五」「每月第 3 个周一」） */

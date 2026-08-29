@@ -609,7 +609,7 @@ export function CalendarPage() {
                         isToday ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground",
                       )}
                     >
-                      {cell.dayOfMonth}
+                      {String(cell.dayOfMonth).padStart(2, "0")}
                     </span>
                     {cell.inMonth && (
                       <span
