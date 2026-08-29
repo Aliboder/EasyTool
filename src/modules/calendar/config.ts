@@ -3,7 +3,7 @@ export interface CalendarConfig {
   reminderEnabled: boolean;
   eventRemindMinutes: number;
   todoOverdueRemind: boolean;
-  defaultView: "month" | "week" | "day";
+  defaultView: "timeline" | "month" | "week" | "day";
   weekShowWeekend: boolean;
 }
 
@@ -11,6 +11,6 @@ export const CALENDAR_DEFAULTS: CalendarConfig = {
   reminderEnabled: true,
   eventRemindMinutes: 10,
   todoOverdueRemind: true,
-  defaultView: "day",
+  defaultView: "timeline",
   weekShowWeekend: true,
 };

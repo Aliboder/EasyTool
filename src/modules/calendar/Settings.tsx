@@ -20,6 +20,7 @@ import { fmtKeyLong, todayKey } from "./utils";
 import type { CalendarConfig } from "./config";
 
 const VIEW_OPTIONS = [
+  { value: "timeline", label: "时间线" },
   { value: "day", label: "日视图" },
   { value: "week", label: "周视图" },
   { value: "month", label: "月视图" },

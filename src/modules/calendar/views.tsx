@@ -644,10 +644,8 @@ export function TimeLineView({
   loadedEnd,
   loading,
   hideEmpty,
-  hourHeight,
   nowFocus,
   onHideEmptyChange,
-  onZoomChange,
   onLoadEdge,
   onEventClick,
   onEventMenu,
@@ -659,10 +657,8 @@ export function TimeLineView({
   loadedEnd: number;
   loading: boolean;
   hideEmpty: boolean;
-  hourHeight: number;
   nowFocus: number;
   onHideEmptyChange: (v: boolean) => void;
-  onZoomChange: (h: number) => void;
   onLoadEdge: (dir: "up" | "down") => void;
   onEventClick: EventClick;
   onEventMenu: EventMenu;
@@ -670,6 +666,7 @@ export function TimeLineView({
 }) {
   const now = useNow();
   const today = localDayKey(now);
+  const hourHeight = 36; // 缩放固定「适中」
   const { days, totalHeight } = useMemo(
     () => buildTimeline(events, { startMs: loadedStart, endMs: loadedEnd, hourHeight, hideEmpty }),
     [events, loadedStart, loadedEnd, hourHeight, hideEmpty],
@@ -733,16 +730,6 @@ export function TimeLineView({
             />
             跳过空闲
           </label>
-          <select
-            value={hourHeight}
-            onChange={(e) => onZoomChange(Number(e.target.value))}
-            className="h-7 rounded border bg-transparent px-1 text-xs"
-          >
-            <option value={24}>紧凑</option>
-            <option value={36}>适中</option>
-            <option value={48}>标准</option>
-            <option value={72}>宽松</option>
-          </select>
         </div>
       </div>
       <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto">
@@ -753,10 +740,10 @@ export function TimeLineView({
             const axisH = d.height - TL_HEADER_H;
             return (
               <div key={d.dayKey} className="absolute inset-x-0" style={{ top: d.top, height: d.height }}>
-                {/* 日期分隔头（吸顶） */}
+                {/* 日期分隔头（非吸顶，随内容滚动，避免遮挡时间轴） */}
                 <div
                   className={cn(
-                    "sticky top-0 z-10 flex items-center gap-2 border-b px-3 py-1 text-[11px]",
+                    "absolute inset-x-0 top-0 z-[1] flex h-[30px] items-center gap-2 border-b px-3 text-[11px]",
                     weekend ? "bg-background/90 text-muted-foreground" : "bg-background/90",
                   )}
                 >

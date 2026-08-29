@@ -84,10 +84,10 @@ interface MenuState {
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 const TABS: { id: ViewKey; label: string }[] = [
+  { id: "timeline", label: "时间线" },
   { id: "day", label: "日" },
   { id: "week", label: "周" },
   { id: "month", label: "月" },
-  { id: "timeline", label: "时间线" },
   { id: "todo", label: "待办" },
 ];
 
@@ -138,7 +138,6 @@ export function CalendarPage() {
   const TL_CHUNK = 30 * 86_400_000;
   const [tl, setTl] = useState<{ start: number; end: number; events: EventDto[]; loading: boolean } | null>(null);
   const [tlHideEmpty, setTlHideEmpty] = useState(true);
-  const [tlZoom, setTlZoom] = useState(48);
   const tlBound = useRef({ back: 0, fwd: 0 });
 
   const dedupeTl = (list: EventDto[]) => {
@@ -534,7 +533,11 @@ export function CalendarPage() {
         meta={overdueCount > 0 ? `${overdueCount} 条待办已逾期` : "本地日历 · 数据存于本机"}
         actions={
           <>
-            {tab !== "todo" && (
+            {tab === "timeline" ? (
+              <HeaderButton title="回到今天" onClick={goToday}>
+                <span className="whitespace-nowrap text-xs font-medium">时间线</span>
+              </HeaderButton>
+            ) : tab !== "todo" ? (
               <>
                 <HeaderButton title={tab === "month" ? "上一月" : tab === "week" ? "上一周" : "上一天"} onClick={() => moveStep(-1)}>
                   <ChevronLeft className="size-4" />
@@ -552,7 +555,7 @@ export function CalendarPage() {
                   <ChevronRight className="size-4" />
                 </HeaderButton>
               </>
-            )}
+            ) : null}
             <HeaderButton title="日程设置" active={showSettings} onClick={() => setShowSettings((v) => !v)}>
               <Settings2 className="size-4" />
             </HeaderButton>
@@ -696,10 +699,8 @@ export function CalendarPage() {
             loadedEnd={tl?.end ?? 0}
             loading={tl?.loading ?? false}
             hideEmpty={tlHideEmpty}
-            hourHeight={tlZoom}
             nowFocus={nowFocus}
             onHideEmptyChange={setTlHideEmpty}
-            onZoomChange={setTlZoom}
             onLoadEdge={extendTl}
             onEventClick={onEventTap}
             onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
