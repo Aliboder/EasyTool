@@ -2,7 +2,7 @@
 // 日程账号：订阅源（自动同步、只读）与导入的日历文件（一次导入、可编辑）统一在一个板块管理
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import { fmtKeyLong } from "./utils";
+import { fmtKeyLong, todayKey } from "./utils";
 import type { CalendarConfig } from "./config";
 
 const VIEW_OPTIONS = [
@@ -323,6 +323,23 @@ export function CalendarSettings({
     }
   };
 
+  /// 在设置里直接导出（ICS / JSON 备份，与页面顶部原「导出」同流程）
+  const exportFile = async (kind: "ics" | "json") => {
+    const defaultPath = `EasyTool日程-${todayKey()}.${kind}`;
+    const p = await save({
+      title: "导出日程",
+      defaultPath,
+      filters: [{ name: kind === "ics" ? "日历文件" : "JSON 备份", extensions: [kind] }],
+    });
+    if (!p) return;
+    try {
+      await invoke(kind === "ics" ? "calendar_export_ics" : "calendar_export_json", { path: p });
+      toast(`已导出：${p}`);
+    } catch (e) {
+      toast(`导出失败：${e}`);
+    }
+  };
+
   /// 二级确认：危险（批量/全量、不可恢复）操作必须再确认一次
   const confirmTwice = (scope: string): boolean =>
     window.confirm(scope) && window.confirm("最后确认：此操作不可恢复，真的要执行吗？");
@@ -623,6 +640,14 @@ export function CalendarSettings({
             onClick={clearAll}
           >
             清空全部数据
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2 border-t pt-2">
+          <Button variant="outline" size="sm" onClick={() => exportFile("ics")}>
+            导出 ICS（可导入手机日历）
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => exportFile("json")}>
+            导出 JSON 备份（可完整恢复）
           </Button>
         </div>
 

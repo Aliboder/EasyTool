@@ -4,7 +4,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -21,7 +20,7 @@ import {
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
-import { ChevronLeft, ChevronRight, Download, Pencil, Settings2, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Settings2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
@@ -102,7 +101,6 @@ export function CalendarPage() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [exportMenu, setExportMenu] = useState<{ x: number; y: number } | null>(null);
   // 订阅 id → 颜色（只读事件着色）
   const [subColors, setSubColors] = useState<Record<number, string>>({});
 
@@ -381,59 +379,6 @@ export function CalendarPage() {
     openEventDrawer(e, localDayKey(e.start_ms));
   };
 
-  const importFile = async () => {
-    const sel = await open({
-      title: "导入日程（.ics 日历 / .json 备份）",
-      filters: [{ name: "日程文件", extensions: ["ics", "json"] }],
-      multiple: false,
-    });
-    if (!sel) return;
-    const path = Array.isArray(sel) ? sel[0] : sel;
-    const isJson = path.toLowerCase().endsWith(".json");
-    try {
-      if (isJson) {
-        const r = await invoke<{ events: number; overrides: number; todos: number; skipped: number }>(
-          "calendar_import_json",
-          { path },
-        );
-        toast(`备份导入完成：事件 +${r.events}、待办 +${r.todos}${r.skipped > 0 ? `，跳过 ${r.skipped} 条重复` : ""}`);
-      } else {
-        const r = await invoke<{
-          events: number;
-          instances: number;
-          repeated: number;
-          skipped: number;
-          unsupported: number;
-        }>("calendar_import_ics", { path });
-        const parts = [`新增 ${r.instances} 条`];
-        if (r.repeated > 0) parts.push(`含 ${r.repeated} 门重复课程（已展开成每次）`);
-        if (r.unsupported > 0) parts.push(`${r.unsupported} 条规则暂不支持，仅保留首次`);
-        if (r.skipped > 0) parts.push(`跳过 ${r.skipped} 条`);
-        toast(`导入完成：${parts.join("，")}`);
-      }
-      loadRange();
-    } catch (e) {
-      toast(`导入失败：${e}`);
-    }
-  };
-
-  const exportFile = async (kind: "ics" | "json") => {
-    setExportMenu(null);
-    const defaultPath = `EasyTool日程-${todayKey()}.${kind}`;
-    const p = await save({
-      title: "导出日程",
-      defaultPath,
-      filters: [{ name: kind === "ics" ? "日历文件" : "JSON 备份", extensions: [kind] }],
-    });
-    if (!p) return;
-    try {
-      await invoke(kind === "ics" ? "calendar_export_ics" : "calendar_export_json", { path: p });
-      toast(`已导出：${p}`);
-    } catch (e) {
-      toast(`导出失败：${e}`);
-    }
-  };
-
   const cells = monthGrid(ym.y, ym.m);
 
   return (
@@ -456,17 +401,6 @@ export function CalendarPage() {
                 </HeaderButton>
               </>
             )}
-            <HeaderButton title="导入 ICS/JSON" onClick={importFile}>
-              <Upload className="size-4" />
-              <span className="text-xs">导入</span>
-            </HeaderButton>
-            <HeaderButton
-              title="导出"
-              onClick={() => setExportMenu({ x: Math.max(24, window.innerWidth - 260), y: 64 })}
-            >
-              <Download className="size-4" />
-              <span className="text-xs">导出</span>
-            </HeaderButton>
             <HeaderButton title="日程设置" active={showSettings} onClick={() => setShowSettings((v) => !v)}>
               <Settings2 className="size-4" />
             </HeaderButton>
@@ -659,17 +593,6 @@ export function CalendarPage() {
             />
           </>
         ) : null}
-      </ContextMenu>
-
-      {/* 导出菜单 */}
-      <ContextMenu
-        visible={exportMenu !== null}
-        x={exportMenu?.x ?? 0}
-        y={exportMenu?.y ?? 0}
-        onClose={() => setExportMenu(null)}
-      >
-        <ContextMenuItem icon={<Download className="size-3.5" />} label="导出 ICS（可导入手机日历）" onClick={() => exportFile("ics")} />
-        <ContextMenuItem icon={<Download className="size-3.5" />} label="导出 JSON 备份（可完整恢复）" onClick={() => exportFile("json")} />
       </ContextMenu>
 
       {/* 设置抽屉 */}
