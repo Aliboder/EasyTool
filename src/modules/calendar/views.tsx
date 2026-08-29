@@ -86,13 +86,16 @@ function EventBlock({
   const tint = eventTint(event, subColors);
   return (
     <div
-      className="absolute overflow-hidden rounded-lg border border-border/60 border-l-[3px] border-l-primary bg-card px-1.5 py-1 shadow-sm transition-all hover:z-20 hover:border-foreground/15 hover:shadow-md"
+      className={cn(
+        "absolute overflow-hidden rounded-lg border border-black/10 bg-primary px-1.5 py-1 text-primary-foreground shadow-sm transition-all hover:z-20 hover:shadow-md",
+        !tint && "hover:bg-primary/95",
+      )}
       style={{
         top: top + 1,
         height: height - 2,
         left: `${left}%`,
         width: `${width}%`,
-        ...(tint ? { borderLeftColor: tint } : {}),
+        ...(tint ? { backgroundColor: tint, color: "#ffffff" } : {}),
       }}
       title={`${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)} ${event.title}${event.subscription_id != null ? " · 订阅" : ""}${event.location ? " · " + event.location : ""}`}
       onClick={(e) => {
@@ -109,7 +112,7 @@ function EventBlock({
       {/* 标题（重点） */}
       <div
         className={cn(
-          "truncate leading-tight text-foreground",
+          "truncate leading-tight",
           compact ? "text-[11px] font-semibold" : "text-xs font-semibold",
         )}
       >
@@ -117,15 +120,12 @@ function EventBlock({
       </div>
       {/* 时间 + 地点 一行小字 */}
       {!compact && (
-        <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
-          <span
-            className="size-1 flex-none rounded-full bg-muted-foreground/40"
-            style={tint ? { backgroundColor: tint } : undefined}
-          />
+        <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/85">
+          <span className="size-1 flex-none rounded-full bg-white/80" />
           <span className="truncate tabular-nums">{fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}</span>
           {event.location && (
             <>
-              <span className="flex-none text-border">·</span>
+              <span className="flex-none text-white/50">·</span>
               <span className="truncate opacity-80">{event.location}</span>
             </>
           )}
@@ -133,7 +133,7 @@ function EventBlock({
       )}
       {/* 很矮的卡片：底部补一行开始时间 */}
       {height > 8 && height < 30 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center text-[9px] tabular-nums text-muted-foreground/70">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center text-[9px] tabular-nums text-white/80">
           {fmtHM(event.start_ms)}
         </div>
       )}
@@ -247,8 +247,11 @@ export function WeekView({
             return (
               <div
                 key={e.id}
-                className="flex min-w-0 items-center gap-1 truncate rounded-full border border-border/60 bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary"
-                style={tint ? { backgroundColor: `${tint}1a`, color: tint } : undefined}
+                className={cn(
+                  "flex min-w-0 items-center gap-1 truncate rounded-full border border-black/10 bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm",
+                  !tint && "hover:bg-primary/95",
+                )}
+                style={tint ? { backgroundColor: tint, color: "#ffffff" } : undefined}
                 title={e.title}
                 onClick={() => onEventClick(e)}
                 onContextMenu={(ev) => {
@@ -256,7 +259,7 @@ export function WeekView({
                   onEventMenu(e, ev.clientX, ev.clientY);
                 }}
               >
-                <span className="size-1 flex-none rounded-full bg-current opacity-70" />
+                <span className="size-1 flex-none rounded-full bg-white/80" />
                 <span className="truncate">{e.title}</span>
               </div>
             );
@@ -393,17 +396,20 @@ export function DayView({
               return (
                 <div
                   key={e.id}
-                  className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-primary/15 px-2 py-1 text-xs font-medium text-primary"
-                  style={tint ? { backgroundColor: `${tint}1a`, color: tint } : undefined}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg border border-black/10 bg-primary px-2 py-1 text-xs font-medium text-primary-foreground shadow-sm",
+                    !tint && "hover:bg-primary/95",
+                  )}
+                  style={tint ? { backgroundColor: tint, color: "#ffffff" } : undefined}
                   onClick={() => onEventClick(e)}
                   onContextMenu={(ev) => {
                     ev.preventDefault();
                     onEventMenu(e, ev.clientX, ev.clientY);
                   }}
                 >
-                  <span className="size-1.5 flex-none rounded-full bg-current opacity-70" />
+                  <span className="size-1.5 flex-none rounded-full bg-white/80" />
                   <span className="truncate">{e.title}</span>
-                  {e.location && <span className="ml-auto truncate text-[10px] opacity-70">📍 {e.location}</span>}
+                  {e.location && <span className="ml-auto truncate text-[10px] opacity-80">📍 {e.location}</span>}
                 </div>
               );
             })}
