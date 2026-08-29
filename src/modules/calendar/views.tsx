@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarPlus, ChevronDown, ChevronRight, ListTodo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs } from "./utils";
+import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs, courseColor } from "./utils";
 import type { EventDto, TodoDto } from "./types";
 
 const HOUR_HEIGHT = 46;
@@ -38,10 +38,10 @@ function timeFromPointerY(el: HTMLElement, clientY: number, startHour: number, e
   return Math.max(startHour, Math.min(endHour - 0.5, Math.round(hourPx * 2) / 2));
 }
 
-/** 事件的有效颜色：订阅色 > 事件自定义色 > 默认（透传 undefined 走默认主题色） */
-function eventTint(e: EventDto, subColors: SubColors): string | undefined {
+/** 事件的有效颜色：订阅色 > 用户自定义色 > 按课程名自动配色（始终着色） */
+function eventTint(e: EventDto, subColors: SubColors): string {
   if (e.subscription_id != null) return subColors[e.subscription_id];
-  return e.color ?? undefined;
+  return e.color ?? courseColor(e.title);
 }
 
 /** 根据可见事件自动给出紧凑的纵向窗口（含 1 小时余量，至少 8 小时；无事件回退早 8 晚 21） */
@@ -120,7 +120,12 @@ function EventBlock({
         height: height - 2,
         left: `${left}%`,
         width: `${width}%`,
-        ...(tint ? { backgroundColor: tint, color: "#ffffff" } : {}),
+        ...(tint
+          ? {
+              background: `linear-gradient(180deg, ${tint} 0%, color-mix(in srgb, ${tint} 85%, #000) 100%)`,
+              color: "#ffffff",
+            }
+          : {}),
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)",
       }}
       title={`${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)} ${event.title}${event.subscription_id != null ? " · 订阅" : ""}${event.location ? " · " + event.location : ""}`}
@@ -144,29 +149,24 @@ function EventBlock({
       >
         {event.title}
       </div>
-      {/* 时间 + 地点（卡片够高才显示） */}
-      {showMeta && (
-        <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/90">
-          <span className="size-1 flex-none rounded-full bg-white/90" />
-          <span className="truncate font-medium tabular-nums">{fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}</span>
-          {event.location && (
-            <>
-              <span className="flex-none text-white/50">·</span>
-              <span className="truncate opacity-90">{event.location}</span>
-            </>
-          )}
+      {/* 地点（卡片够高才显示） */}
+      {showMeta && event.location && (
+        <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/85">
+          <span className="size-1 flex-none rounded-full bg-white/80" />
+          <span className="truncate opacity-90">{event.location}</span>
         </div>
       )}
       {/* 高卡片：备注填充空档 */}
       {showNotes && (
-        <div
-          className={cn(
-            "mt-1 text-[10px] leading-snug text-white/75",
-            notesLines === 3 ? "line-clamp-3" : "line-clamp-2",
-          )}
-        >
+        <div className={cn("mt-1 text-[10px] leading-snug text-white/75", notesLines === 3 ? "line-clamp-3" : "line-clamp-2")}>
           {event.notes}
         </div>
+      )}
+      {/* 右下角：时间范围角标（卡片够高才显示，起定位作用） */}
+      {!compact && (
+        <span className="absolute bottom-1 right-1 rounded bg-black/25 px-1 py-px text-[9px] font-medium leading-none tabular-nums text-white/90">
+          {fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}
+        </span>
       )}
     </div>
   );

@@ -16,6 +16,8 @@ import {
   fmtWeekRange,
   fmtMonth,
   fmtRruleSummary,
+  COURSE_COLORS,
+  courseColor,
   type TimedEventLike,
 } from "./utils";
 
@@ -135,6 +137,19 @@ describe("calendar utils", () => {
     expect(fmtRruleSummary({ freq: "monthlyNth", bydays: [], nth: 3, nthDay: 0, untilKey: null })).toBe(
       "每月第 3 个周一",
     );
+  });
+
+  it("courseColor 稳定且在调色盘内", () => {
+    // 同一标题永远同色（确定性）
+    expect(courseColor("大学物理实验")).toBe(courseColor("大学物理实验"));
+    // 颜色一定在调色盘内
+    expect(COURSE_COLORS).toContain(courseColor("高数"));
+    // 不同标题（大概率）不同色
+    const a = courseColor("大学物理实验");
+    const b = courseColor("大学英语");
+    expect(a).not.toBe(b);
+    // 空标题也有稳定色
+    expect(courseColor("")).toBe(COURSE_COLORS[0]);
   });
 
   it("parseRrule / buildRrule 往返", () => {

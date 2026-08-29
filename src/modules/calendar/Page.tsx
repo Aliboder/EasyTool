@@ -39,6 +39,8 @@ import {
   fmtKeyLong,
   fmtMonth,
   fmtRruleSummary,
+  COURSE_COLORS,
+  courseColor,
   fmtWeekRange,
   fromDateTimeInput,
   fromDateInput,
@@ -522,7 +524,7 @@ export function CalendarPage() {
                       {cell.dayOfMonth}
                     </span>
                     {evs.slice(0, 3).map((e) => {
-                      const tint = e.subscription_id != null ? subColors[e.subscription_id] : e.color;
+                      const tint = e.subscription_id != null ? subColors[e.subscription_id] : (e.color ?? courseColor(e.title));
                       return (
                         <span
                           key={e.id}
@@ -771,7 +773,8 @@ const RECUR_OPTIONS = [
 const REMIND_CHOICES = [0, 5, 10, 20, 30, 60, 120, 180];
 
 /// 本地事件可选颜色（hex；null=默认主题色）
-const EVENT_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#64748b"];
+/// 课程自动配色盘（按名称稳定配色，见 utils.courseColor）
+const EVENT_COLORS = COURSE_COLORS;
 
 /// 信息摘要小标签（浮窗顶部展示事件的关键信息）
 function InfoChip({ icon, text }: { icon: ReactNode; text: string }) {
@@ -1160,7 +1163,7 @@ function EventForm({
                   : "border-border text-muted-foreground hover:bg-accent",
               )}
             >
-              默认
+              自动
             </button>
             {EVENT_COLORS.map((c) => (
               <button

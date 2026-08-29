@@ -269,6 +269,32 @@ export function fmtRruleSummary(f: RruleForm): string {
   }
 }
 
+/// 课程自动配色盘（饱和度适中、明度统一，白字清晰）
+export const COURSE_COLORS = [
+  "#4f8ef7", // 蓝
+  "#22a06b", // 绿
+  "#f5a524", // 琥珀
+  "#ef6461", // 珊瑚红
+  "#9b6ef3", // 紫
+  "#0ea5b7", // 青
+  "#e05fa8", // 玫红
+  "#5b7bd5", // 藏蓝
+  "#ea580c", // 橙
+  "#64748b", // 灰蓝
+];
+
+/** 简单字符串 hash（稳定、确定性；供课程配色用） */
+export function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/** 按标题自动分配稳定的课程色（同一门课永远同色；可被用户自定义覆盖） */
+export function courseColor(title: string): string {
+  return COURSE_COLORS[hashStr(title) % COURSE_COLORS.length];
+}
+
 /** 日键加减 N 天（正确处理跨月/跨年，如 8月31 +1 → 9月1） */
 export function addDaysKey(key: number, n: number): number {
   const y = Math.floor(key / 10000);
