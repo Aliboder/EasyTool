@@ -112,7 +112,7 @@ export function CalendarSettings({
   const deleteSelected = async () => {
     const ids = [...selected];
     if (ids.length === 0) return;
-    if (!window.confirm(`删除选中的 ${ids.length} 条事件？`)) return;
+    if (!confirmTwice(`删除选中的 ${ids.length} 条事件？`)) return;
     try {
       const n = await invoke<number>("calendar_delete_events", { ids });
       toast(`已删除 ${n} 条`);
@@ -132,7 +132,7 @@ export function CalendarSettings({
       return;
     }
     const key = y * 10000 + m * 100 + d;
-    if (!window.confirm(`将删除 ${count} 条「${fmtKeyLong(key)}」前的单次事件（重复规则保留，可单独删），不可恢复。`)) return;
+    if (!confirmTwice(`将删除 ${count} 条「${fmtKeyLong(key)}」前的单次事件（重复规则保留，可单独删）。`)) return;
     try {
       const n = await invoke<number>("calendar_purge_before", { beforeMs });
       toast(`已清理 ${n} 条旧事件`);
@@ -147,7 +147,7 @@ export function CalendarSettings({
 
   const clearTodos = async (onlyDone: boolean) => {
     const label = onlyDone ? "已完成" : "全部";
-    if (!window.confirm(`清空${label}待办？`)) return;
+    if (!confirmTwice(`清空${label}待办？`)) return;
     try {
       const n = await invoke<number>("calendar_clear_todos", { onlyDone });
       toast(`已清空 ${n} 条待办`);
@@ -158,8 +158,7 @@ export function CalendarSettings({
   };
 
   const clearAll = async () => {
-    if (!window.confirm("清空全部数据（事件/待办/导入文件）？此操作不可恢复！")) return;
-    if (!window.confirm("最后确认：真的要全部清空吗？")) return;
+    if (!confirmTwice("清空全部数据（事件/待办/导入文件）？")) return;
     try {
       await invoke("calendar_clear_all");
       toast("已清空全部数据");
@@ -169,8 +168,12 @@ export function CalendarSettings({
     }
   };
 
+  /// 二级确认：危险（批量/全量、不可恢复）操作必须再确认一次
+  const confirmTwice = (scope: string): boolean =>
+    window.confirm(scope) && window.confirm("最后确认：此操作不可恢复，真的要执行吗？");
+
   const removeImport = async (it: IcsImportInfo) => {
-    if (!window.confirm(`删除「${it.name}」？它导入的 ${it.count} 条事件将一并清除，其它数据不受影响。`)) return;
+    if (!confirmTwice(`删除「${it.name}」？它导入的 ${it.count} 条事件将一并清除，其它数据不受影响。`)) return;
     try {
       await invoke("calendar_delete_ics_import", { id: it.id });
       toast("已删除该日历文件及其数据");

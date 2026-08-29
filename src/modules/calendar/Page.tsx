@@ -302,6 +302,27 @@ export function CalendarPage() {
     setMenu(null);
   };
 
+  /// 删除重复事件的规则及全部次数（危险操作，二级确认）
+  const deleteRecurringAll = async (e: EventDto) => {
+    if (!window.confirm(`删除「${e.title}」的规则及全部次数？`)) {
+      setMenu(null);
+      return;
+    }
+    if (!window.confirm("最后确认：该重复事件的所有次数将全部删除，不可恢复。")) {
+      setMenu(null);
+      return;
+    }
+    try {
+      await invoke("calendar_delete_event", { id: e.id });
+      toast("已删除全部");
+      loadRange();
+    } catch (err) {
+      toast(`删除失败：${err}`);
+    } finally {
+      setMenu(null);
+    }
+  };
+
   const deleteInstanceOnly = async (e: EventDto) => {
     if (e.instance_date == null) return;
     if (!window.confirm(`只删除这一天（${e.instance_date % 100} 日）的这一次？其它次不受影响。`)) return;
@@ -557,7 +578,7 @@ export function CalendarPage() {
                   icon={<Trash2 className="size-3.5" />}
                   label="删除全部（含规则）"
                   className="text-destructive hover:bg-destructive/15 hover:text-destructive"
-                  onClick={removeItem}
+                  onClick={() => deleteRecurringAll(menu.event!)}
                 />
               </>
             ) : (
