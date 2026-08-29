@@ -137,22 +137,25 @@ function BalanceBody({ account, threshold, critical, balanceMax }: {
         : 0;
 
   return (
-    <div className="flex h-full flex-col gap-2">
+    <div className="flex h-full flex-col gap-1">
       {/* 状态条带 */}
-      <div className={cn("h-1 w-full rounded-full", stripCls)} />
-      {/* 余额主数字 + 峰谷徽章 */}
-      <div className="flex items-end justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-[11px] text-muted-foreground">余额</div>
-          <div className={cn("mt-0.5 truncate text-2xl font-bold tracking-tight tabular-nums", numCls)}>
+      <div className={cn("h-[3px] w-full rounded-full", stripCls)} />
+      {/* 余额（与峰谷徽章同一行） */}
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="text-[11px] text-muted-foreground">余额</span>
+          <span className={cn("truncate text-xl font-bold tracking-tight tabular-nums", numCls)}>
             {account.balance != null ? fmtMoney(account.balance) : "—"}
-          </div>
+          </span>
+          {!account.available && account.balance != null && (
+            <span className="text-[10px] text-amber-500">不可用</span>
+          )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {account.kind === "deepseek" && <TierBadge />}
           {account.error && (
             <span
-              className="max-w-[140px] truncate text-[10px] text-orange-600"
+              className="max-w-[120px] truncate text-[10px] text-orange-600"
               title={account.error}
             >
               {account.error}
@@ -160,47 +163,36 @@ function BalanceBody({ account, threshold, critical, balanceMax }: {
           )}
         </div>
       </div>
-      {/* 三段进度条：蓝=余额，橙=今日消费，灰=已用 */}
+      {/* 三段进度条（紧凑，无色名行；悬停看比例） */}
       {account.balance != null && baseline > 0 && (
         <SegmentBar
+          compact
           balance={account.balance}
           today={stats?.today ?? 0}
           used={Math.max(0, baseline - account.balance)}
           max={baseline}
-          className="-mt-1"
         />
       )}
-      {/* 赠送/充值/耗尽预估 */}
+      {/* 赠送/充值/耗尽预估/日均 */}
       <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
         {account.granted > 0 && <span>赠送 {fmtMoney(account.granted)}</span>}
         {account.topped_up > 0 && <span>充值 {fmtMoney(account.topped_up)}</span>}
         {days != null && <span>约 {days} 天耗尽</span>}
-        {!account.available && account.balance != null && (
-          <span className="text-amber-500">账户不可用</span>
-        )}
+        {stats && stats.avg_7d > 0 && <span>日均 {fmtMoney(stats.avg_7d)}</span>}
       </div>
       {/* 近 7 天消费（贴底，撑满时与 Go 卡同高） */}
-      <div className="mt-auto pt-1">
-        <div className="mb-0.5 flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>近 7 天消费</span>
-          <span>
-            今日{" "}
-            <b className="font-medium text-foreground">{fmtMoney(stats?.today ?? 0)}</b>
-            {stats && stats.avg_7d > 0 && (
-              <>
-                {" "}
-                · 日均 {fmtMoney(stats.avg_7d)}
-              </>
-            )}
-          </span>
-        </div>
+      <div className="mt-auto flex items-center gap-2 pt-0.5">
+        <span className="shrink-0 text-[10px] text-muted-foreground">近7天</span>
         {stats && stats.daily.length > 0 ? (
-          <DailyBars data={stats.daily} days={7} className="h-8" />
+          <DailyBars data={stats.daily} days={7} className="h-6 flex-1" />
         ) : (
-          <div className="flex h-8 items-center justify-center text-xs text-muted-foreground">
+          <div className="flex h-6 flex-1 items-center justify-center text-xs text-muted-foreground">
             暂无历史
           </div>
         )}
+        <span className="shrink-0 text-[10px] text-muted-foreground">
+          今日 <b className="font-medium text-foreground">{fmtMoney(stats?.today ?? 0)}</b>
+        </span>
       </div>
     </div>
   );
@@ -306,7 +298,9 @@ export function AccountCard({
   const meta = getKindMeta(account.kind);
   const Icon = meta.icon;
   return (
-    <Card className="h-full">
+    // min-h-[12rem]：以 Go 卡（环形布局）为基准的统一高度（随界面缩放等比变化），
+    // 所有厂商卡片——无论内容多寡——都至少到达该高度，网格各行因此完全齐平
+    <Card className="h-full min-h-[12rem]">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Icon className="size-4 shrink-0 text-muted-foreground" />

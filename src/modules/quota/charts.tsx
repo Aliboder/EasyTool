@@ -195,19 +195,22 @@ function dayStart(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-/// 余额三段进度条（蓝=余额 / 灰=已用，其中今日消费部分染橙；基准由 balanceMax 或 充值+赠送 决定）
+/// 余额三段进度条（蓝=余额 / 灰=已用，其中今日消费部分染橙；基准由 balanceMax 或 充值+赠送 决定）。
+/// compact 模式下隐藏百分比文字行（卡片内紧凑布局用，悬停仍可看比例）
 export function SegmentBar({
   balance,
   today,
   used,
   max,
   className,
+  compact,
 }: {
   balance: number;
   today: number;
   used: number;
   max: number;
   className?: string;
+  compact?: boolean;
 }) {
   if (max <= 0) return null;
   const bPct = Math.max(0, Math.min(100, (balance / max) * 100));
@@ -230,11 +233,13 @@ export function SegmentBar({
           />
         )}
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
-        <span>余额 {Math.round(bPct)}%</span>
-        <span>今日 {Math.round(tPct)}%</span>
-        <span>已用 {Math.round(uPct)}%</span>
-      </div>
+      {!compact && (
+        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+          <span>余额 {Math.round(bPct)}%</span>
+          <span>今日 {Math.round(tPct)}%</span>
+          <span>已用 {Math.round(uPct)}%</span>
+        </div>
+      )}
     </div>
   );
 }
