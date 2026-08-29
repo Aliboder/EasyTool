@@ -15,6 +15,7 @@ dist-ssr
 # CodeGraph 索引与构建产物
 .codegraph/
 src-tauri/target/
+src-tauri/target-clippy/
 
 # Editor directories and files
 .vscode/*

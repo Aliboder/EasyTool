@@ -106,7 +106,7 @@ pub fn calendar_get_range(
             let start_dt = super::expand::ts_to_local(e.start_ms);
             let dur = (e.end_ms - e.start_ms).max(0);
             let ovs = db.overrides_for(e.id)?;
-            for inst in super::expand::expand(start_dt, rule) {
+            for inst in super::expand::expand_in(start_dt, rule, start_ms, end_ms) {
                 let day_key = super::expand::local_day_key(inst);
                 let (title, location, notes, all_day, i_start, i_end) =
                     if let Some(ov) = ovs.iter().find(|o| o.instance_date == day_key) {
@@ -606,22 +606,29 @@ pub fn calendar_list_subscriptions(
         .collect())
 }
 
-/// 立即刷新某个订阅（后台线程抓取，不阻塞界面）
+/// 立即刷新某个订阅（后台线程抓取：先取 url，抓取完成后再加锁写回，避免网络阻塞 UI）
 #[tauri::command]
 pub async fn calendar_refresh_subscription(app: tauri::AppHandle, id: i64) -> Result<i64, String> {
     tauri::async_runtime::spawn_blocking(move || {
         use tauri::Manager;
-        let db_guard = app.state::<Mutex<CalendarDb>>();
-        let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let url = db
-            .list_subscriptions()?
-            .into_iter()
-            .find(|s| s.0 == id)
-            .map(|s| s.2)
-            .ok_or("订阅不存在")?;
+        let url = {
+            let db_guard = app.state::<Mutex<CalendarDb>>();
+            let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            db.list_subscriptions()?
+                .into_iter()
+                .find(|s| s.0 == id)
+                .map(|s| s.2)
+                .ok_or("订阅不存在")?
+        };
+        // 网络抓取不持锁（最长 20s）
         let parsed = super::ics::fetch_feed(&url)?;
-        db.replace_feed(id, &parsed.items)?;
-        Ok(parsed.items.len() as i64)
+        let count = parsed.items.len();
+        {
+            let db_guard = app.state::<Mutex<CalendarDb>>();
+            let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            db.replace_feed(id, &parsed.items)?;
+        }
+        Ok(count as i64)
     })
     .await
     .map_err(|e| format!("任务执行失败: {e}"))?

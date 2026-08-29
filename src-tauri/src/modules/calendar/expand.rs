@@ -168,10 +168,69 @@ pub fn expand(start: NaiveDateTime, rule: &str) -> Vec<NaiveDateTime> {
     }
 }
 
+/// 按查询窗口展开实例（避免系列起点超 500 场后长期事件消失；只取窗口内）
+pub fn expand_in(
+    start: NaiveDateTime,
+    rule: &str,
+    win_start_ms: i64,
+    win_end_ms: i64,
+) -> Vec<NaiveDateTime> {
+    let Some(rr) = parse_rule(rule) else {
+        return vec![start];
+    };
+    let mut builder = RRule::new(match rr.freq {
+        Freq::Daily => Frequency::Daily,
+        Freq::Weekly => Frequency::Weekly,
+        Freq::Monthly => Frequency::Monthly,
+    })
+    .interval(rr.interval as u16);
+    if !rr.byday.is_empty() {
+        builder = builder.by_weekday(rr.byday.clone());
+    }
+    if let Some(u) = rr.until_utc {
+        builder = builder.until(Tz::UTC.from_utc_datetime(&u));
+    }
+    if let Some(c) = rr.count {
+        builder = builder.count(c);
+    }
+    let Ok(set) = builder.build(start_tz(start)) else {
+        return vec![start];
+    };
+    let after = ms_to_utc(win_start_ms);
+    let before = ms_to_utc(win_end_ms);
+    // 只取窗口内实例：after/before 设界后 .all(n) 返回窗口内结果
+    let mut out: Vec<NaiveDateTime> = set
+        .after(after.with_timezone(&Tz::UTC))
+        .before(before.with_timezone(&Tz::UTC))
+        .all(MAX_OCCURRENCES)
+        .dates
+        .into_iter()
+        .map(from_utc)
+        .collect();
+    // 设计约定：每月同日遇不足月钳制到月末（crate 按 RFC 跳过），仅对"每月同日"生效
+    if rr.freq == Freq::Monthly && rr.byday.is_empty() {
+        out = clamp_monthly_same_day(start, out);
+    }
+    if out.is_empty() {
+        vec![start]
+    } else {
+        out
+    }
+}
+
 /// 本地墙钟 → UTC
 fn to_utc(naive: NaiveDateTime) -> chrono::DateTime<Utc> {
     Local
         .from_local_datetime(&naive)
+        .earliest()
+        .unwrap_or_else(|| Local.timestamp_opt(0, 0).earliest().unwrap())
+        .with_timezone(&Utc)
+}
+
+/// 毫秒 → UTC DateTime（窗口展开用）
+fn ms_to_utc(ms: i64) -> DateTime<Utc> {
+    Local
+        .timestamp_millis_opt(ms)
         .earliest()
         .unwrap_or_else(|| Local.timestamp_opt(0, 0).earliest().unwrap())
         .with_timezone(&Utc)
@@ -296,6 +355,19 @@ mod tests {
         let bi = expand(naive("2026-09-01 08:00"), "FREQ=WEEKLY;INTERVAL=2;UNTIL=20261015T160000Z");
         assert!(bi.len() >= 2);
         assert_eq!(bi[1] - bi[0], chrono::Duration::days(14));
+    }
+
+    #[test]
+    fn expand_in_window_avoids_500_truncation() {
+        // 每天重复、无 UNTIL，起点约 2 年前：若按 series 起点取前 500 场，当前窗口会空。
+        let start = naive("2024-01-01 09:00");
+        let rule = "FREQ=DAILY";
+        let w_start = naive("2026-01-15 00:00");
+        let w_end = naive("2026-01-16 00:00");
+        let ms = |n: NaiveDateTime| Local.from_local_datetime(&n).earliest().unwrap().timestamp_millis();
+        let out = expand_in(start, rule, ms(w_start), ms(w_end));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0], naive("2026-01-15 09:00"));
     }
 
     #[test]

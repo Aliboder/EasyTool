@@ -143,7 +143,7 @@ pub struct ParseResult {
     pub expanded: usize,
 }
 
-/// 取所有 EXDATE 属性值（可逗号分隔多项），转本地日键（取前 8 位日期；带 Z 同取日期部分）
+/// 取所有 EXDATE 属性值（可逗号分隔多项）→ 本地日键（时区感知，Z 后缀先转本机墙钟）
 fn extract_exdates(props: &[Property]) -> Vec<i64> {
     let mut out = Vec::new();
     for p in props {
@@ -152,12 +152,8 @@ fn extract_exdates(props: &[Property]) -> Vec<i64> {
         }
         let Some(v) = &p.value else { continue };
         for part in v.split(',') {
-            let t = part.trim();
-            if t.len() < 8 {
-                continue;
-            }
-            if let Ok(key) = t[0..8].parse::<i64>() {
-                out.push(key);
+            if let Some((ndt, _)) = parse_dt(part.trim(), None) {
+                out.push(expand::local_day_key(ndt));
             }
         }
     }
@@ -172,6 +168,10 @@ pub fn flatten(items: &[ImportItem]) -> Vec<ImportItem> {
             Some(rule) => {
                 let start_dt = expand::ts_to_local(it.start_ms);
                 for inst in expand::expand(start_dt, rule) {
+                    // 被 EXDATE 排除的场次不出现在订阅源
+                    if it.exdates.contains(&expand::local_day_key(inst)) {
+                        continue;
+                    }
                     let s = expand::local_to_ts(inst);
                     out.push(ImportItem {
                         title: it.title.clone(),

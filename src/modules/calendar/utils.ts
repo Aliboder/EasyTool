@@ -25,11 +25,6 @@ export function dayEndMs(key: number): number {
   return dayStartMs(key) + 86_400_000 - 1;
 }
 
-/** 某月第一天的日键 */
-export function monthStartKey(year: number, month0: number): number {
-  return year * 10000 + (month0 + 1) * 100 + 1;
-}
-
 /** 某月天数（含 2 月闰年） */
 export function daysInMonth(year: number, month0: number): number {
   return new Date(year, month0 + 1, 0).getDate();

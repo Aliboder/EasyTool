@@ -1300,7 +1300,7 @@ function EventForm({
         notes,
         all_day: true,
         start_ms: ms,
-        end_ms: ms + 86_400_000 - 1, // 当天 23:59:59.999（不能走 dayEndMs(ms)：ms 是时间戳，非日期键）
+        end_ms: ms + 86_400_000, // 次日本地零点（ICS 全天 DTEND 约定；避免导出 DTEND 与 DTSTART 同日违规）
         rrule,
         remind_minutes: remind,
         color: evColor,

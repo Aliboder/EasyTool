@@ -17,20 +17,6 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// 本地日键（yyyyMMdd 整数，全天/重复实例/提醒去重共用）
-#[allow(dead_code)] // 批次 3+（重复/提醒）上线时启用
-pub fn local_day_key(ms: i64) -> i64 {
-    use chrono::{Datelike, TimeZone};
-    let dt = chrono::Local
-        .timestamp_millis_opt(ms)
-        .earliest()
-        .unwrap_or_else(|| chrono::Local.timestamp_opt(0, 0).earliest().unwrap());
-    let y = dt.year() as i64;
-    let m = dt.month() as i64;
-    let d = dt.day() as i64;
-    y * 10000 + m * 100 + d
-}
-
 #[derive(Debug, Clone)]
 pub struct Event {
     pub id: i64,
@@ -52,8 +38,9 @@ pub struct Event {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // 字段在批次 3（重复+例外）上线时启用
 pub struct EventOverride {
+    /// 行号（仅构造时填充，未按名读取；schema 镜像保留）
+    #[allow(dead_code)]
     pub id: i64,
     pub event_id: i64,
     pub instance_date: i64,
@@ -360,7 +347,6 @@ impl CalendarDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
-    #[allow(dead_code)] // 批次 3（重复+例外）上线时启用
     pub fn overrides_for(&self, event_id: i64) -> DbResult<Vec<EventOverride>> {
         let mut stmt = self
             .conn
@@ -388,8 +374,7 @@ impl CalendarDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
-    /// upsert 单次例外（批次 3 用；表已建好避免迁移）
-    #[allow(dead_code)] // 批次 3（重复+例外）上线时启用
+    /// upsert 单次例外（表已建好避免迁移）
     pub fn upsert_override(
         &self,
         event_id: i64,
@@ -591,8 +576,9 @@ impl CalendarDb {
                 let inst_start = expand::expand(start_dt, rule)
                     .into_iter()
                     .find(|i| expand::local_day_key(*i) == *day_key)
-                    .map(expand::local_to_ts)
-                    .unwrap_or(0);
+                    .map(expand::local_to_ts);
+                // 匹配不到实例（如时区/边界差异）则跳过，不写 start_ms=0 垃圾覆盖
+                let Some(inst_start) = inst_start else { continue };
                 tx.execute(
                     "INSERT INTO event_overrides (event_id, instance_date, variant, start_ms)
                      VALUES (?1,?2,'delete',?3)",
@@ -1223,14 +1209,5 @@ mod tests {
         db.delete_subscription(sid).unwrap();
         assert!(db.list_subscriptions().unwrap().is_empty());
         assert!(db.feed_events_in_window(0, 9999).unwrap().is_empty());
-    }
-
-    #[test]
-    fn local_day_key_is_local_date() {
-        // 北京时间 2026-08-29 20:00（UTC 12:00）→ 本地日 20260829
-        let utc = chrono::DateTime::parse_from_rfc3339("2026-08-29T12:00:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Local);
-        assert_eq!(local_day_key(utc.timestamp_millis()), 20260829);
     }
 }

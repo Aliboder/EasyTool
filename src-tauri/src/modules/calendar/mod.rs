@@ -121,7 +121,7 @@ fn reminder_loop(app: AppHandle) {
                         if let Some(rule) = &e.rrule {
                             // 重复事件：现场展开实例，落在窗口内的才提醒
                             let start_dt = expand::ts_to_local(e.start_ms);
-                            for inst in expand::expand(start_dt, rule) {
+                            for inst in expand::expand_in(start_dt, rule, window_start, window_end) {
                                 let s = expand::local_to_ts(inst);
                                 if s < window_start || s > max_start {
                                     continue;
