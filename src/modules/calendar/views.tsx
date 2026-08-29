@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { CalendarPlus, ChevronDown, ChevronRight, ListTodo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs, courseColor, buildTimeline, TL_HEADER_H } from "./utils";
+import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs, courseColor, buildTimeline, TL_CLUSTER_GAP } from "./utils";
 import type { EventDto, TodoDto } from "./types";
 
 const HOUR_HEIGHT = 46;
@@ -672,29 +672,20 @@ export function TimeLineView({
     [events, loadedStart, loadedEnd, hourHeight, hideEmpty],
   );
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [scrollTop, setScrollTop] = useState(0);
+  const todayRef = useRef<HTMLDivElement | null>(null);
   const loadBusy = useRef(false);
 
-  // 初始 / 缩放变化 / 点「今天」：滚到「现在」附近
+  // 初始 / 点「今天」：把今天那格滚到视口中央
   useEffect(() => {
     const c = scrollRef.current;
     if (!c || days.length === 0) return;
-    const d = days.find((x) => x.dayKey === today);
-    if (d) {
-      const nowH = (now - dayStartMs(today)) / 3_600_000;
-      const within = nowH >= d.windowStartHour && nowH <= d.windowStartHour + (d.height - TL_HEADER_H) / hourHeight;
-      const top = within ? d.top + TL_HEADER_H + (nowH - d.windowStartHour) * hourHeight : d.top;
-      c.scrollTo({ top: Math.max(0, top - c.clientHeight / 2) });
-    } else {
-      c.scrollTo({ top: Math.max(0, c.scrollHeight / 2 - c.clientHeight / 2) });
-    }
+    todayRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hourHeight, nowFocus]);
+  }, [nowFocus]);
 
   const onScroll = () => {
     const c = scrollRef.current;
     if (!c) return;
-    setScrollTop(c.scrollTop);
     if (loadBusy.current) return;
     if (c.scrollTop < 240) {
       loadBusy.current = true;
@@ -713,9 +704,6 @@ export function TimeLineView({
     if (c && c.scrollHeight <= c.clientHeight + 40 && !loading) onLoadEdge("down");
   }, [totalHeight, loading, onLoadEdge]);
 
-  const viewH = scrollRef.current?.clientHeight ?? 700;
-  const visible = days.filter((d) => d.top + d.height >= scrollTop - 400 && d.top <= scrollTop + viewH + 400);
-
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
@@ -732,118 +720,118 @@ export function TimeLineView({
           </label>
         </div>
       </div>
-      <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto">
-        <div className="relative" style={{ height: totalHeight }}>
-          {visible.map((d) => {
-            const weekend = weekdayOfKey(d.dayKey) >= 5;
-            const isToday = d.dayKey === today;
-            const axisH = d.height - TL_HEADER_H;
-            return (
-              <div key={d.dayKey} className="absolute inset-x-0" style={{ top: d.top, height: d.height }}>
-                {/* 日期分隔头（非吸顶，随内容滚动，避免遮挡时间轴） */}
-                <div
-                  className={cn(
-                    "absolute inset-x-0 top-0 z-[1] flex h-[30px] items-center gap-2 border-b px-3 text-[11px]",
-                    weekend ? "bg-background/90 text-muted-foreground" : "bg-background/90",
-                  )}
-                >
-                  <span className={cn("font-medium", isToday && "text-primary")}>
-                    {fmtKeyLong(d.dayKey)}
-                    {isToday && " · 今天"}
-                  </span>
-                  {d.allDay.map((e) => {
-                    const tint = eventTint(e, subColors);
-                    return (
-                      <span
-                        key={e.id}
-                        className="truncate rounded-full border border-black/10 bg-primary px-2 py-px text-[10px] font-medium text-primary-foreground"
-                        style={tint ? { backgroundColor: tint, color: "#fff" } : undefined}
-                        onClick={() => onEventClick(e)}
-                        onContextMenu={(ev) => {
-                          ev.preventDefault();
-                          onEventMenu(e, ev.clientX, ev.clientY);
+      <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto bg-background">
+        {days.map((d) => {
+          const weekend = weekdayOfKey(d.dayKey) >= 5;
+          const isToday = d.dayKey === today;
+          return (
+            <div key={d.dayKey} ref={isToday ? todayRef : undefined} className="border-b border-border/60">
+              {/* 日期头（流式 + sticky 吸附，随内容滚动不重叠） */}
+              <div
+                className={cn(
+                  "sticky top-0 z-10 flex items-center gap-2 border-b bg-background/95 px-3 py-1 text-[11px]",
+                  weekend && "text-muted-foreground",
+                )}
+              >
+                <span className={cn("font-medium", isToday && "text-primary")}>
+                  {fmtKeyLong(d.dayKey)}
+                  {isToday && " · 今天"}
+                </span>
+                {d.allDay.map((e) => {
+                  const tint = eventTint(e, subColors);
+                  return (
+                    <span
+                      key={e.id}
+                      className="truncate rounded-full border border-black/10 bg-primary px-2 py-px text-[10px] font-medium text-primary-foreground"
+                      style={tint ? { backgroundColor: tint, color: "#fff" } : undefined}
+                      onClick={() => onEventClick(e)}
+                      onContextMenu={(ev) => {
+                        ev.preventDefault();
+                        onEventMenu(e, ev.clientX, ev.clientY);
+                      }}
+                    >
+                      {e.title}
+                    </span>
+                  );
+                })}
+              </div>
+              {/* 簇（流式堆叠，簇间留分隔） */}
+              <div className="flex flex-col px-2 py-2" style={{ gap: TL_CLUSTER_GAP }}>
+                {d.clusters.length === 0 && (
+                  <div className="py-4 text-center text-[11px] text-muted-foreground">无分时安排</div>
+                )}
+                {d.clusters.map((c, ci) => {
+                  // 只画该簇真实覆盖的整点（ceil 起点，避免负偏移与前后重叠）
+                  const hourMarks: number[] = [];
+                  for (let m = Math.ceil(c.startHour); m <= Math.floor(c.endHour); m++) hourMarks.push(m);
+                  return (
+                    <div key={ci} className="relative flex" style={{ height: c.height }}>
+                      {/* 左小时尺 */}
+                      <div className="relative w-10 shrink-0 border-r border-border/40">
+                        {hourMarks.map((m) => (
+                          <span
+                            key={m}
+                            className="absolute -top-1.5 right-1.5 text-[9px] tabular-nums text-muted-foreground"
+                            style={{ top: (m - c.startHour) * hourHeight }}
+                          >
+                            {String(m).padStart(2, "0")}:00
+                          </span>
+                        ))}
+                      </div>
+                      {/* 内容区 */}
+                      <div
+                        className="relative flex-1"
+                        onDoubleClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const hh = (e.clientY - rect.top) / hourHeight + c.startHour;
+                          const snapped = Math.max(c.startHour, Math.min(24 - 0.5, Math.round(hh * 2) / 2));
+                          onCreateAt?.(dayStartMs(d.dayKey) + snapped * 3_600_000);
                         }}
                       >
-                        {e.title}
-                      </span>
-                    );
-                  })}
-                </div>
-                {/* 时间轴主体：逐簇渲染（左小时尺 + 内容区） */}
-                <div className="absolute inset-x-0" style={{ top: TL_HEADER_H, height: Math.max(0, axisH) }}>
-                  {d.clusters.map((c, ci) => {
-                    // 只画该簇覆盖到的整点小时，避免最后一条越界产生重影/遮挡
-                    const hourMarks: number[] = [];
-                    for (let m = Math.floor(c.startHour); m <= Math.floor(c.endHour); m++) hourMarks.push(m);
-                    return (
-                      <div key={ci} className="absolute inset-x-0" style={{ top: c.top, height: c.height }}>
-                        {/* 左小时尺 */}
-                        <div className="absolute inset-y-0 left-0 w-10 border-r border-border/40">
-                          {hourMarks.map((m) => (
-                            <span
-                              key={m}
-                              className="absolute -top-1.5 right-1.5 text-[9px] tabular-nums text-muted-foreground"
-                              style={{ top: (m - c.startHour) * hourHeight }}
-                            >
-                              {String(Math.floor(m)).padStart(2, "0")}:00
-                            </span>
-                          ))}
-                        </div>
-                        {/* 内容区 */}
-                        <div
-                          className="absolute inset-y-0 left-10 right-0"
-                          onDoubleClick={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            const hh = (e.clientY - rect.top) / hourHeight + c.startHour;
-                            const snapped = Math.max(c.startHour, Math.min(24 - 0.5, Math.round(hh * 2) / 2));
-                            onCreateAt?.(dayStartMs(d.dayKey) + snapped * 3_600_000);
-                          }}
-                        >
-                          {hourMarks.map((m) => (
-                            <div key={m} className="absolute inset-x-0 border-t border-border/40" style={{ top: (m - c.startHour) * hourHeight }} />
-                          ))}
-                          {layoutDay(
-                            c.events.map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
-                            { startHour: c.startHour, endHour: c.endHour, hourHeight },
-                          ).map((b) => {
-                            const ev = c.events[b.index];
+                        {hourMarks.map((m) => (
+                          <div key={m} className="absolute inset-x-0 border-t border-border/40" style={{ top: (m - c.startHour) * hourHeight }} />
+                        ))}
+                        {layoutDay(
+                          c.events.map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
+                          { startHour: c.startHour, endHour: c.endHour, hourHeight },
+                        ).map((b) => {
+                          const ev = c.events[b.index];
+                          return (
+                            <EventBlock
+                              key={`${ev.id}-${d.dayKey}-${ci}`}
+                              event={ev}
+                              top={b.top}
+                              height={b.height}
+                              left={b.left}
+                              width={b.width}
+                              subColors={subColors}
+                              onClick={onEventClick}
+                              onMenu={onEventMenu}
+                            />
+                          );
+                        })}
+                        {isToday &&
+                          (() => {
+                            const nowH = (now - dayStartMs(d.dayKey)) / 3_600_000;
+                            const y = (nowH - c.startHour) * hourHeight;
+                            if (y < 0 || y > c.height) return null;
                             return (
-                              <EventBlock
-                                key={`${ev.id}-${d.dayKey}-${ci}`}
-                                event={ev}
-                                top={b.top}
-                                height={b.height}
-                                left={b.left}
-                                width={b.width}
-                                subColors={subColors}
-                                onClick={onEventClick}
-                                onMenu={onEventMenu}
-                              />
+                              <div className="absolute inset-x-0 z-10" style={{ top: y }}>
+                                <div className="h-px bg-red-500" />
+                                <span className="absolute -top-2 -right-0 rounded bg-red-500 px-1 text-[9px] text-white">
+                                  {nowTime(now)}
+                                </span>
+                              </div>
                             );
-                          })}
-                          {isToday &&
-                            (() => {
-                              const nowH = (now - dayStartMs(d.dayKey)) / 3_600_000;
-                              const y = (nowH - c.startHour) * hourHeight;
-                              if (y < 0 || y > c.height) return null;
-                              return (
-                                <div className="absolute inset-x-0 z-10" style={{ top: y }}>
-                                  <div className="h-px bg-red-500" />
-                                  <span className="absolute -top-2 -right-0 rounded bg-red-500 px-1 text-[9px] text-white">
-                                    {nowTime(now)}
-                                  </span>
-                                </div>
-                              );
-                            })()}
-                        </div>
+                          })()}
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
         {loading && (
           <div className="pointer-events-none sticky bottom-2 z-20 flex justify-center">
             <span className="rounded bg-popover px-2 py-0.5 text-[10px] text-muted-foreground shadow">加载中…</span>
