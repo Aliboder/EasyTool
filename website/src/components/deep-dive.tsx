@@ -135,7 +135,8 @@ export function DeepDive() {
         {MODULES.map((m, i) => (
           <Reveal key={m.id} delay={0.04}>
             <article
-              className={`group grid gap-6 py-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] md:gap-12 ${
+              id={`module-${m.id}`}
+              className={`group grid scroll-mt-24 gap-6 py-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] md:gap-12 ${
                 i > 0 ? "border-t border-white/5" : ""
               }`}
             >

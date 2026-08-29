@@ -1,107 +1,67 @@
 import { motion } from "motion/react";
-import { useState } from "react";
+import { Bot, Code2, Globe, Guitar, Paintbrush } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-type Row = { app: string; cat: string; hex: string; sec: number; icon: string };
+// 周热力：一周 7 天 × 4 档强度（分钟级，GitHub 贡献图风格）
+const WEEK: number[] = [210, 340, 520, 0, 90, 180, 0];
 
-const TABS = ["今日", "本周"];
-
-const TODAY: Row[] = [
-  { app: "Visual Studio Code", cat: "效率", hex: "#3b82f6", sec: 6420, icon: "💻" },
-  { app: "浏览器", cat: "资源", hex: "#06b6d4", sec: 4180, icon: "🌐" },
-  { app: "Claude", cat: "学习", hex: "#f97316", sec: 3360, icon: "🤖" },
-  { app: "音乐", cat: "视听", hex: "#eab308", sec: 1820, icon: "🎵" },
-  { app: "Krita", cat: "学习", hex: "#f97316", sec: 1260, icon: "🎨" },
+// 今日排行（线性图标 + 中文紧凑时长）
+const TODAY: { app: string; icon: LucideIcon; hex: string; label: string }[] = [
+  { app: "Visual Studio Code", icon: Code2, hex: "#38bdf8", label: "1小时47分" },
+  { app: "浏览器", icon: Globe, hex: "#22d3ee", label: "1小时10分" },
+  { app: "Claude", icon: Bot, hex: "#fb923c", label: "56分钟" },
+  { app: "音乐", icon: Guitar, hex: "#eab308", label: "30分钟" },
+  { app: "Krita", icon: Paintbrush, hex: "#f472b6", label: "21分钟" },
 ];
 
-const WEEK: Row[] = [
-  { app: "Visual Studio Code", cat: "效率", hex: "#3b82f6", sec: 38100, icon: "💻" },
-  { app: "浏览器", cat: "资源", hex: "#06b6d4", sec: 27400, icon: "🌐" },
-  { app: "Claude", cat: "学习", hex: "#f97316", sec: 19000, icon: "🤖" },
-  { app: "游戏", cat: "游戏", hex: "#a855f7", sec: 9300, icon: "🎮" },
-  { app: "音乐", cat: "视听", hex: "#eab308", sec: 7600, icon: "🎵" },
-];
-
-function fmt(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.round((sec % 3600) / 60);
-  return h > 0 ? `${h}h${m}m` : `${m}m`;
+function fmtDay(min: number): string {
+  if (min === 0) return "休息";
+  if (min < 60) return `${min}分`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m > 0 ? `${h}小时${m}分` : `${h}小时`;
 }
 
 export function MiniTimetracker() {
-  const [tab, setTab] = useState(0);
-  const [sel, setSel] = useState(0);
-  const rows = tab === 0 ? TODAY : WEEK;
-  const max = Math.max(...rows.map((r) => r.sec));
-  const total = rows.reduce((s, r) => s + r.sec, 0);
+  const max = Math.max(...WEEK);
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1">
-          {TABS.map((t, i) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => {
-                setTab(i);
-                setSel(0);
-              }}
-              className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
-                i === tab
-                  ? "bg-emerald-500/15 font-medium text-emerald-400"
-                  : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        <span className="text-[10px] text-zinc-500 tabular-nums">
-          共 {fmt(total)}
-        </span>
-      </div>
-
-      <div className="mt-3 space-y-1">
-        {rows.map((r, i) => {
-          const pct = (r.sec / max) * 100;
-          const active = sel === i;
+      {/* 周热力带 */}
+      <div className="flex items-end gap-1.5">
+        {WEEK.map((min, i) => {
+          const h = min === 0 ? 0 : Math.max(10, (min / max) * 56);
           return (
-            <motion.button
-              key={r.app}
-              type="button"
-              onClick={() => setSel(i)}
-              whileTap={{ scale: 0.98 }}
-              className={`group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
-                active ? "bg-white/5" : "hover:bg-white/[0.02]"
-              }`}
-            >
-              <span className="grid w-4 shrink-0 place-items-center text-xs">{r.icon}</span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-[11px] text-zinc-300">{r.app}</span>
-                  <span className="shrink-0 font-mono text-[10px] text-zinc-500 tabular-nums">
-                    {fmt(r.sec)}
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-700/60">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-                    style={{ backgroundColor: r.hex }}
-                    className={`h-full rounded-full ${active ? "" : "opacity-75"}`}
-                  />
-                </div>
-              </div>
-              <span
-                className="hidden shrink-0 rounded px-1 py-0.5 text-[9px] text-white sm:block"
-                style={{ backgroundColor: `${r.hex}22`, color: r.hex }}
-              >
-                {r.cat}
-              </span>
-            </motion.button>
+            <div key={i} className="flex flex-1 flex-col items-center gap-1" title={`周${"一二三四五六日"[i]} ${fmtDay(min)}`}>
+              <motion.div
+                initial={{ height: 0 }}
+                animate={{ height: h }}
+                transition={{ duration: 0.7, delay: i * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                className={`w-full rounded-sm ${min === 0 ? "bg-white/5" : "bg-emerald-500/70"}`}
+              />
+              <span className="text-[8px] text-zinc-600">{"一二三四五六日"[i]}</span>
+            </div>
           );
         })}
+      </div>
+      <p className="mt-2 text-[10px] text-zinc-500">近 7 天使用分布 · 共 22小时20分</p>
+
+      {/* 今日排行 */}
+      <div className="mt-3 space-y-1">
+        {TODAY.map((r) => (
+          <div
+            key={r.app}
+            className="flex items-center gap-2.5 rounded-lg px-2 py-1 transition-colors hover:bg-white/[0.03]"
+          >
+            <span className="grid size-5 shrink-0 place-items-center rounded-md bg-white/5">
+              <r.icon className="size-3" style={{ color: r.hex }} />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-300">{r.app}</span>
+            <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px]" style={{ backgroundColor: `${r.hex}1a`, color: r.hex }}>
+              {r.label}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );

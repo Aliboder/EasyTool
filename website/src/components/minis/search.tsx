@@ -8,38 +8,45 @@ const FILES: Result[] = [
   { name: "交通流理论_第3章.pdf", path: "D:\\资料\\交通运输学" },
   { name: "开题报告_v3.docx", path: "D:\\SystemFiles\\Documents" },
   { name: "交叉口仿真数据.xlsx", path: "D:\\课程设计" },
-  { name: "EasyTool_0.4.4_x64-setup.exe", path: "D:\\Downloads" },
+  { name: "EasyTool_0.7.0_x64-setup.exe", path: "D:\\Downloads" },
   { name: "轨道交通行车组织.mp4", path: "E:\\网课录播" },
   { name: "毕业设计参考文献汇总.pdf", path: "D:\\资料\\文献" },
   { name: "实验数据采集.py", path: "D:\\Code\\sensor-lab" },
   { name: "英语六级高频词汇.txt", path: "D:\\资料\\英语" },
 ];
 
+// 多关键词全部命中 + 全部位置高亮（与 App 一致）
 function highlight(text: string, q: string): ReactNode {
-  if (!q) return text;
-  const idx = text.toLowerCase().indexOf(q.toLowerCase());
-  if (idx < 0) return text;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <mark className="rounded-sm bg-emerald-500/25 px-0.5 text-inherit">
-        {text.slice(idx, idx + q.length)}
-      </mark>
-      {text.slice(idx + q.length)}
-    </>
-  );
+  const kws = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!kws.length) return text;
+  const pattern = kws.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const re = new RegExp(`(${pattern})`, "gi");
+  const parts: ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    const idx = m.index ?? 0;
+    if (idx > last) parts.push(text.slice(last, idx));
+    parts.push(
+      <mark key={`${idx}-${m[0]}`} className="rounded-sm bg-emerald-500/25 px-0.5 text-inherit">
+        {m[0]}
+      </mark>,
+    );
+    last = idx + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length ? parts : text;
 }
 
 export function MiniSearch() {
   const [q, setQ] = useState("");
 
   const results = useMemo(() => {
-    const kw = q.trim().toLowerCase();
-    if (!kw) return FILES.slice(0, 4);
-    return FILES.filter(
-      (f) =>
-        f.name.toLowerCase().includes(kw) || f.path.toLowerCase().includes(kw),
-    );
+    const kws = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!kws.length) return FILES.slice(0, 4);
+    return FILES.filter((f) => {
+      const hay = `${f.name} ${f.path}`.toLowerCase();
+      return kws.every((k) => hay.includes(k));
+    });
   }, [q]);
 
   return (
