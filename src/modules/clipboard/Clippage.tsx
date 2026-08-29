@@ -8,7 +8,7 @@ import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { CLIPBOARD_DEFAULTS } from "./config";
 import { Drawer } from "@/components/ui/drawer";
-import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, X, Loader2, Smile, MessageSquare, StickyNote, SearchX, ClipboardList, ImageOff, FileQuestion, Type, ExternalLink, Image } from "lucide-react";
+import { Pin, FolderOpen, Settings2, StickyNote, SearchX, ClipboardList, ImageOff, FileQuestion, Type, Image } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -28,9 +28,12 @@ import { useHorizontalWheel } from "@/lib/use-horizontal-wheel";
 import { toast } from "@/lib/toast";
 import { ClipSettings } from "./ClipSettings";
 import { LazyImage } from "@/components/LazyImage";
-import { ContextMenu } from "@/components/ui/context-menu";
-import { ContextMenuItem } from "@/components/ui/context-menu-item";
-import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
+import {
+  ItemActionColumn,
+  ClipboardContextMenu,
+  PreviewOverlay,
+  type ItemDto,
+} from "./parts";
 import {
   EmptyState,
   PinnedSortable,
@@ -43,18 +46,6 @@ import {
   highlight,
   isImageItem,
 } from "./ui-shared";
-
-interface ItemDto {
-  id: number;
-  kind: string;
-  preview: string;
-  full: string | null;
-  thumb: string | null;
-  file_count: number;
-  pinned: boolean;
-  created_at: number;
-  note: string | null;
-}
 
 type Filter = "all" | "pinned" | "text" | "image" | "files";
 
@@ -581,38 +572,12 @@ export function Clippage() {
           </div>
         ) : null}
       </div>
-      <div className="flex min-w-[72px] shrink-0 flex-col items-end gap-0.5 border-l pl-2.5">
-          {showTimestamps && (
-            <div className="text-[10px] tabular-nums text-muted-foreground">
-              {fmtTime(item.created_at)}
-            </div>
-          )}
-          <div className="flex items-center gap-0.5 text-muted-foreground">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                del(item.id);
-              }}
-              aria-label="删除"
-              className="rounded p-1 transition-colors hover:bg-destructive/15 hover:text-destructive"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                togglePin(item.id, !item.pinned);
-              }}
-              aria-label={item.pinned ? "取消置顶" : "置顶"}
-              className={cn(
-                "rounded p-1 transition-colors hover:bg-accent",
-                item.pinned ? "text-primary" : "hover:text-foreground",
-              )}
-            >
-              <Pin className="size-3.5" />
-            </button>
-          </div>
-        </div>
+      <ItemActionColumn
+        item={item}
+        showTimestamps={showTimestamps}
+        onDelete={del}
+        onTogglePin={togglePin}
+      />
     </div>
   );
 
@@ -704,38 +669,13 @@ export function Clippage() {
           {isFile && <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{item.preview}</div>}
         </div>
         {/* 右侧：时间 + 常驻操作 */}
-        <div className="flex min-w-[64px] shrink-0 flex-col items-end gap-1 border-l pl-2.5">
-          {showTimestamps && (
-            <div className="text-[10px] tabular-nums text-muted-foreground">
-              {fmtTime(item.created_at)}
-            </div>
-          )}
-          <div className="flex items-center gap-0.5 text-muted-foreground">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                del(item.id);
-              }}
-              aria-label="删除"
-              className="rounded p-1 transition-colors hover:bg-destructive/15 hover:text-destructive"
-            >
-              <Trash2 className="size-3.5" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                togglePin(item.id, !item.pinned);
-              }}
-              aria-label={item.pinned ? "取消置顶" : "置顶"}
-              className={cn(
-                "rounded p-1 transition-colors hover:bg-accent",
-                item.pinned ? "text-primary" : "hover:text-foreground",
-              )}
-            >
-              <Pin className="size-3.5" />
-            </button>
-          </div>
-        </div>
+        <ItemActionColumn
+          item={item}
+          showTimestamps={showTimestamps}
+          hover={false}
+          onDelete={del}
+          onTogglePin={togglePin}
+        />
       </div>
     );
   };
@@ -1042,112 +982,31 @@ export function Clippage() {
       )}
         </>
 
-      <ContextMenu
-        visible={!!menu}
-        x={menu?.x ?? 0}
-        y={menu?.y ?? 0}
+      <ClipboardContextMenu
+        menu={menu}
         onClose={() => setMenu(null)}
-      >
-        <ContextMenuItem
-          icon={<Pin className="size-3.5" />}
-          label={menu?.item.pinned ? "取消固定" : "固定"}
-          onClick={() => menu && togglePin(menu.item.id, !menu.item.pinned)}
-        />
-        <ContextMenuItem
-          icon={<Copy className="size-3.5" />}
-          label="复制到剪贴板"
-          onClick={() => menu && copy(menu.item.id)}
-        />
-        {menu?.item.kind === "text" && (
-          <ContextMenuItem
-            icon={<Type className="size-3.5" />}
-            label="复制为纯文本"
-            onClick={() => menu && copyPlain(menu.item.id)}
-          />
-        )}
-        {menu?.item && isImageItem(menu.item) && (
-          <ContextMenuItem
-            icon={<Smile className="size-3.5" />}
-            label="添加为表情"
-            onClick={() => menu && addAsEmoji(menu.item)}
-          />
-        )}
-        {menu?.item && isImageItem(menu.item) && (
-          <ContextMenuItem
-            icon={<Eye className="size-3.5" />}
-            label="查看大图"
-            onClick={() => menu && viewImage(menu.item)}
-          />
-        )}
-        {menu?.item && isImageItem(menu.item) && (
-          <ContextMenuItem
-            icon={<ExternalLink className="size-3.5" />}
-            label="用系统看图打开"
-            onClick={() => menu && openImageExternal(menu.item)}
-          />
-        )}
-        {menu?.item.kind === "files" && (
-          <ContextMenuItem
-            icon={<FolderOpen className="size-3.5" />}
-            label="打开所在位置"
-            onClick={() => {
-              if (menu) {
-                invoke("open_file_location", { path: menu.item.preview });
-                setMenu(null);
-              }
-            }}
-          />
-        )}
-        <ContextMenuDivider />
-        <ContextMenuItem
-          icon={<MessageSquare className="size-3.5" />}
-          label="编辑备注"
-          onClick={() => menu && startEditNote(menu.item)}
-        />
-        <ContextMenuItem
-          icon={<Trash2 className="size-3.5" />}
-          label="删除"
-          onClick={() => menu && del(menu.item.id)}
-          className="text-destructive"
-        />
-      </ContextMenu>
+        handlers={{
+          onTogglePin: togglePin,
+          onCopy: copy,
+          onCopyPlain: copyPlain,
+          onAddEmoji: addAsEmoji,
+          onViewImage: viewImage,
+          onOpenExternal: openImageExternal,
+          onOpenLocation: (path) => {
+            invoke("open_file_location", { path }).catch(console.error);
+            setMenu(null);
+          },
+          onEditNote: startEditNote,
+          onDelete: del,
+        }}
+      />
 
-      {preview && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70"
-          onClick={() => setPreview(null)}
-        >
-          <div className="relative flex max-h-[92%] max-w-[92%] items-center justify-center">
-            {previewLoading && (
-              <div className="flex flex-col items-center gap-2 text-white/90">
-                <Loader2 className="size-6 animate-spin" />
-                <span className="text-xs">加载中…</span>
-              </div>
-            )}
-            {preview.src && (
-              <img
-                src={preview.src}
-                alt=""
-                onClick={(e) => e.stopPropagation()}
-                className="max-h-[92vh] max-w-[92vw] rounded object-contain shadow-lg"
-              />
-            )}
-          </div>
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-4 py-3">
-            <span className="max-w-[70%] truncate text-xs text-white/90" title={preview.name}>
-              {preview.name}
-              {previewInfo && <span className="ml-2 opacity-70">· {previewInfo}</span>}
-            </span>
-            <button
-              onClick={() => setPreview(null)}
-              aria-label="关闭预览"
-              className="pointer-events-auto rounded-full bg-black/50 p-1.5 text-white/90 transition-colors hover:bg-black/70"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
-      )}
+      <PreviewOverlay
+        preview={preview}
+        info={previewInfo}
+        loading={previewLoading}
+        onClose={() => setPreview(null)}
+      />
 
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="剪贴板设置">
         <ClipSettings cfg={clipCfg} onUpdate={updateClipCfg} />
