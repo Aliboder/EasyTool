@@ -6,6 +6,10 @@ import {
   dayStartMs,
   fmtHM,
   toDateInput,
+  weekStartKey,
+  weekdayOfKey,
+  layoutDay,
+  type TimedEventLike,
 } from "./utils";
 
 describe("calendar utils", () => {
@@ -39,5 +43,53 @@ describe("calendar utils", () => {
     expect(toDateInput(ms)).toBe("2026-08-29");
     const t = new Date(2026, 7, 29, 9, 5).getTime();
     expect(fmtHM(t)).toBe("09:05");
+  });
+
+  it("weekStartKey / weekdayOfKey 周一开头", () => {
+    // 2026-08-29 是周六 → 所在周周一为 8/24
+    expect(weekdayOfKey(20260829)).toBe(5);
+    expect(weekStartKey(20260829)).toBe(20260824);
+    // 周一本身
+    expect(weekStartKey(20260824)).toBe(20260824);
+    expect(weekdayOfKey(20260824)).toBe(0);
+  });
+
+  it("layoutDay 基础排布与重叠分列", () => {
+    const at = (h0: number, m0: number, h1: number, m1: number): TimedEventLike => ({
+      start_ms: new Date(2026, 8, 15, h0, m0).getTime(),
+      end_ms: new Date(2026, 8, 15, h1, m1).getTime(),
+      all_day: false,
+    });
+    const evs = [at(9, 0, 10, 0), at(9, 30, 11, 0), at(14, 0, 15, 0), at(7, 0, 9, 30)];
+    const blocks = layoutDay(evs, { startHour: 8, endHour: 18, hourHeight: 48 });
+    expect(blocks.length).toBe(4);
+    // 09:00-10:00 → top=48, height=48
+    const b0 = blocks.find((b) => b.index === 0)!;
+    expect(b0.top).toBe(48);
+    expect(b0.height).toBe(48);
+    // 09:30-11:00 与 09:00-10:00 重叠 → 各占半宽，不同 left
+    const b1 = blocks.find((b) => b.index === 1)!;
+    expect(Math.abs(b0.width - 50) < 0.1).toBe(true);
+    expect(b1.left).not.toBe(b0.left);
+    // 14:00-15:00 不重叠 → 全宽
+    const b2 = blocks.find((b) => b.index === 2)!;
+    expect(b2.width).toBe(100);
+    // 07:00-09:30 在窗口(8点)前开始 → 钳制到顶部，显示到 9:30 的 90 分钟
+    const b3 = blocks.find((b) => b.index === 3)!;
+    expect(b3.top).toBe(0);
+    expect(b3.height).toBe(72);
+  });
+
+  it("layoutDay 全天事件不参与排布", () => {
+    const evs: TimedEventLike[] = [
+      { start_ms: new Date(2026, 8, 15, 9, 0).getTime(), end_ms: new Date(2026, 8, 15, 10, 0).getTime(), all_day: false },
+      { start_ms: new Date(2026, 8, 15, 9, 0).getTime(), end_ms: new Date(2026, 8, 15, 10, 0).getTime(), all_day: true },
+      { start_ms: new Date(2026, 8, 16, 9, 0).getTime(), end_ms: new Date(2026, 8, 16, 10, 0).getTime(), all_day: false },
+    ];
+    // layoutDay 只按「时刻」排布，跨天/全天由调用方按日过滤；这里全天被排除、其余两条同刻排在列
+    const blocks = layoutDay(evs, { startHour: 8, endHour: 18, hourHeight: 48 });
+    expect(blocks.length).toBe(2);
+    expect(blocks.some((b) => b.index === 0)).toBe(true);
+    expect(blocks.some((b) => b.index === 2)).toBe(true);
   });
 });

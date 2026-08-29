@@ -31,13 +31,23 @@
   - `src/modules/calendar/{config.ts,utils.ts,utils.test.ts,Page.tsx}`
   - `src/App.tsx`、`src/components/layout/Sidebar.tsx`
 
+### 阶段 3 · 批次 2：周/日视图 + 待办体验
+- **状态：** complete（待用户手动验收）
+- 执行的操作：
+  - 四 Tab（月/周/日/待办）；配置接管默认视图与周末折叠
+  - 周视图：课表样 7 列时间轴（周一起始、全天条带、重叠自动分列、今天红时刻线、周末可折叠）
+  - 日视图：单列时间轴 + 当日待办 + 添加入口；月视图点日期跳日视图
+  - 待办页：未完成/已逾期/长期/已完成分组，逾期标红，已完成可折叠
+  - 时间轴布局 layoutDay 纯函数 + vitest（重叠分列/窗口钳制/全天排除）
+- 创建/修改的文件：
+  - `src/modules/calendar/{types.ts,views.tsx,Page.tsx,utils.ts,utils.test.ts}`
+
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
-| cargo test（含 calendar 5 个 db 测试） | 全量 | 全绿 | 97 passed / 0 failed / 2 ignored | ✅ |
-| vitest（含 calendar utils 4 个） | 全量 | 全绿 | 37 passed（6 文件） | ✅ |
+| cargo test（后端未动，回归） | 全量 | 全绿 | 109 passed / 0 failed / 3 ignored | ✅ |
+| vitest（含 layoutDay/weekStart 新增） | 全量 | 全绿 | 40 passed（6 文件） | ✅ |
 | tsc / npm run build | 全量 | 无错 | 通过 | ✅ |
-| cargo build 警告 | 全量 | 零警告 | EXIT=0 无 warning | ✅ |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |

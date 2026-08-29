@@ -1,5 +1,6 @@
-// 日程表页面（批次 1：月视图 + 当天面板 + 事件/待办表单 + 右键菜单）
-// 交互参照手机日历：周一起始月格、今天高亮、选中圈出、右下语义化添加按钮
+// 日程表页面（批次 2）：月/周/日/待办 四 Tab。
+// 月视图交互：点日期跳日视图；周/日视图复用 layoutDay 时间轴；待办分组清单。
+// 数据窗口按当前视图需求一次性拉取（并集），增删改后整窗刷新。
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -13,22 +14,17 @@ import { Switch } from "@/components/ui/switch";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
-import {
-  CalendarPlus,
-  ChevronLeft,
-  ChevronRight,
-  ListTodo,
-  Pencil,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Trash2, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { useModuleConfig } from "@/hooks/useModuleConfig";
+import { CALENDAR_DEFAULTS, type CalendarConfig } from "./config";
+import type { EventDto, TodoDto, ViewKey } from "./types";
+import { DayView, TodoView, WeekView } from "./views";
 import {
   dayEndMs,
   dayStartMs,
   fmtHM,
-  fmtKeyLong,
   fromDateTimeInput,
   fromDateInput,
   localDayKey,
@@ -36,27 +32,8 @@ import {
   toDateInput,
   toDateTimeInput,
   todayKey,
+  weekStartKey,
 } from "./utils";
-
-interface EventDto {
-  id: number;
-  title: string;
-  location: string;
-  notes: string;
-  all_day: boolean;
-  start_ms: number;
-  end_ms: number;
-  rrule: string | null;
-}
-
-interface TodoDto {
-  id: number;
-  title: string;
-  notes: string;
-  due_date: number | null;
-  done: boolean;
-  done_at_ms: number | null;
-}
 
 interface RangePayload {
   events: EventDto[];
@@ -76,8 +53,31 @@ interface MenuState {
 }
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
+const TABS: { id: ViewKey; label: string }[] = [
+  { id: "month", label: "月" },
+  { id: "week", label: "周" },
+  { id: "day", label: "日" },
+  { id: "todo", label: "待办" },
+];
+
+/// 当前视图需要的数据窗口（日键范围，含边界）
+function viewWindow(tab: ViewKey, ym: { y: number; m: number }, selectedKey: number): { start: number; end: number } {
+  if (tab === "week") {
+    const ws = weekStartKey(selectedKey);
+    return { start: ws, end: ws + 6 };
+  }
+  if (tab === "day") {
+    return { start: selectedKey, end: selectedKey };
+  }
+  // month / todo：用当前月网格覆盖（含首尾补格）
+  const cells = monthGrid(ym.y, ym.m);
+  return { start: cells[0].key, end: cells[cells.length - 1].key };
+}
 
 export function CalendarPage() {
+  const { cfg } = useModuleConfig<CalendarConfig>("calendar", CALENDAR_DEFAULTS);
+  const [tab, setTab] = useState<ViewKey>("month");
+  const [configApplied, setConfigApplied] = useState(false);
   const [ym, setYm] = useState(() => {
     const n = new Date();
     return { y: n.getFullYear(), m: n.getMonth() };
@@ -88,24 +88,34 @@ export function CalendarPage() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // 启动后按配置的默认视图落地
+  useEffect(() => {
+    if (!configApplied && cfg) {
+      setTab(cfg.defaultView);
+      setConfigApplied(true);
+    }
+  }, [cfg, configApplied]);
+
   const loadRange = useCallback(async () => {
-    const cells = monthGrid(ym.y, ym.m);
-    const startMs = dayStartMs(cells[0].key);
-    const endMs = dayEndMs(cells[cells.length - 1].key);
+    const w = viewWindow(tab, ym, selectedKey);
     try {
-      const r = await invoke<RangePayload>("calendar_get_range", { startMs, endMs });
+      const r = await invoke<RangePayload>("calendar_get_range", {
+        startMs: dayStartMs(w.start),
+        endMs: dayEndMs(w.end),
+      });
       setRange(r);
     } catch (e) {
       console.error(e);
       setRange({ events: [], todos: [] });
     }
-  }, [ym]);
+  }, [tab, ym, selectedKey]);
 
   useEffect(() => {
     loadRange();
   }, [loadRange]);
 
-  // 按日聚合（批次 1 事件为单次，按其开始日的本地日键归组）
+  // ---------- 数据视图 ----------
+
   const eventsByDay = useMemo(() => {
     const map = new Map<number, EventDto[]>();
     for (const e of range?.events ?? []) {
@@ -115,53 +125,62 @@ export function CalendarPage() {
     return map;
   }, [range]);
 
+  const monthTodoKeys = useMemo(() => {
+    const s = new Set<number>();
+    for (const t of range?.todos ?? []) {
+      if (!t.done && t.due_date != null) s.add(t.due_date);
+    }
+    return s;
+  }, [range]);
+
   const overdueCount = useMemo(
     () => (range?.todos ?? []).filter((t) => !t.done && t.due_date != null && t.due_date < todayKey()).length,
     [range],
   );
 
-  const moveMonth = (delta: number) => {
-    setYm(({ y, m }) => {
-      const d = new Date(y, m + delta, 1);
-      return { y: d.getFullYear(), m: d.getMonth() };
-    });
+  // ---------- 导航 ----------
+
+  const switchTab = (id: ViewKey) => {
+    if (id === "todo") {
+      setTab("todo");
+      return;
+    }
+    // 切到月视图时把月份同步到所选日所在月，周/日保持所选日
+    setTab(id);
+    if (id === "month") {
+      const d = new Date(dayStartMs(selectedKey));
+      setYm({ y: d.getFullYear(), m: d.getMonth() });
+    }
   };
+
+  const moveStep = (delta: number) => {
+    if (tab === "month") {
+      setYm(({ y, m }) => {
+        const d = new Date(y, m + delta, 1);
+        return { y: d.getFullYear(), m: d.getMonth() };
+      });
+    } else if (tab === "week") {
+      const cur = new Date(dayStartMs(selectedKey));
+      setSelectedKey(localDayKey(cur.getTime() + delta * 7 * 86400000));
+    } else if (tab === "day") {
+      const cur = new Date(dayStartMs(selectedKey));
+      setSelectedKey(localDayKey(cur.getTime() + delta * 86400000));
+    }
+  };
+
   const goToday = () => {
-    const n = new Date();
-    setYm({ y: n.getFullYear(), m: n.getMonth() });
-    setSelectedKey(todayKey());
-  };
-
-  // ---------- ICS 导入 ----------
-
-  const importIcs = async () => {
-    const sel = await open({
-      title: "选择 ICS 日历文件",
-      filters: [{ name: "日历文件", extensions: ["ics"] }],
-      multiple: false,
-    });
-    if (!sel) return;
-    const path = Array.isArray(sel) ? sel[0] : sel;
-    try {
-      const r = await invoke<{
-        events: number;
-        instances: number;
-        repeated: number;
-        skipped: number;
-        unsupported: number;
-      }>("calendar_import_ics", { path });
-      const parts = [`新增 ${r.instances} 条`];
-      if (r.repeated > 0) parts.push(`含 ${r.repeated} 门重复课程（已展开成每次）`);
-      if (r.unsupported > 0) parts.push(`${r.unsupported} 条规则暂不支持，仅保留首次`);
-      if (r.skipped > 0) parts.push(`跳过 ${r.skipped} 条`);
-      toast(`导入完成：${parts.join("，")}`);
-      loadRange();
-    } catch (e) {
-      toast(`导入失败：${e}`);
+    const k = todayKey();
+    setSelectedKey(k);
+    if (tab === "month") {
+      const n = new Date();
+      setYm({ y: n.getFullYear(), m: n.getMonth() });
     }
   };
 
   // ---------- 增删改 ----------
+
+  const openEventDrawer = (editing: EventDto | null, dayKey: number) =>
+    setDrawer({ mode: "event", editing, dayKey });
 
   const saveEvent = async (input: {
     title: string;
@@ -236,16 +255,37 @@ export function CalendarPage() {
     }
   };
 
-  const cells = monthGrid(ym.y, ym.m);
-  const dayEvents = eventsByDay.get(selectedKey) ?? [];
-  const dayTodos = (range?.todos ?? []).filter((t) => t.due_date === selectedKey);
-  const monthTodoKeys = useMemo(() => {
-    const s = new Set<number>();
-    for (const t of range?.todos ?? []) {
-      if (!t.done && t.due_date != null) s.add(t.due_date);
+  const openMenu = (kind: "event" | "todo", id: number, x: number, y: number) =>
+    setMenu({ kind, id, x, y });
+
+  const importIcs = async () => {
+    const sel = await open({
+      title: "选择 ICS 日历文件",
+      filters: [{ name: "日历文件", extensions: ["ics"] }],
+      multiple: false,
+    });
+    if (!sel) return;
+    const path = Array.isArray(sel) ? sel[0] : sel;
+    try {
+      const r = await invoke<{
+        events: number;
+        instances: number;
+        repeated: number;
+        skipped: number;
+        unsupported: number;
+      }>("calendar_import_ics", { path });
+      const parts = [`新增 ${r.instances} 条`];
+      if (r.repeated > 0) parts.push(`含 ${r.repeated} 门重复课程（已展开成每次）`);
+      if (r.unsupported > 0) parts.push(`${r.unsupported} 条规则暂不支持，仅保留首次`);
+      if (r.skipped > 0) parts.push(`跳过 ${r.skipped} 条`);
+      toast(`导入完成：${parts.join("，")}`);
+      loadRange();
+    } catch (e) {
+      toast(`导入失败：${e}`);
     }
-    return s;
-  }, [range]);
+  };
+
+  const cells = monthGrid(ym.y, ym.m);
 
   return (
     <div className="flex h-full flex-col">
@@ -254,159 +294,126 @@ export function CalendarPage() {
         meta={overdueCount > 0 ? `${overdueCount} 条待办已逾期` : "本地日历 · 数据存于本机"}
         actions={
           <>
-            <HeaderButton title="上一月" onClick={() => moveMonth(-1)}>
-              <ChevronLeft className="size-4" />
-            </HeaderButton>
-            <HeaderButton title="回到今天" onClick={goToday}>
-              <span className="text-xs">今天</span>
-            </HeaderButton>
-            <HeaderButton title="下一月" onClick={() => moveMonth(1)}>
-              <ChevronRight className="size-4" />
-            </HeaderButton>
+            {tab !== "todo" && (
+              <>
+                <HeaderButton title="上一段" onClick={() => moveStep(-1)}>
+                  <ChevronLeft className="size-4" />
+                </HeaderButton>
+                <HeaderButton title="回到今天" onClick={goToday}>
+                  <span className="text-xs">今天</span>
+                </HeaderButton>
+                <HeaderButton title="下一段" onClick={() => moveStep(1)}>
+                  <ChevronRight className="size-4" />
+                </HeaderButton>
+              </>
+            )}
             <HeaderButton title="导入 ICS 日程文件（课程表/日历）" onClick={importIcs}>
               <Upload className="size-4" />
               <span className="text-xs">导入</span>
             </HeaderButton>
           </>
         }
+        tabs={TABS}
+        activeTab={tab}
+        onTabChange={(id) => switchTab(id as ViewKey)}
       />
 
-      {/* 星期表头（周一开头） */}
-      <div className="grid shrink-0 grid-cols-7 border-b px-2 py-1 text-center text-[11px] text-muted-foreground">
-        {WEEKDAYS.map((w) => (
-          <span key={w}>{w}</span>
-        ))}
-      </div>
-
-      {/* 月网格 */}
-      <div className="grid shrink-0 grid-cols-7 gap-px overflow-hidden border-b bg-border px-2 py-2">
-        {cells.map((cell) => {
-          const evs = eventsByDay.get(cell.key) ?? [];
-          const hasTodo = monthTodoKeys.has(cell.key);
-          const isToday = cell.key === todayKey();
-          const selected = cell.key === selectedKey;
-          return (
-            <button
-              key={cell.key}
-              onClick={() => setSelectedKey(cell.key)}
-              className={cn(
-                "flex min-h-[62px] cursor-pointer flex-col gap-0.5 rounded-md p-1 text-left transition-colors",
-                cell.inMonth ? "bg-card" : "bg-card/40 opacity-50",
-                selected && "ring-2 ring-primary/60",
-                isToday && "bg-primary/10",
-              )}
-            >
-              <span
-                className={cn(
-                  "flex size-5 shrink-0 items-center justify-center rounded-full text-[11px]",
-                  isToday ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground",
-                )}
-              >
-                {cell.dayOfMonth}
-              </span>
-              {evs.slice(0, 3).map((e) => (
-                <span
-                  key={e.id}
-                  title={`${e.all_day ? "全天" : fmtHM(e.start_ms)} · ${e.title}`}
-                  className={cn(
-                    "truncate rounded px-1 py-px text-[10px]",
-                    e.all_day ? "bg-primary/25 text-primary" : "bg-secondary text-secondary-foreground",
-                  )}
-                >
-                  {e.all_day ? "" : `${fmtHM(e.start_ms)} `}
-                  {e.title}
-                </span>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {tab === "month" && (
+          <div className="flex h-full flex-col">
+            <div className="grid shrink-0 grid-cols-7 border-b px-2 py-1 text-center text-[11px] text-muted-foreground">
+              {WEEKDAYS.map((w) => (
+                <span key={w}>{w}</span>
               ))}
-              {evs.length > 3 && (
-                <span className="px-1 text-[10px] text-muted-foreground">+{evs.length - 3}</span>
-              )}
-              {hasTodo && <span className="mt-auto size-1.5 self-center rounded-full bg-orange-400" title="有待办" />}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 当天面板 */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="rounded-xl border bg-card p-3">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold">{fmtKeyLong(selectedKey)}</h3>
-            <div className="ml-auto flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDrawer({ mode: "event", editing: null, dayKey: selectedKey })}
-              >
-                <CalendarPlus className="size-3.5" />
-                事件
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDrawer({ mode: "todo", editing: null })}
-              >
-                <ListTodo className="size-3.5" />
-                待办
-              </Button>
+            </div>
+            <div className="grid shrink-0 grid-cols-7 gap-px overflow-hidden border-b bg-border px-2 py-2">
+              {cells.map((cell) => {
+                const evs = eventsByDay.get(cell.key) ?? [];
+                const hasTodo = monthTodoKeys.has(cell.key);
+                const isToday = cell.key === todayKey();
+                const selected = cell.key === selectedKey;
+                return (
+                  <button
+                    key={cell.key}
+                    onClick={() => {
+                      setSelectedKey(cell.key);
+                      switchTab("day");
+                    }}
+                    className={cn(
+                      "flex min-h-[62px] cursor-pointer flex-col gap-0.5 rounded-md p-1 text-left transition-colors",
+                      cell.inMonth ? "bg-card" : "bg-card/40 opacity-50",
+                      selected && "ring-2 ring-primary/60",
+                      isToday && "bg-primary/10",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex size-5 shrink-0 items-center justify-center rounded-full text-[11px]",
+                        isToday ? "bg-primary font-semibold text-primary-foreground" : "text-muted-foreground",
+                      )}
+                    >
+                      {cell.dayOfMonth}
+                    </span>
+                    {evs.slice(0, 3).map((e) => (
+                      <span
+                        key={e.id}
+                        title={`${e.all_day ? "全天" : fmtHM(e.start_ms)} · ${e.title}`}
+                        className={cn(
+                          "truncate rounded px-1 py-px text-[10px]",
+                          e.all_day ? "bg-primary/25 text-primary" : "bg-secondary text-secondary-foreground",
+                        )}
+                      >
+                        {e.all_day ? "" : `${fmtHM(e.start_ms)} `}
+                        {e.title}
+                      </span>
+                    ))}
+                    {evs.length > 3 && (
+                      <span className="px-1 text-[10px] text-muted-foreground">+{evs.length - 3}</span>
+                    )}
+                    {hasTodo && <span className="mt-auto size-1.5 self-center rounded-full bg-orange-400" title="有待办" />}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-1 items-center justify-center text-xs text-muted-foreground">
+              点击日期进入日视图查看/添加安排
             </div>
           </div>
+        )}
 
-          {dayEvents.length === 0 && dayTodos.length === 0 ? (
-            <div className="mt-2 flex h-16 items-center justify-center text-xs text-muted-foreground">
-              这一天还没有安排，点上方按钮添加
-            </div>
-          ) : (
-            <div className="mt-2 space-y-1">
-              {dayEvents.map((e) => (
-                <div
-                  key={`e${e.id}`}
-                  onContextMenu={(ev) => {
-                    ev.preventDefault();
-                    setMenu({ x: ev.clientX, y: ev.clientY, kind: "event", id: e.id });
-                  }}
-                  className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
-                >
-                  <span
-                    className={cn(
-                      "shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium",
-                      e.all_day ? "bg-primary/15 text-primary" : "bg-secondary text-secondary-foreground",
-                    )}
-                  >
-                    {e.all_day ? "全天" : fmtHM(e.start_ms)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{e.title}</span>
-                  {e.location && (
-                    <span className="shrink-0 truncate text-[11px] text-muted-foreground">📍 {e.location}</span>
-                  )}
-                </div>
-              ))}
-              {dayTodos.map((t) => (
-                <div
-                  key={`t${t.id}`}
-                  onContextMenu={(ev) => {
-                    ev.preventDefault();
-                    setMenu({ x: ev.clientX, y: ev.clientY, kind: "todo", id: t.id });
-                  }}
-                  className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
-                >
-                  <button
-                    onClick={() => toggleTodo(t)}
-                    className={cn(
-                      "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                      t.done ? "border-emerald-500 bg-emerald-500 text-white" : "border-muted-foreground/50",
-                    )}
-                    title={t.done ? "标记未完成" : "标记完成"}
-                  >
-                    {t.done && <span className="text-[10px]">✓</span>}
-                  </button>
-                  <span className={cn("min-w-0 flex-1 truncate text-sm", t.done && "text-muted-foreground line-through")}>
-                    {t.title}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {tab === "week" && (
+          <WeekView
+            events={range?.events ?? []}
+            selectedKey={selectedKey}
+            showWeekend={cfg.weekShowWeekend !== false}
+            onSelectDay={setSelectedKey}
+            onEventClick={(e) => openEventDrawer(e, localDayKey(e.start_ms))}
+            onEventMenu={(e, x, y) => openMenu("event", e.id, x, y)}
+          />
+        )}
+
+        {tab === "day" && (
+          <DayView
+            events={range?.events ?? []}
+            todos={range?.todos ?? []}
+            dayKey={selectedKey}
+            onEventClick={(e) => openEventDrawer(e, localDayKey(e.start_ms))}
+            onEventMenu={(e, x, y) => openMenu("event", e.id, x, y)}
+            onToggleTodo={toggleTodo}
+            onTodoMenu={(t, x, y) => openMenu("todo", t.id, x, y)}
+            onAddEvent={() => setDrawer({ mode: "event", editing: null, dayKey: selectedKey })}
+            onAddTodo={() => setDrawer({ mode: "todo", editing: null })}
+          />
+        )}
+
+        {tab === "todo" && (
+          <TodoView
+            todos={range?.todos ?? []}
+            onToggle={toggleTodo}
+            onMenu={(t, x, y) => openMenu("todo", t.id, x, y)}
+            onAdd={() => setDrawer({ mode: "todo", editing: null })}
+          />
+        )}
       </div>
 
       {/* 右键菜单 */}
@@ -419,9 +426,11 @@ export function CalendarPage() {
             setMenu(null);
             if (!m) return;
             if (m.kind === "event") {
-              setDrawer({ mode: "event", editing: eventsByDay.get(selectedKey)?.find((a) => a.id === m.id) ?? null, dayKey: selectedKey });
+              const ev = (range?.events ?? []).find((a) => a.id === m.id);
+              if (ev) openEventDrawer(ev, localDayKey(ev.start_ms));
             } else {
-              setDrawer({ mode: "todo", editing: (range?.todos ?? []).find((a) => a.id === m.id) ?? null });
+              const t = (range?.todos ?? []).find((a) => a.id === m.id);
+              if (t) setDrawer({ mode: "todo", editing: t });
             }
           }}
         />
@@ -506,7 +515,9 @@ function EventForm({
   const [end, setEnd] = useState(
     editing ? toDateTimeInput(editing.end_ms) : `${toDateInput(dayStartMs(dayKey))}T10:00`,
   );
-  const [dayStr, setDayStr] = useState(editing?.all_day ? toDateInput(editing.start_ms) : toDateInput(dayStartMs(dayKey)));
+  const [dayStr, setDayStr] = useState(
+    editing?.all_day ? toDateInput(editing.start_ms) : toDateInput(dayStartMs(dayKey)),
+  );
   const [err, setErr] = useState<string | null>(null);
 
   const submit = () => {
@@ -595,8 +606,11 @@ function TodoForm({
 }) {
   const [title, setTitle] = useState(editing?.title ?? "");
   const [notes, setNotes] = useState(editing?.notes ?? "");
-  const [hasDue, setHasDue] = useState(editing?.due_date != null);
-  const [dueStr, setDueStr] = useState(editing?.due_date != null ? toDateInput(dayStartMs(editing!.due_date!)) : toDateInput(Date.now()));
+  const dueVal = editing?.due_date ?? null;
+  const [hasDue, setHasDue] = useState(dueVal != null);
+  const [dueStr, setDueStr] = useState(
+    dueVal != null ? toDateInput(dayStartMs(dueVal)) : toDateInput(Date.now()),
+  );
   const [err, setErr] = useState<string | null>(null);
 
   const submit = () => {
