@@ -1,6 +1,6 @@
 [package]
 name = "easytool"
-version = "0.8.0"
+version = "0.9.0"
 description = "EasyTool 工具箱"
 authors = ["Yuan Jiawei"]
 edition = "2021"
