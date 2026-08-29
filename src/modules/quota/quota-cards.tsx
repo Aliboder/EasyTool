@@ -15,7 +15,7 @@ import {
   windowName,
 } from "./registry";
 import { DailyBars, Ring, SegmentBar } from "./charts";
-import { tierAt, nextBoundary } from "./pricing";
+import { tierAt, nextBoundary, fmtRemaining } from "./pricing";
 
 function StatusBadge({
   account,
@@ -80,17 +80,17 @@ function TierBadge() {
   const tier = tierAt(new Date());
   const next = nextBoundary(new Date());
   const peak = tier === "peak";
-  const mins = Math.max(1, Math.ceil(next.remainingMs / 60000));
+  const remaining = fmtRemaining(next.remainingMs);
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
         peak ? "bg-amber-500/15 text-amber-600" : "bg-sky-500/15 text-sky-600",
       )}
-      title={`${peak ? "峰价时段" : "谷价时段"} · ${mins} 分钟后切换为${next.tier === "peak" ? "峰时" : "谷时"}价（工作日 09–12 / 14–18 峰时，周末全天谷价）`}
+      title={`${peak ? "峰价时段" : "谷价时段"} · ${remaining}后切换为${next.tier === "peak" ? "峰时" : "谷时"}价（工作日 09–12 / 14–18 峰时，周末全天谷价）`}
     >
       {peak ? "峰价" : "谷价"}
-      <span className="opacity-70">· {mins}min</span>
+      <span className="opacity-70">· {remaining}</span>
     </span>
   );
 }

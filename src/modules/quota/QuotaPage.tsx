@@ -11,7 +11,7 @@ import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { QuotaSettings } from "./QuotaSettings";
 import { AccountCard } from "./quota-cards";
 import { type AccountStatusPayload, getKindMeta, knownKinds, fmtMoney } from "./registry";
-import { tierAt, nextBoundary } from "./pricing";
+import { tierAt, nextBoundary, fmtRemaining } from "./pricing";
 
 interface StatusPayload {
   accounts: AccountStatusPayload[];
@@ -50,7 +50,7 @@ function BudgetSummary({ status, settings }: { status: StatusPayload; settings: 
   }, []);
   const tier = tierAt(new Date());
   const next = nextBoundary(new Date());
-  const mins = Math.max(1, Math.ceil(next.remainingMs / 60000));
+  const remaining = fmtRemaining(next.remainingMs);
   const peak = tier === "peak";
   return (
     <div className="rounded-xl border bg-card p-4 shadow-sm">
@@ -84,10 +84,10 @@ function BudgetSummary({ status, settings }: { status: StatusPayload; settings: 
               "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
               peak ? "bg-amber-500/15 text-amber-600" : "bg-sky-500/15 text-sky-600",
             )}
-            title={`${mins} 分钟后切换为${next.tier === "peak" ? "峰时价" : "谷时价"}（工作日 09–12 / 14–18 峰时，周末全天谷价）`}
+            title={`${remaining}后切换为${next.tier === "peak" ? "峰时价" : "谷时价"}（工作日 09–12 / 14–18 峰时，周末全天谷价）`}
           >
             {peak ? "⏫ 峰价时段" : "⏬ 谷价时段"}
-            <span className="opacity-70">· {mins}min</span>
+            <span className="opacity-70">· {remaining}</span>
           </span>
         </div>
       </div>

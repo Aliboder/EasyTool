@@ -74,6 +74,15 @@ export interface PeakBoundary {
   remainingMs: number;
 }
 
+/// 剩余时间格式化为「N 小时 N 分」（不足 1 小时只显示分钟）
+export function fmtRemaining(ms: number): string {
+  const totalMin = Math.max(1, Math.ceil(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0) return `${h} 小时 ${m} 分`;
+  return `${m} 分`;
+}
+
 /** 下一次档位切换时刻与切换后档位 */
 export function nextBoundary(now: Date): PeakBoundary {
   const f = beijingFields(now);

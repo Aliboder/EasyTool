@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tierAt, nextBoundary, isWeekend } from "./pricing";
+import { tierAt, nextBoundary, isWeekend, fmtRemaining } from "./pricing";
 
 const BEIJING_OFFSET_MS = 8 * 3600 * 1000;
 
@@ -56,5 +56,14 @@ describe("pricing nextBoundary", () => {
     const b = nextBoundary(bj(2026, 8, 22, 20, 0)); // 周六晚
     expect(b.tier).toBe("peak");
     expect(b.ts).toBe(bj(2026, 8, 24, 9, 0).getTime());
+  });
+});
+
+describe("pricing fmtRemaining", () => {
+  it("小时+分钟格式", () => {
+    expect(fmtRemaining(3 * 3600_000 + 22 * 60_000)).toBe("3 小时 22 分");
+    expect(fmtRemaining(45 * 60_000)).toBe("45 分");
+    expect(fmtRemaining(0)).toBe("1 分"); // 向上取整，至少 1 分钟
+    expect(fmtRemaining(30_000)).toBe("1 分");
   });
 });
