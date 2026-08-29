@@ -11,28 +11,40 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
-import { ChevronLeft, ChevronRight, Pencil, Trash2, Upload } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Settings2, Trash2, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { CALENDAR_DEFAULTS, type CalendarConfig } from "./config";
 import type { EventDto, TodoDto, ViewKey } from "./types";
+import { CalendarSettings } from "./Settings";
 import { DayView, TodoView, WeekView } from "./views";
 import {
+  buildRrule,
   dayEndMs,
   dayStartMs,
   fmtHM,
   fromDateTimeInput,
   fromDateInput,
+  keyToDateInput,
   localDayKey,
   monthGrid,
+  parseRrule,
   toDateInput,
   toDateTimeInput,
   todayKey,
   weekStartKey,
+  type RruleForm,
 } from "./utils";
 
 interface RangePayload {
@@ -41,7 +53,7 @@ interface RangePayload {
 }
 
 type DrawerState =
-  | { mode: "event"; editing: EventDto | null; dayKey: number }
+  | { mode: "event"; editing: EventDto | null; dayKey: number; instance?: { eventId: number; instanceDate: number } | null }
   | { mode: "todo"; editing: TodoDto | null }
   | null;
 
@@ -49,7 +61,8 @@ interface MenuState {
   x: number;
   y: number;
   kind: "event" | "todo";
-  id: number;
+  event?: EventDto;
+  todo?: TodoDto;
 }
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
@@ -75,7 +88,7 @@ function viewWindow(tab: ViewKey, ym: { y: number; m: number }, selectedKey: num
 }
 
 export function CalendarPage() {
-  const { cfg } = useModuleConfig<CalendarConfig>("calendar", CALENDAR_DEFAULTS);
+  const { cfg, update } = useModuleConfig<CalendarConfig>("calendar", CALENDAR_DEFAULTS);
   const [tab, setTab] = useState<ViewKey>("month");
   const [configApplied, setConfigApplied] = useState(false);
   const [ym, setYm] = useState(() => {
@@ -87,6 +100,7 @@ export function CalendarPage() {
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // 启动后按配置的默认视图落地
   useEffect(() => {
@@ -179,8 +193,8 @@ export function CalendarPage() {
 
   // ---------- 增删改 ----------
 
-  const openEventDrawer = (editing: EventDto | null, dayKey: number) =>
-    setDrawer({ mode: "event", editing, dayKey });
+  const openEventDrawer = (editing: EventDto | null, dayKey: number, instance?: { eventId: number; instanceDate: number } | null) =>
+    setDrawer({ mode: "event", editing, dayKey, instance: instance ?? null });
 
   const saveEvent = async (input: {
     title: string;
@@ -190,11 +204,31 @@ export function CalendarPage() {
     start_ms: number;
     end_ms: number;
     rrule: string | null;
+    instance?: { eventId: number; instanceDate: number } | null;
   }) => {
     setBusy(true);
     try {
       const editing = drawer && drawer.mode === "event" ? drawer.editing : null;
-      if (editing) {
+      const instance = drawer && drawer.mode === "event" ? drawer.instance : null;
+      if (instance) {
+        await invoke("calendar_override_event", {
+          eventId: instance.eventId,
+          instanceDate: instance.instanceDate,
+          input: {
+            variant: "edit",
+            input: {
+              title: input.title,
+              location: input.location,
+              notes: input.notes,
+              all_day: input.all_day,
+              start_ms: input.start_ms,
+              end_ms: input.end_ms,
+              rrule: null,
+            },
+          },
+        });
+        toast("已只改这一次");
+      } else if (editing) {
         await invoke("calendar_update_event", { id: editing.id, input });
         toast("事件已更新");
       } else {
@@ -239,24 +273,55 @@ export function CalendarPage() {
     }
   };
 
-  const removeItem = async (kind: "event" | "todo") => {
+  const removeItem = async () => {
     const m = menu;
     if (!m) return;
-    if (!window.confirm(kind === "event" ? "删除这个事件？" : "删除这条待办？")) return;
+    if (m.kind === "event" && m.event) {
+      const e = m.event;
+      if (!window.confirm("删除这个事件？")) return;
+      try {
+        await invoke("calendar_delete_event", { id: e.id });
+        toast("已删除");
+        loadRange();
+      } catch (err) {
+        toast(`删除失败：${err}`);
+      }
+    } else if (m.todo) {
+      const t = m.todo;
+      if (!window.confirm("删除这条待办？")) return;
+      try {
+        await invoke("calendar_delete_todo", { id: t.id });
+        toast("已删除");
+        loadRange();
+      } catch (err) {
+        toast(`删除失败：${err}`);
+      }
+    }
+    setMenu(null);
+  };
+
+  const deleteInstanceOnly = async (e: EventDto) => {
+    if (e.instance_date == null) return;
+    if (!window.confirm(`只删除这一天（${e.instance_date % 100} 日）的这一次？其它次不受影响。`)) return;
     try {
-      if (kind === "event") await invoke("calendar_delete_event", { id: m.id });
-      else await invoke("calendar_delete_todo", { id: m.id });
-      toast("已删除");
+      await invoke("calendar_override_event", {
+        eventId: e.id,
+        instanceDate: e.instance_date,
+        input: { variant: "delete" },
+      });
+      toast("已删除这一次");
       loadRange();
-    } catch (e) {
-      toast(`删除失败：${e}`);
+    } catch (err) {
+      toast(`删除失败：${err}`);
     } finally {
       setMenu(null);
     }
   };
 
-  const openMenu = (kind: "event" | "todo", id: number, x: number, y: number) =>
-    setMenu({ kind, id, x, y });
+  const openMenu = (kind: "event" | "todo", item: EventDto | TodoDto, x: number, y: number) => {
+    if (kind === "event") setMenu({ kind, event: item as EventDto, x, y });
+    else setMenu({ kind, todo: item as TodoDto, x, y });
+  };
 
   const importIcs = async () => {
     const sel = await open({
@@ -310,6 +375,9 @@ export function CalendarPage() {
             <HeaderButton title="导入 ICS 日程文件（课程表/日历）" onClick={importIcs}>
               <Upload className="size-4" />
               <span className="text-xs">导入</span>
+            </HeaderButton>
+            <HeaderButton title="日程设置" active={showSettings} onClick={() => setShowSettings((v) => !v)}>
+              <Settings2 className="size-4" />
             </HeaderButton>
           </>
         }
@@ -388,7 +456,7 @@ export function CalendarPage() {
             showWeekend={cfg.weekShowWeekend !== false}
             onSelectDay={setSelectedKey}
             onEventClick={(e) => openEventDrawer(e, localDayKey(e.start_ms))}
-            onEventMenu={(e, x, y) => openMenu("event", e.id, x, y)}
+            onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
           />
         )}
 
@@ -398,9 +466,9 @@ export function CalendarPage() {
             todos={range?.todos ?? []}
             dayKey={selectedKey}
             onEventClick={(e) => openEventDrawer(e, localDayKey(e.start_ms))}
-            onEventMenu={(e, x, y) => openMenu("event", e.id, x, y)}
+            onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
             onToggleTodo={toggleTodo}
-            onTodoMenu={(t, x, y) => openMenu("todo", t.id, x, y)}
+            onTodoMenu={(t, x, y) => openMenu("todo", t, x, y)}
             onAddEvent={() => setDrawer({ mode: "event", editing: null, dayKey: selectedKey })}
             onAddTodo={() => setDrawer({ mode: "todo", editing: null })}
           />
@@ -410,7 +478,7 @@ export function CalendarPage() {
           <TodoView
             todos={range?.todos ?? []}
             onToggle={toggleTodo}
-            onMenu={(t, x, y) => openMenu("todo", t.id, x, y)}
+            onMenu={(t, x, y) => openMenu("todo", t, x, y)}
             onAdd={() => setDrawer({ mode: "todo", editing: null })}
           />
         )}
@@ -418,30 +486,92 @@ export function CalendarPage() {
 
       {/* 右键菜单 */}
       <ContextMenu visible={menu !== null} x={menu?.x ?? 0} y={menu?.y ?? 0} onClose={() => setMenu(null)}>
-        <ContextMenuItem
-          icon={<Pencil className="size-3.5" />}
-          label={menu?.kind === "event" ? "编辑事件" : "编辑待办"}
-          onClick={() => {
-            const m = menu;
-            setMenu(null);
-            if (!m) return;
-            if (m.kind === "event") {
-              const ev = (range?.events ?? []).find((a) => a.id === m.id);
-              if (ev) openEventDrawer(ev, localDayKey(ev.start_ms));
-            } else {
-              const t = (range?.todos ?? []).find((a) => a.id === m.id);
-              if (t) setDrawer({ mode: "todo", editing: t });
-            }
-          }}
-        />
-        <ContextMenuDivider />
-        <ContextMenuItem
-          icon={<Trash2 className="size-3.5" />}
-          label="删除"
-          className="text-destructive hover:bg-destructive/15 hover:text-destructive"
-          onClick={() => removeItem(menu?.kind ?? "event")}
-        />
+        {menu?.kind === "event" && menu.event ? (
+          <>
+            {menu.event.rrule && menu.event.instance_date != null ? (
+              <>
+                <ContextMenuItem
+                  icon={<Pencil className="size-3.5" />}
+                  label="编辑此事件（仅此一次）"
+                  onClick={() => {
+                    const e = menu.event!;
+                    setMenu(null);
+                    openEventDrawer(e, localDayKey(e.start_ms), {
+                      eventId: e.id,
+                      instanceDate: e.instance_date!,
+                    });
+                  }}
+                />
+                <ContextMenuItem
+                  icon={<Pencil className="size-3.5" />}
+                  label="编辑规则（全部次数）"
+                  onClick={() => {
+                    const e = menu.event!;
+                    setMenu(null);
+                    openEventDrawer({ ...e, instance_date: null }, localDayKey(e.start_ms), null);
+                  }}
+                />
+                <ContextMenuDivider />
+                <ContextMenuItem
+                  icon={<Trash2 className="size-3.5" />}
+                  label="删除此事件（仅此一次）"
+                  className="text-destructive hover:bg-destructive/15 hover:text-destructive"
+                  onClick={() => deleteInstanceOnly(menu.event!)}
+                />
+                <ContextMenuItem
+                  icon={<Trash2 className="size-3.5" />}
+                  label="删除全部（含规则）"
+                  className="text-destructive hover:bg-destructive/15 hover:text-destructive"
+                  onClick={removeItem}
+                />
+              </>
+            ) : (
+              <>
+                <ContextMenuItem
+                  icon={<Pencil className="size-3.5" />}
+                  label="编辑事件"
+                  onClick={() => {
+                    const e = menu.event!;
+                    setMenu(null);
+                    openEventDrawer(e, localDayKey(e.start_ms), null);
+                  }}
+                />
+                <ContextMenuDivider />
+                <ContextMenuItem
+                  icon={<Trash2 className="size-3.5" />}
+                  label="删除"
+                  className="text-destructive hover:bg-destructive/15 hover:text-destructive"
+                  onClick={removeItem}
+                />
+              </>
+            )}
+          </>
+        ) : menu?.kind === "todo" && menu.todo ? (
+          <>
+            <ContextMenuItem
+              icon={<Pencil className="size-3.5" />}
+              label="编辑待办"
+              onClick={() => {
+                const t = menu.todo!;
+                setMenu(null);
+                setDrawer({ mode: "todo", editing: t });
+              }}
+            />
+            <ContextMenuDivider />
+            <ContextMenuItem
+              icon={<Trash2 className="size-3.5" />}
+              label="删除"
+              className="text-destructive hover:bg-destructive/15 hover:text-destructive"
+              onClick={removeItem}
+            />
+          </>
+        ) : null}
       </ContextMenu>
+
+      {/* 设置抽屉 */}
+      <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="日程设置">
+        <CalendarSettings cfg={cfg} onUpdate={update} />
+      </Drawer>
 
       {/* 表单抽屉 */}
       <Drawer
@@ -449,9 +579,11 @@ export function CalendarPage() {
         onClose={() => setDrawer(null)}
         title={
           drawer?.mode === "event"
-            ? drawer.editing
-              ? "编辑事件"
-              : "新建事件"
+            ? drawer.instance
+              ? "仅此一次：编辑这一天"
+              : drawer.editing
+                ? "编辑事件"
+                : "新建事件"
             : drawer?.mode === "todo"
               ? drawer.editing
                 ? "编辑待办"
@@ -464,6 +596,7 @@ export function CalendarPage() {
             key={drawer.editing?.id ?? `new-${drawer.dayKey}`}
             editing={drawer.editing}
             dayKey={drawer.dayKey}
+            instance={drawer.instance ?? null}
             busy={busy}
             onSave={saveEvent}
             onCancel={() => setDrawer(null)}
@@ -484,15 +617,25 @@ export function CalendarPage() {
 
 // ---------- 事件表单 ----------
 
+const RECUR_OPTIONS = [
+  { value: "none", label: "不重复" },
+  { value: "daily", label: "每天" },
+  { value: "weekly", label: "每周" },
+  { value: "monthly", label: "每月同日" },
+  { value: "monthlyNth", label: "每月第 N 个星期几" },
+];
+
 function EventForm({
   editing,
   dayKey,
+  instance,
   busy,
   onSave,
   onCancel,
 }: {
   editing: EventDto | null;
   dayKey: number;
+  instance: { eventId: number; instanceDate: number } | null;
   busy: boolean;
   onSave: (input: {
     title: string;
@@ -502,6 +645,7 @@ function EventForm({
     start_ms: number;
     end_ms: number;
     rrule: string | null;
+    instance?: { eventId: number; instanceDate: number } | null;
   }) => void;
   onCancel: () => void;
 }) {
@@ -518,7 +662,21 @@ function EventForm({
   const [dayStr, setDayStr] = useState(
     editing?.all_day ? toDateInput(editing.start_ms) : toDateInput(dayStartMs(dayKey)),
   );
+  // 重复设置（仅此一次模式不可改）
+  const [recur, setRecur] = useState<RruleForm>(() => {
+    const parsed = editing?.rrule ? parseRrule(editing.rrule) : null;
+    return (
+      parsed ?? {
+        freq: "none",
+        bydays: [],
+        nth: 1,
+        nthDay: editing ? Math.max(0, (new Date(editing.start_ms).getDay() + 6) % 7) : 0,
+        untilKey: null,
+      }
+    );
+  });
   const [err, setErr] = useState<string | null>(null);
+  const [recErr, setRecErr] = useState<string | null>(null);
 
   const submit = () => {
     const t = title.trim();
@@ -526,9 +684,30 @@ function EventForm({
       setErr("标题不能为空");
       return;
     }
+    if (!instance && recur.freq === "weekly" && recur.bydays.length === 0) {
+      setRecErr("每周重复至少要勾选一天");
+      return;
+    }
+    let rrule: string | null = null;
+    if (!instance) {
+      rrule = buildRrule(recur);
+      if (rrule === null && recur.freq !== "none") {
+        setRecErr("重复设置不完整");
+        return;
+      }
+    }
     if (allDay) {
       const ms = fromDateInput(dayStr);
-      onSave({ title: t, location, notes, all_day: true, start_ms: ms, end_ms: dayEndMs(ms), rrule: null });
+      onSave({
+        title: t,
+        location,
+        notes,
+        all_day: true,
+        start_ms: ms,
+        end_ms: dayEndMs(ms),
+        rrule,
+        instance,
+      });
     } else {
       const startMs = fromDateTimeInput(start);
       const endMs = fromDateTimeInput(end);
@@ -536,12 +715,24 @@ function EventForm({
         setErr("结束时间不能早于开始时间");
         return;
       }
-      onSave({ title: t, location, notes, all_day: false, start_ms: startMs, end_ms: endMs, rrule: null });
+      onSave({ title: t, location, notes, all_day: false, start_ms: startMs, end_ms: endMs, rrule, instance });
     }
+  };
+
+  const toggleDay = (d: number) => {
+    setRecur((r) => ({
+      ...r,
+      bydays: r.bydays.includes(d) ? r.bydays.filter((x) => x !== d) : [...r.bydays, d].sort(),
+    }));
   };
 
   return (
     <div className="space-y-4 p-6">
+      {instance && (
+        <div className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+          你正在单独调整这一天，其它重复次数不受影响；重复规则不可在此改动。
+        </div>
+      )}
       <div className="space-y-1.5">
         <Label>标题</Label>
         <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="如：看牙 / 周会" autoFocus />
@@ -578,13 +769,123 @@ function EventForm({
         <Label>备注（可选）</Label>
         <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="带什么、和谁" />
       </div>
+      {!instance && (
+        <div className="space-y-3 rounded-lg border border-dashed p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">重复</div>
+              <div className="text-xs text-muted-foreground">按规则自动生成每次（登录日历/课表常用）</div>
+            </div>
+            <Select
+              value={recur.freq}
+              onValueChange={(v) =>
+                setRecur((r) => ({ ...r, freq: v as RruleForm["freq"] }))
+              }
+              disabled={instance != null}
+            >
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RECUR_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {recur.freq === "weekly" && (
+            <div className="flex flex-wrap gap-1.5">
+              {["一", "二", "三", "四", "五", "六", "日"].map((w, i) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => toggleDay(i)}
+                  className={cn(
+                    "flex size-8 items-center justify-center rounded-full border text-xs transition-colors",
+                    recur.bydays.includes(i)
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:bg-accent",
+                  )}
+                >
+                  {w}
+                </button>
+              ))}
+            </div>
+          )}
+          {recur.freq === "monthlyNth" && (
+            <div className="flex items-center gap-2">
+              <Label className="shrink-0 text-xs">每月第</Label>
+              <Select
+                value={String(recur.nth)}
+                onValueChange={(v) => setRecur((r) => ({ ...r, nth: Number(v) }))}
+              >
+                <SelectTrigger className="w-20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      第 {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={String(recur.nthDay)} onValueChange={(v) => setRecur((r) => ({ ...r, nthDay: Number(v) }))}>
+                <SelectTrigger className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["周一", "周二", "周三", "周四", "周五", "周六", "周日"].map((w, i) => (
+                    <SelectItem key={i} value={String(i)}>
+                      {w}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {(recur.freq === "daily" || recur.freq === "weekly" || recur.freq === "monthly" || recur.freq === "monthlyNth") && (
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">截止日期</div>
+                <div className="text-xs text-muted-foreground">不设置则无限重复</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={recur.untilKey != null}
+                  onCheckedChange={(v) =>
+                    setRecur((r) => ({ ...r, untilKey: v ? r.untilKey ?? todayKey() : null }))
+                  }
+                />
+                {recur.untilKey != null && (
+                  <Input
+                    type="date"
+                    value={keyToDateInput(recur.untilKey)}
+                    onChange={(e) => {
+                      const k = e.target.value;
+                      if (k) {
+                        const [y, m, d] = k.split("-").map(Number);
+                        setRecur((r) => ({ ...r, untilKey: y * 10000 + m * 100 + d }));
+                      }
+                    }}
+                    className="w-36"
+                  />
+                )}
+              </div>
+            </div>
+          )}
+          {recErr && <p className="text-xs text-red-500">{recErr}</p>}
+        </div>
+      )}
       {err && <p className="text-xs text-red-500">{err}</p>}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="ghost" onClick={onCancel}>
           取消
         </Button>
         <Button onClick={submit} disabled={busy}>
-          {editing ? "保存修改" : "添加"}
+          {instance ? "只改这一天" : editing ? "保存修改" : "添加"}
         </Button>
       </div>
     </div>

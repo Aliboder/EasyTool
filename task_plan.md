@@ -43,13 +43,13 @@
 - [ ] 用户手动验收（交付验收清单）
 - **状态：** complete
 
-#### 批次 3：重复 + 例外
-- [ ] 后端 RRULE 子集 + expand 纯函数（Rust）双单测
-- [ ] 前端 TS expand 双实现 + vitest 同批用例
-- [ ] event_overrides 表 + 仅此一次交互（右键）
-- [ ] 表单加重复区（每天/每周勾选/每月同日/每月第N个星期X/截止）
-- [ ] 验证 + 验收清单
-- **状态：** pending
+#### 批次 3：重复 + 例外 + 设置（✅ 已完成，待用户验收）
+- [x] 后端：get_range 展开实例 + 例外合并；calendar_override_event 命令；instance_date
+- [x] 前端：重复规则编辑（每天/每周勾选/每月同日/每月第N个星期几/截止日）+「仅此一次」改/删
+- [x] 设置抽屉（提醒开关/提前量/默认视图/周末显示）
+- [x] parseRrule/buildRrule 纯函数 + vitest；cargo 109/零警告、vitest 41、tsc/build 通过
+- [ ] 用户手动验收（交付验收清单）
+- **状态：** complete
 
 #### 批次 4：提醒 + 设置
 - [ ] 常驻提醒线程 + reminder_logs 去重 + 睡眠补扫

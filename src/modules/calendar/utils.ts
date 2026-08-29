@@ -117,6 +117,110 @@ export function fmtHM(ms: number): string {
 
 // ---------- 周/日视图时间轴布局（纯函数，可单测） ----------
 
+// ---------- RRULE 表单模型（纯函数，可单测） ----------
+
+export type RruleFreq = "none" | "daily" | "weekly" | "monthly" | "monthlyNth";
+
+export interface RruleForm {
+  freq: RruleFreq;
+  /** weekly：选中的星期（周一=0..周日=6），空 = 起始日 */
+  bydays: number[];
+  /** monthlyNth：第几个星期几（1~5） */
+  nth: number;
+  /** monthlyNth：星期几（周一=0） */
+  nthDay: number;
+  /** 截止日期（本地日键；null=无限） */
+  untilKey: number | null;
+}
+
+const WEEK_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
+/** rrule 字符串 → 表单模型（解析不了则返回 null，前端按「不重复」处理） */
+export function parseRrule(rule: string): RruleForm | null {
+  const parts = new Map<string, string>();
+  for (const seg of rule.split(";")) {
+    const [k, v] = seg.split("=");
+    if (k) parts.set(k.toUpperCase(), v ?? "");
+  }
+  const freq = parts.get("FREQ");
+  const dayRaw = parts.get("BYDAY");
+  const untilRaw = parts.get("UNTIL");
+  const untilKey = untilRaw ? untilToKey(untilRaw) : null;
+  const bydays =
+    dayRaw?.split(",")
+      .map((s) => WEEK_CODES.indexOf(s.toUpperCase()))
+      .filter((i) => i >= 0) ?? [];
+  if (freq === "DAILY") return { freq: "daily", bydays: [], nth: 1, nthDay: 0, untilKey };
+  if (freq === "MONTHLY") {
+    if (dayRaw) {
+      // 第 N 个星期 X（如 3MO / -1FR 取 1..5）
+      const m = dayRaw.match(/^([+-]?\d+)([A-Z]{2})$/);
+      if (m) {
+        const n = Math.abs(parseInt(m[1], 10));
+        return {
+          freq: "monthlyNth",
+          bydays: [],
+          nth: n >= 1 && n <= 5 ? n : 1,
+          nthDay: Math.max(0, WEEK_CODES.indexOf(m[2].toUpperCase())),
+          untilKey,
+        };
+      }
+      return { freq: "monthly", bydays: [], nth: 1, nthDay: 0, untilKey };
+    }
+    return { freq: "monthly", bydays: [], nth: 1, nthDay: 0, untilKey };
+  }
+  if (freq === "WEEKLY") {
+    return { freq: "weekly", bydays, nth: 1, nthDay: 0, untilKey };
+  }
+  return null;
+}
+
+/** 表单模型 → rrule 字符串（null = 不重复） */
+export function buildRrule(f: RruleForm): string | null {
+  if (f.freq === "none") return null;
+  let rule: string;
+  if (f.freq === "daily") rule = "FREQ=DAILY";
+  else if (f.freq === "weekly") {
+    const days = f.bydays.length > 0 ? f.bydays : [];
+    if (days.length === 0) return null; // 每周至少要选一天
+    rule = `FREQ=WEEKLY;BYDAY=${days.map((d) => WEEK_CODES[d]).join(",")}`;
+  } else if (f.freq === "monthly") rule = "FREQ=MONTHLY";
+  else {
+    // monthlyNth
+    if (f.nthDay < 0 || f.nthDay > 6) return null;
+    rule = `FREQ=MONTHLY;BYDAY=${Math.max(1, f.nth)}${WEEK_CODES[f.nthDay]}`;
+  }
+  if (f.untilKey != null) {
+    rule += `;UNTIL=${keyToUntil(f.untilKey)}`;
+  }
+  return rule;
+}
+
+/** UNTIL 字符串 → 本地日键（兼容 date-only 与 T160000Z 惯例） */
+function untilToKey(raw: string): number | null {
+  if (raw.length < 8) return null;
+  const y = parseInt(raw.slice(0, 4), 10);
+  const m = parseInt(raw.slice(4, 6), 10);
+  const d = parseInt(raw.slice(6, 8), 10);
+  return y * 10000 + m * 100 + d;
+}
+
+/** 本地日键 → 截止时刻 16:00Z（= 北京当日 24:00，保证截止日当天包含） */
+function keyToUntil(key: number): string {
+  const y = Math.floor(key / 10000);
+  const m = Math.floor((key % 10000) / 100);
+  const d = key % 100;
+  return `${String(y).padStart(4, "0")}${String(m).padStart(2, "0")}${String(d).padStart(2, "0")}T160000Z`;
+}
+
+/** 日键 → yyyy-MM-dd（表单 date input 用） */
+export function keyToDateInput(key: number): string {
+  const y = Math.floor(key / 10000);
+  const m = Math.floor((key % 10000) / 100);
+  const d = key % 100;
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 /** 日键 → 所在周的周一（周一起始）；key 为本地日键 */
 export function weekStartKey(key: number): number {
   const y = Math.floor(key / 10000);

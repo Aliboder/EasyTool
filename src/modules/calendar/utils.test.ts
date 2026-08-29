@@ -9,6 +9,9 @@ import {
   weekStartKey,
   weekdayOfKey,
   layoutDay,
+  parseRrule,
+  buildRrule,
+  keyToDateInput,
   type TimedEventLike,
 } from "./utils";
 
@@ -91,5 +94,30 @@ describe("calendar utils", () => {
     expect(blocks.length).toBe(2);
     expect(blocks.some((b) => b.index === 0)).toBe(true);
     expect(blocks.some((b) => b.index === 2)).toBe(true);
+  });
+
+  it("parseRrule / buildRrule 往返", () => {
+    // 每周一三五 + 截止
+    const w = parseRrule("FREQ=WEEKLY;BYDAY=MO,WE,FR;UNTIL=20261228T160000Z")!;
+    expect(w.freq).toBe("weekly");
+    expect(w.bydays).toEqual([0, 2, 4]);
+    expect(w.untilKey).toBe(20261228);
+    expect(buildRrule(w)).toBe("FREQ=WEEKLY;BYDAY=MO,WE,FR;UNTIL=20261228T160000Z");
+    // 每天
+    expect(buildRrule({ freq: "daily", bydays: [], nth: 1, nthDay: 0, untilKey: null })).toBe("FREQ=DAILY");
+    // 每月同日
+    expect(buildRrule({ freq: "monthly", bydays: [], nth: 1, nthDay: 0, untilKey: null })).toBe("FREQ=MONTHLY");
+    // 每月第 3 个周一
+    const nth = parseRrule("FREQ=MONTHLY;BYDAY=3MO")!;
+    expect(nth.freq).toBe("monthlyNth");
+    expect(nth.nth).toBe(3);
+    expect(nth.nthDay).toBe(0);
+    expect(buildRrule(nth)).toBe("FREQ=MONTHLY;BYDAY=3MO");
+    // 不重复 / 非法
+    expect(buildRrule({ freq: "none", bydays: [], nth: 1, nthDay: 0, untilKey: null })).toBe(null);
+    expect(buildRrule({ freq: "weekly", bydays: [], nth: 1, nthDay: 0, untilKey: null })).toBe(null);
+    expect(parseRrule("FREQ=YEARLY")).toBe(null);
+    // 日期键 ↔ date input
+    expect(keyToDateInput(20260829)).toBe("2026-08-29");
   });
 });

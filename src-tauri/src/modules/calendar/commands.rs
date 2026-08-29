@@ -19,6 +19,8 @@ pub struct EventDto {
     pub start_ms: i64,
     pub end_ms: i64,
     pub rrule: Option<String>,
+    /// 该条数据是哪一天的实例（重复事件展开后为实例日期；单次事件为 None）
+    pub instance_date: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,19 +63,6 @@ pub struct TodoInput {
     pub due_date: Option<i64>,
 }
 
-fn to_event_dto(e: &Event) -> EventDto {
-    EventDto {
-        id: e.id,
-        title: e.title.clone(),
-        location: e.location.clone(),
-        notes: e.notes.clone(),
-        all_day: e.all_day,
-        start_ms: e.start_ms,
-        end_ms: e.end_ms,
-        rrule: e.rrule.clone(),
-    }
-}
-
 fn to_todo_dto(t: &Todo) -> TodoDto {
     TodoDto {
         id: t.id,
@@ -87,8 +76,8 @@ fn to_todo_dto(t: &Todo) -> TodoDto {
 
 // ---------- 命令 ----------
 
-/// 一次性拉取一个窗口内的事件（重复规则事件本体；实例展开在批次 3 上线前按单次展示）
-/// 与全部待办。前端缓存到内存，增删改后局部刷新。
+/// 一次性拉取窗口内的事件（重复规则当场展开为实例、套用「仅此一次」例外）
+/// 与全部待办。
 #[tauri::command]
 pub fn calendar_get_range(
     db: State<'_, Mutex<CalendarDb>>,
@@ -96,13 +85,112 @@ pub fn calendar_get_range(
     end_ms: i64,
 ) -> Result<RangePayload, String> {
     let db = db.lock().map_err(|e| e.to_string())?;
-    let events = db
-        .events_in_window(start_ms, end_ms)?
-        .iter()
-        .map(to_event_dto)
-        .collect();
+    let events = db.events_in_window(start_ms, end_ms)?;
+    let mut out: Vec<EventDto> = Vec::new();
+    for e in &events {
+        if let Some(rule) = &e.rrule {
+            let start_dt = super::expand::ts_to_local(e.start_ms);
+            let dur = (e.end_ms - e.start_ms).max(0);
+            let ovs = db.overrides_for(e.id)?;
+            for inst in super::expand::expand(start_dt, rule) {
+                let day_key = super::expand::local_day_key(inst);
+                let (title, location, notes, all_day, i_start, i_end) =
+                    if let Some(ov) = ovs.iter().find(|o| o.instance_date == day_key) {
+                        if ov.variant == "delete" {
+                            continue;
+                        }
+                        let s = ov.start_ms.unwrap_or_else(|| super::expand::local_to_ts(inst));
+                        (
+                            ov.title.clone().unwrap_or_else(|| e.title.clone()),
+                            ov.location.clone().unwrap_or_else(|| e.location.clone()),
+                            ov.notes.clone().unwrap_or_else(|| e.notes.clone()),
+                            ov.all_day.unwrap_or(e.all_day),
+                            s,
+                            ov.end_ms.unwrap_or(s + dur),
+                        )
+                    } else {
+                        let s = super::expand::local_to_ts(inst);
+                        (
+                            e.title.clone(),
+                            e.location.clone(),
+                            e.notes.clone(),
+                            e.all_day,
+                            s,
+                            s + dur,
+                        )
+                    };
+                if i_end < start_ms || i_start > end_ms {
+                    continue;
+                }
+                out.push(EventDto {
+                    id: e.id,
+                    title,
+                    location,
+                    notes,
+                    all_day,
+                    start_ms: i_start,
+                    end_ms: i_end,
+                    rrule: Some(rule.clone()),
+                    instance_date: Some(day_key),
+                });
+            }
+        } else if e.end_ms >= start_ms && e.start_ms <= end_ms {
+            out.push(EventDto {
+                id: e.id,
+                title: e.title.clone(),
+                location: e.location.clone(),
+                notes: e.notes.clone(),
+                all_day: e.all_day,
+                start_ms: e.start_ms,
+                end_ms: e.end_ms,
+                rrule: None,
+                instance_date: None,
+            });
+        }
+    }
+    out.sort_by_key(|d| d.start_ms);
     let todos = db.all_todos()?.iter().map(to_todo_dto).collect();
-    Ok(RangePayload { events, todos })
+    Ok(RangePayload { events: out, todos })
+}
+
+/// 「仅此一次」例外：variant=delete 删该实例；variant=edit 覆盖该实例字段（其余次不受影响）
+#[derive(Debug, Deserialize)]
+pub struct OverrideInput {
+    pub variant: String, // "edit" | "delete"
+    #[serde(default)]
+    pub input: Option<EventInput>,
+}
+
+#[tauri::command]
+pub fn calendar_override_event(
+    db: State<'_, Mutex<CalendarDb>>,
+    event_id: i64,
+    instance_date: i64,
+    input: OverrideInput,
+) -> Result<(), String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    let base = db.get_event(event_id)?.ok_or("事件不存在")?;
+    match input.variant.as_str() {
+        "delete" => db.upsert_override(event_id, instance_date, "delete", &None),
+        "edit" => {
+            let v = input.input.ok_or("缺少编辑内容")?;
+            validate_event(&v)?;
+            let e = Event {
+                id: 0,
+                title: v.title.trim().into(),
+                location: v.location,
+                notes: v.notes,
+                all_day: v.all_day,
+                start_ms: v.start_ms,
+                end_ms: v.end_ms,
+                rrule: None,
+                created_ms: base.created_ms,
+                updated_ms: now_ms(),
+            };
+            db.upsert_override(event_id, instance_date, "edit", &Some(e))
+        }
+        _ => Err("未知操作".into()),
+    }
 }
 
 fn validate_event(input: &EventInput) -> Result<(), String> {

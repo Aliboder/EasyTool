@@ -187,6 +187,24 @@ fn from_utc(dt: DateTime<Tz>) -> NaiveDateTime {
     Local.from_utc_datetime(&dt.naive_utc()).naive_local()
 }
 
+/// 本地墙钟 → 毫秒（命令层展开实例用）
+pub fn local_to_ts(naive: NaiveDateTime) -> i64 {
+    to_utc(naive).timestamp_millis()
+}
+
+/// 本地墙钟 → 本地日键 yyyymmdd
+pub fn local_day_key(naive: NaiveDateTime) -> i64 {
+    use chrono::Datelike;
+    naive.year() as i64 * 10000 + naive.month() as i64 * 100 + naive.day() as i64
+}
+
+/// 毫秒 → 本地墙钟
+pub fn ts_to_local(ms: i64) -> NaiveDateTime {
+    Local.timestamp_millis_opt(ms).earliest().map(|d| d.naive_local()).unwrap_or_else(|| {
+        Local.timestamp_opt(0, 0).earliest().unwrap().naive_local()
+    })
+}
+
 /// MONTHLY 同日钳制：为缺失 base_day 的月份补"该月最后一天同时间"的实例
 fn clamp_monthly_same_day(start: NaiveDateTime, mut out: Vec<NaiveDateTime>) -> Vec<NaiveDateTime> {
     if out.is_empty() {

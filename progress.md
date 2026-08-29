@@ -42,12 +42,23 @@
 - 创建/修改的文件：
   - `src/modules/calendar/{types.ts,views.tsx,Page.tsx,utils.ts,utils.test.ts}`
 
+### 阶段 3 · 批次 3：重复规则编辑 + 仅此一次例外 + 设置抽屉
+- **状态：** complete（待用户手动验收）
+- 执行的操作：
+  - 后端：get_range 对重复事件**现场展开实例**并套用例外（delete 剔除 / edit 覆盖）；新增 calendar_override_event 命令；EventDto 增 instance_date
+  - 前端：事件表单加「重复」区（每天/每周勾选星期/每月同日/每月第N个星期几 + 可选截止日），重复实例右键四项（编辑此一次/编辑规则/删此一次/删全部）
+  - 设置抽屉：事件提前量、待办过期提醒、默认视图、周末显示
+  - rrule ←→ 表单纯函数 parseRrule/buildRrule + vitest（往返一致）
+- 创建/修改的文件：
+  - `src-tauri/src/modules/calendar/{commands.rs,expand.rs}`、`src-tauri/src/lib.rs`
+  - `src/modules/calendar/{types.ts,utils.ts,utils.test.ts,Settings.tsx,Page.tsx}`
+
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
-| cargo test（后端未动，回归） | 全量 | 全绿 | 109 passed / 0 failed / 3 ignored | ✅ |
-| vitest（含 layoutDay/weekStart 新增） | 全量 | 全绿 | 40 passed（6 文件） | ✅ |
-| tsc / npm run build | 全量 | 无错 | 通过 | ✅ |
+| cargo test（后端展开/例外改动回归） | 全量 | 全绿 | 109 passed / 0 failed / 3 ignored | ✅ |
+| vitest（含 parseRrule/buildRrule 往返） | 全量 | 全绿 | 41 passed（6 文件） | ✅ |
+| tsc / npm run build / cargo build 警告 | 全量 | 无错/零警告 | 通过 | ✅ |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |

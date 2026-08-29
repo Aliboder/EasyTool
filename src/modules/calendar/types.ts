@@ -8,6 +8,8 @@ export interface EventDto {
   start_ms: number;
   end_ms: number;
   rrule: string | null;
+  /** 重复事件展开后的实例日期（本地日键）；单次事件为 null */
+  instance_date: number | null;
 }
 
 export interface TodoDto {
