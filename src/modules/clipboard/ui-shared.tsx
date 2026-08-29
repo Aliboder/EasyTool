@@ -33,6 +33,38 @@ export function fmtTime(ts: number): string {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** 日期分组的本地键（yyyy-m-d），用于相邻项跨天判断 */
+export function dayKey(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+/** 日期分组标签：今天 / 昨天 / MM/DD 周X */
+export function dayLabel(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
+  if (diff <= 0) return "今天";
+  if (diff === 1) return "昨天";
+  const W = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${W[d.getDay()]}`;
+}
+
+/** 按天分隔头：居中「今天 · 12」样式，左右细分隔线 */
+export function DayHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <li className="flex items-center gap-3 px-1 py-0.5">
+      <span className="h-px flex-1 bg-border" />
+      <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
+        {label} · {count}
+      </span>
+      <span className="h-px flex-1 bg-border" />
+    </li>
+  );
+}
+
 /** 多关键词全部命中高亮（预览/备注共用） */
 export function highlight(text: string, kws: string[]): ReactNode {
   const keys = kws.filter((k) => k.length > 0);

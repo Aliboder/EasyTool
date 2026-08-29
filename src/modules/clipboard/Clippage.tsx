@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -36,6 +35,9 @@ import {
   EmptyState,
   PinnedSortable,
   LINE_CLAMP,
+  DayHeader,
+  dayKey,
+  dayLabel,
   fileBasename,
   fmtTime,
   highlight,
@@ -373,15 +375,33 @@ export function Clippage() {
   const gridRef = useRef<HTMLDivElement | null>(null);
   const textListRef = useRef<HTMLDivElement | null>(null);
 
-  // 虚拟列表：仅用于非固定模式的文本列表（"全部"和"文本"Tab）
-  const textRowHeight = 56; // 估算文本卡片高度（含间距）
-  const useTextVirtualList = !pinned && (filter === "all" || filter === "text");
-  const textVirtualizer = useVirtualizer({
-    count: useTextVirtualList ? textItems.length : 0,
-    getScrollElement: () => textListRef.current,
-    estimateSize: () => textRowHeight,
-    overscan: 5,
-  });
+  // 按天分组渲染：相邻条目跨天时插入分组头；不改变条目顺序与 data-index
+  // （键盘导航按 ordered 索引定位，头部不占索引号）
+  const groupedNodes = (
+    rows: ItemDto[],
+    rowFn: (it: ItemDto, idx: number) => React.ReactNode,
+  ): React.ReactNode[] => {
+    const nodes: React.ReactNode[] = [];
+    let lastKey: string | null = null;
+    let group: { it: ItemDto; idx: number }[] = [];
+    const flush = () => {
+      if (!group.length) return;
+      const first = group[0].it;
+      nodes.push(
+        <DayHeader key={`h-${dayKey(first.created_at)}`} label={dayLabel(first.created_at)} count={group.length} />,
+      );
+      for (const g of group) nodes.push(rowFn(g.it, g.idx));
+      group = [];
+    };
+    rows.forEach((it, idx) => {
+      const k = dayKey(it.created_at);
+      if (lastKey !== null && k !== lastKey) flush();
+      lastKey = k;
+      group.push({ it, idx });
+    });
+    flush();
+    return nodes;
+  };
 
   const gridStep = () => {
     const el = gridRef.current;
@@ -855,8 +875,8 @@ export function Clippage() {
               description={!search ? "复制内容后会自动出现在这里" : undefined}
             />
           ) : (
-            <ul className="space-y-2">
-              {ordered.map((item, i) => listRow(item, i))}
+            <ul className="space-y-1">
+              {groupedNodes(ordered, (it, idx) => listRow(it, idx))}
             </ul>
           )}
         </div>
@@ -959,9 +979,9 @@ export function Clippage() {
                 </SortableContext>
               </DndContext>
             ) : (
-              <ul className="space-y-2">
-                {textItems.map((item, i) =>
-                  textRow(item, imgItems.length + fileItems.length + i),
+              <ul className="space-y-1">
+                {groupedNodes(textItems, (it, idx) =>
+                  textRow(it, imgItems.length + fileItems.length + idx),
                 )}
               </ul>
             )}
@@ -1015,29 +1035,8 @@ export function Clippage() {
               title={search ? `未找到匹配「${search}」的记录` : "暂无文本记录"}
               description={!search ? "复制文本后会自动出现在这里" : undefined}
             />
-          ) : useTextVirtualList && textItems.length > 0 ? (
-            <div
-              className="relative w-full"
-              style={{ height: `${textVirtualizer.getTotalSize()}px` }}
-            >
-              {textVirtualizer.getVirtualItems().map((virtualRow) => {
-                const item = textItems[virtualRow.index];
-                return (
-                  <div
-                    key={item.id}
-                    className="absolute left-0 top-0 w-full"
-                    style={{
-                      height: `${virtualRow.size}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    {textRow(item, virtualRow.index)}
-                  </div>
-                );
-              })}
-            </div>
           ) : (
-            <ul className="space-y-2">{items.map((item, i) => textRow(item, i))}</ul>
+            <ul className="space-y-1">{groupedNodes(items, textRow)}</ul>
           )}
         </div>
       )}
