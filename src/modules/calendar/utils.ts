@@ -252,6 +252,23 @@ export function fmtMonth(y: number, m0: number): string {
   return `${y}年${m0 + 1}月`;
 }
 
+/** RruleForm → 可读的重复规则摘要（如「每周一、三、五」「每月第 3 个周一」） */
+export function fmtRruleSummary(f: RruleForm): string {
+  const names = ["一", "二", "三", "四", "五", "六", "日"];
+  switch (f.freq) {
+    case "none":
+      return "不重复";
+    case "daily":
+      return "每天";
+    case "weekly":
+      return f.bydays.length > 0 ? `每周${f.bydays.map((i) => "周" + names[i]).join("、")}` : "每周";
+    case "monthly":
+      return "每月同一天";
+    case "monthlyNth":
+      return `每月第 ${f.nth} 个周${names[f.nthDay] ?? "一"}`;
+  }
+}
+
 /** 日键加减 N 天（正确处理跨月/跨年，如 8月31 +1 → 9月1） */
 export function addDaysKey(key: number, n: number): number {
   const y = Math.floor(key / 10000);

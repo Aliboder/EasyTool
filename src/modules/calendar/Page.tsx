@@ -2,10 +2,11 @@
 // 月视图交互：点日期跳日视图；周/日视图复用 layoutDay 时间轴；待办分组清单。
 // 数据窗口按当前视图需求一次性拉取（并集），增删改后整窗刷新。
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +21,7 @@ import {
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
-import { ChevronLeft, ChevronRight, Pencil, Settings2, Trash2 } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Pencil, Repeat, Settings2, StickyNote, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
@@ -34,8 +35,10 @@ import {
   dayEndMs,
   dayStartMs,
   fmtHM,
+  fmtKey,
   fmtKeyLong,
   fmtMonth,
+  fmtRruleSummary,
   fmtWeekRange,
   fromDateTimeInput,
   fromDateInput,
@@ -609,44 +612,32 @@ export function CalendarPage() {
         <CalendarSettings cfg={cfg} onUpdate={update} onImportsChanged={loadRange} />
       </Drawer>
 
-      {/* 表单抽屉 */}
-      <Drawer
-        open={drawer !== null}
-        onClose={() => setDrawer(null)}
-        title={
-          drawer?.mode === "event"
-            ? drawer.instance
-              ? "仅此一次：编辑这一天"
-              : drawer.editing
-                ? "编辑事件"
-                : "新建事件"
-            : drawer?.mode === "todo"
-              ? drawer.editing
-                ? "编辑待办"
-                : "新建待办"
-              : ""
-        }
-      >
-        {drawer?.mode === "event" ? (
-          <EventForm
-            key={drawer.editing?.id ?? `new-${drawer.dayKey}`}
-            editing={drawer.editing}
-            dayKey={drawer.dayKey}
-            instance={drawer.instance ?? null}
-            busy={busy}
-            onSave={saveEvent}
-            onCancel={() => setDrawer(null)}
-          />
-        ) : drawer?.mode === "todo" ? (
-          <TodoForm
-            key={drawer.editing?.id ?? "new-todo"}
-            editing={drawer.editing}
-            busy={busy}
-            onSave={saveTodo}
-            onCancel={() => setDrawer(null)}
-          />
-        ) : null}
-      </Drawer>
+      {/* 事件/待办浮窗（居中弹层；设置仍是右侧抽屉） */}
+      <Dialog open={drawer !== null} onOpenChange={(v) => { if (!v) setDrawer(null); }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+          {drawer?.mode === "event" ? (
+            <EventForm
+              key={drawer.editing?.id ?? `new-${drawer.dayKey}`}
+              editing={drawer.editing}
+              dayKey={drawer.dayKey}
+              instance={drawer.instance ?? null}
+              busy={busy}
+              onSave={saveEvent}
+              onCancel={() => setDrawer(null)}
+              heading={drawer.instance ? "仅此一次：编辑这一天" : drawer.editing ? "编辑事件" : "新建事件"}
+            />
+          ) : drawer?.mode === "todo" ? (
+            <TodoForm
+              key={drawer.editing?.id ?? "new-todo"}
+              editing={drawer.editing}
+              busy={busy}
+              onSave={saveTodo}
+              onCancel={() => setDrawer(null)}
+              heading={drawer.editing ? "编辑待办" : "新建待办"}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -661,7 +652,18 @@ const RECUR_OPTIONS = [
   { value: "monthlyNth", label: "每月第 N 个星期几" },
 ];
 
+/// 信息摘要小标签（浮窗顶部展示事件的关键信息）
+function InfoChip({ icon, text }: { icon: ReactNode; text: string }) {
+  return (
+    <span className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-1 text-[11px] text-muted-foreground">
+      {icon}
+      {text}
+    </span>
+  );
+}
+
 function EventForm({
+  heading,
   editing,
   dayKey,
   instance,
@@ -669,6 +671,7 @@ function EventForm({
   onSave,
   onCancel,
 }: {
+  heading: string;
   editing: EventDto | null;
   dayKey: number;
   instance: { eventId: number; instanceDate: number } | null;
@@ -762,11 +765,36 @@ function EventForm({
     }));
   };
 
+  /// 重复系列的可读描述（编辑既有事件时展示上下文，如「每周一、三、五，至 8/29」）
+  const seriesText = useMemo(() => {
+    if (!editing?.rrule) return "";
+    const p = parseRrule(editing.rrule);
+    if (!p || p.freq === "none") return "";
+    return `${fmtRruleSummary(p)}${p.untilKey != null ? `，至 ${fmtKey(p.untilKey)}` : ""}`;
+  }, [editing]);
+
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4">
+      <DialogHeader className="gap-1">
+        <DialogTitle>{heading}</DialogTitle>
+      </DialogHeader>
+      {/* 信息摘要条：日期 / 时段或全天 / 重复规则 / 地点 */}
+      <div className="flex flex-wrap gap-1.5">
+        <InfoChip icon={<CalendarDays className="size-3" />} text={fmtKeyLong(dayKey)} />
+        {editing && (
+          <InfoChip
+            icon={<Clock className="size-3" />}
+            text={editing.all_day ? "全天" : `${fmtHM(editing.start_ms)}–${fmtHM(editing.end_ms)}`}
+          />
+        )}
+        {seriesText && <InfoChip icon={<Repeat className="size-3" />} text={seriesText} />}
+        {editing?.location && <InfoChip icon={<MapPin className="size-3" />} text={editing.location} />}
+      </div>
       {instance && (
-        <div className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-          你正在单独调整这一天，其它重复次数不受影响；重复规则不可在此改动。
+        <div className="rounded-md bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+          你正在单独调整 <b>{fmtKeyLong(instance.instanceDate)}</b> 这一天。
+          {seriesText ? `这条事件按「${seriesText}」重复，其它次数不受影响；` : "其它重复次数不受影响；"}
+          重复规则不可在此改动。
         </div>
       )}
       <div className="space-y-1.5">
@@ -798,11 +826,17 @@ function EventForm({
         </div>
       )}
       <div className="space-y-1.5">
-        <Label>地点（可选）</Label>
+        <Label className="flex items-center gap-1">
+          <MapPin className="size-3.5 text-muted-foreground" />
+          地点（可选）
+        </Label>
         <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="会议室 3F" />
       </div>
       <div className="space-y-1.5">
-        <Label>备注（可选）</Label>
+        <Label className="flex items-center gap-1">
+          <StickyNote className="size-3.5 text-muted-foreground" />
+          备注（可选）
+        </Label>
         <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="带什么、和谁" />
       </div>
       {!instance && (
@@ -912,6 +946,12 @@ function EventForm({
               </div>
             </div>
           )}
+          {!instance && recur.freq !== "none" && (
+            <p className="text-[11px] text-muted-foreground">
+              预览：{fmtRruleSummary(recur)}
+              {recur.untilKey != null && `，至 ${fmtKey(recur.untilKey)}`}
+            </p>
+          )}
           {recErr && <p className="text-xs text-red-500">{recErr}</p>}
         </div>
       )}
@@ -931,11 +971,13 @@ function EventForm({
 // ---------- 待办表单 ----------
 
 function TodoForm({
+  heading,
   editing,
   busy,
   onSave,
   onCancel,
 }: {
+  heading: string;
   editing: TodoDto | null;
   busy: boolean;
   onSave: (input: { title: string; notes: string; due_date: number | null }) => void;
@@ -964,7 +1006,13 @@ function TodoForm({
   };
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4">
+      <DialogHeader className="gap-1">
+        <DialogTitle>{heading}</DialogTitle>
+      </DialogHeader>
+      {editing && editing.due_date != null && (
+        <InfoChip icon={<CalendarDays className="size-3" />} text={`截止 ${fmtKeyLong(editing.due_date)}`} />
+      )}
       <div className="space-y-1.5">
         <Label>标题</Label>
         <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="如：交周报" autoFocus />

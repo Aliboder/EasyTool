@@ -15,6 +15,7 @@ import {
   addDaysKey,
   fmtWeekRange,
   fmtMonth,
+  fmtRruleSummary,
   type TimedEventLike,
 } from "./utils";
 
@@ -121,6 +122,19 @@ describe("calendar utils", () => {
     // 跨年：2026-12-31(周四) 所在周 12/28–2027-01-03
     expect(fmtWeekRange(20261231, 7)).toBe("2026年12月28日–2027年1月3日");
     expect(fmtMonth(2026, 7)).toBe("2026年8月");
+  });
+
+  it("fmtRruleSummary 重复摘要", () => {
+    const b = { bydays: [], nth: 1, nthDay: 0, untilKey: null as number | null };
+    expect(fmtRruleSummary({ freq: "none", ...b })).toBe("不重复");
+    expect(fmtRruleSummary({ freq: "daily", ...b })).toBe("每天");
+    expect(fmtRruleSummary({ freq: "weekly", bydays: [0, 2, 4], nth: 1, nthDay: 0, untilKey: null })).toBe(
+      "每周周一、周三、周五",
+    );
+    expect(fmtRruleSummary({ freq: "monthly", ...b })).toBe("每月同一天");
+    expect(fmtRruleSummary({ freq: "monthlyNth", bydays: [], nth: 3, nthDay: 0, untilKey: null })).toBe(
+      "每月第 3 个周一",
+    );
   });
 
   it("parseRrule / buildRrule 往返", () => {
