@@ -85,7 +85,7 @@ export const KIND_REGISTRY: Record<string, KindMeta> = {
     id: "custom",
     name: "自定义 Provider",
     icon: Plug,
-    order: 20,
+    order: 110, // 置底：自定义属于通用兜底类型，排在 8 家 Coding Plan 之后
     shape: "balance",
     keyHint: "密钥（请求头 {{KEY}} 占位符会替换为这里的值）",
   },

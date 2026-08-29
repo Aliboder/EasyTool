@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Trash2, Pencil, Check, X } from "lucide-react";
+import { ContextMenu } from "@/components/ui/context-menu";
+import { ContextMenuItem } from "@/components/ui/context-menu-item";
+import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
+import { Plus, Pencil, Trash2, Check, X, MoreHorizontal, RefreshCw, Eraser } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { getKindMeta, knownKinds } from "./registry";
@@ -59,7 +62,7 @@ const INTERVALS = [
   { value: 120, label: "2 分钟" },
 ];
 
-// 账户类型选择列表（注册表驱动；custom 带独立配置）
+// 账户类型选择列表（注册表驱动；自定义 Provider 置底）
 const ACCOUNT_KINDS = knownKinds().map((kind) => ({ kind, meta: getKindMeta(kind) }));
 
 /// 阈值数字输入：本地草稿编辑，失焦/回车才提交（避免每键一次保存+全网轮询；
@@ -189,6 +192,7 @@ function CustomConfigEditor({
   );
 }
 
+/** 账户块：两行紧凑布局（名称行含⋯菜单；密钥行含应用按钮） */
 function AccountField({
   account,
   onChange,
@@ -203,6 +207,9 @@ function AccountField({
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(account.name);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const closeMenu = () => setMenu(null);
 
   const applyKey = async () => {
     setBusy(true);
@@ -277,7 +284,7 @@ function AccountField({
   return (
     <div className="space-y-2 rounded-lg border p-3">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
           {editing ? (
             <span className="flex items-center gap-1">
               <Input
@@ -302,13 +309,13 @@ function AccountField({
             </span>
           ) : (
             <span className="flex items-center gap-1.5">
-              <meta.icon className="size-3.5 text-muted-foreground" />
-              {account.name}
-              <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+              <meta.icon className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">{account.name}</span>
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                 {meta.name}
               </span>
               {account.configured && (
-                <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-600">
+                <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 text-xs font-medium text-emerald-600">
                   已配置
                 </span>
               )}
@@ -316,20 +323,15 @@ function AccountField({
           )}
         </span>
         <button
-          onClick={() => setEditing((v) => !v)}
-          className="ml-auto rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          aria-label="重命名"
-          title="重命名"
+          onClick={(e: MouseEvent) => {
+            e.stopPropagation();
+            setMenu({ x: e.clientX, y: e.clientY });
+          }}
+          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          aria-label="更多操作"
+          title="更多操作"
         >
-          <Pencil className="size-3.5" />
-        </button>
-        <button
-          onClick={remove}
-          className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
-          aria-label="删除账户"
-          title="删除账户"
-        >
-          <Trash2 className="size-3.5" />
+          <MoreHorizontal className="size-4" />
         </button>
       </div>
       <div className="flex items-center gap-2">
@@ -347,26 +349,8 @@ function AccountField({
         <Button variant="outline" onClick={() => setShow((v) => !v)} className="shrink-0">
           {show ? "隐藏" : "显示"}
         </Button>
-      </div>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          onClick={testKey}
-          disabled={busy || !value || account.kind === "custom"}
-          className="shrink-0"
-        >
-          测试
-        </Button>
         <Button onClick={applyKey} disabled={busy || !value} className="shrink-0">
           应用
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={clearKey}
-          disabled={busy || !account.configured}
-          className="shrink-0"
-        >
-          清空
         </Button>
       </div>
       {result && (
@@ -374,10 +358,50 @@ function AccountField({
           {result.msg}
         </p>
       )}
-      <div className="text-[11px] text-muted-foreground">{meta.keyHint}</div>
       {account.kind === "custom" && (
         <CustomConfigEditor account={account} onChange={onChange} />
       )}
+      <ContextMenu
+        visible={menu !== null}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        onClose={closeMenu}
+      >
+        <ContextMenuItem
+          icon={<Pencil className="size-3.5" />}
+          label="重命名"
+          onClick={() => {
+            closeMenu();
+            setEditing(true);
+          }}
+        />
+        <ContextMenuItem
+          icon={<RefreshCw className="size-3.5" />}
+          label="测试密钥"
+          onClick={() => {
+            closeMenu();
+            testKey();
+          }}
+        />
+        <ContextMenuItem
+          icon={<Eraser className="size-3.5" />}
+          label="清空密钥"
+          onClick={() => {
+            closeMenu();
+            clearKey();
+          }}
+        />
+        <ContextMenuDivider />
+        <ContextMenuItem
+          icon={<Trash2 className="size-3.5" />}
+          label="删除账户"
+          className="text-destructive hover:bg-destructive/15 hover:text-destructive"
+          onClick={() => {
+            closeMenu();
+            remove();
+          }}
+        />
+      </ContextMenu>
     </div>
   );
 }
@@ -413,7 +437,7 @@ function HistoryCard({ accounts }: { accounts: AccountInfo[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">消费历史热图</CardTitle>
+        <CardTitle className="text-base">消费历史</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center gap-2">
@@ -485,6 +509,7 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
 
   return (
     <div className="space-y-6 p-6">
+      {/* 1. 账户管理 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between text-base">
@@ -529,7 +554,7 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
           )}
           {s.accounts.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              暂无账户，点击「添加账户」创建（支持 DeepSeek / OpenCode Go / 自定义 Provider / 8 家 Coding Plan）
+              暂无账户，点击「添加账户」创建（支持 DeepSeek / OpenCode Go / 8 家 Coding Plan / 自定义 Provider）
             </div>
           ) : (
             s.accounts.map((acc) => (
@@ -539,13 +564,17 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
         </CardContent>
       </Card>
 
+      {/* 2. 轮询与提醒 */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">监控</CardTitle>
+          <CardTitle className="text-base">轮询与提醒</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
-            <Label>刷新间隔</Label>
+            <div>
+              <div className="text-sm font-medium">刷新间隔</div>
+              <div className="text-xs text-muted-foreground">后台轮询所有账户的频率</div>
+            </div>
             <Select
               value={String(s.refresh_interval_sec)}
               onValueChange={(v) => set({ refresh_interval_sec: Number(v) })}
@@ -564,7 +593,7 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
           </div>
           <ThresholdField
             label="预警阈值"
-            hint="低于此值标橙并提醒一次（所有余额型账户共用）"
+            hint="余额低于此值标橙并提醒一次（所有余额型账户共用）"
             value={s.warn_threshold}
             onCommit={(v) => set({ warn_threshold: v })}
           />
@@ -588,27 +617,18 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
             </div>
             <Switch checked={s.notify_surge} onCheckedChange={(v) => set({ notify_surge: v })} />
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">用量环显示剩余量</div>
-              <div className="text-xs text-muted-foreground">开启后用量环从满环递减显示剩余（默认按实际用量填充）</div>
-            </div>
-            <Switch
-              checked={s.go_ring_remaining}
-              onCheckedChange={(v) => set({ go_ring_remaining: v })}
-            />
-          </div>
         </CardContent>
       </Card>
 
+      {/* 3. 预算与显示 */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">每日预算</CardTitle>
+          <CardTitle className="text-base">预算与显示</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <ThresholdField
             label="每日预算金额"
-            hint="0 = 关闭；今日消费（DeepSeek 合计）超过预警/超支线时提醒一次"
+            hint="0 = 关闭；今日消费（余额型账户合计）超过预警/超支线时提醒一次"
             value={s.daily_budget}
             onCommit={(v) => set({ daily_budget: v })}
           />
@@ -637,9 +657,20 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
             value={s.balance_max}
             onCommit={(v) => set({ balance_max: v })}
           />
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">用量环显示剩余量</div>
+              <div className="text-xs text-muted-foreground">开启后用量环从满环递减显示剩余（默认按实际用量填充）</div>
+            </div>
+            <Switch
+              checked={s.go_ring_remaining}
+              onCheckedChange={(v) => set({ go_ring_remaining: v })}
+            />
+          </div>
         </CardContent>
       </Card>
 
+      {/* 4. 峰/谷计价提醒 */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">峰/谷计价提醒（DeepSeek）</CardTitle>
@@ -706,6 +737,7 @@ export function QuotaSettings({ onRefresh }: { onRefresh?: () => void }) {
         </CardContent>
       </Card>
 
+      {/* 5. 消费历史 */}
       <HistoryCard accounts={s.accounts.filter((a) => a.kind === "deepseek")} />
     </div>
   );
