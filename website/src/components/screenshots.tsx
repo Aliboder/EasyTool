@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ClipboardList, Clock, Gauge, Monitor, Search, Smile } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../lib/cn";
@@ -22,7 +23,16 @@ const MODULES: { id: string; label: string; desc: string; icon: LucideIcon }[] =
 
 export function Screenshots() {
   const [active, setActive] = useState(0);
+  // 切换方向（前进 1 / 后退 -1）：决定进出场位移方向，动画不打架
+  const [dir, setDir] = useState(1);
+  const reduce = useReducedMotion();
   const M = MODULES[active];
+
+  const goTo = (i: number) => {
+    if (i === active) return;
+    setDir(i > active ? 1 : -1);
+    setActive(i);
+  };
 
   const renderComponent = () => {
     switch (M.id) {
@@ -66,9 +76,20 @@ export function Screenshots() {
                 {active + 1} / {MODULES.length}
               </span>
             </div>
-            {/* 舞台内容（可横向滚动的小屏） */}
+            {/* 舞台内容（可横向滚动的小屏）：AnimatePresence 作出入场/退场，方向随切换拖动 */}
             <div className="flex justify-center overflow-x-auto px-4 py-8 sm:px-8">
-              {renderComponent()}
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={M.id}
+                  initial={reduce ? false : { opacity: 0, x: 28 * dir, scale: 0.985, filter: "blur(6px)" }}
+                  animate={{ opacity: 1, x: 0, scale: 1, filter: "blur(0px)" }}
+                  exit={reduce ? undefined : { opacity: 0, x: -28 * dir, scale: 0.985, filter: "blur(6px)" }}
+                  transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
+                  className="w-full max-w-xl shrink-0"
+                >
+                  {renderComponent()}
+                </motion.div>
+              </AnimatePresence>
             </div>
           </div>
 
@@ -77,7 +98,7 @@ export function Screenshots() {
             {MODULES.map((m, i) => (
               <button
                 key={m.id}
-                onClick={() => setActive(i)}
+                onClick={() => goTo(i)}
                 className={cn(
                   "flex shrink-0 items-center gap-2 rounded-xl border px-4 py-2.5 text-sm transition-all",
                   i === active
