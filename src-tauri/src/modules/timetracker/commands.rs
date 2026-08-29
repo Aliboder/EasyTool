@@ -1,7 +1,6 @@
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
-use super::collector;
 use super::models::{AppDetail, AppListItem, CategoryBreakdown, CategoryRule, DailyStat, DayOverview, Event};
 use super::TimetrackerState;
 
@@ -88,41 +87,12 @@ pub fn timetracker_get_daily_totals(app: AppHandle, days: Option<i64>) -> Result
     s.db.get_daily_totals(days.unwrap_or(7))
 }
 
-/// 托盘用：今日 Top N（含应用名与时长，供菜单文本刷新）
-#[tauri::command]
-pub fn timetracker_today_top(app: AppHandle, limit: Option<i64>) -> Result<Vec<DailyStat>, String> {
-    let state = app.state::<Mutex<TimetrackerState>>();
-    let s = state.lock().map_err(|e| format!("获取状态失败: {e}"))?;
-    s.db.get_today_stats(limit.unwrap_or(3))
-}
-
-/// 暂停/恢复录制（同步采集器 atomic；暂停瞬间结算当前会话）
-#[tauri::command]
-pub fn timetracker_set_recording(_app: AppHandle, recording: bool) -> Result<(), String> {
-    collector::set_recording(recording);
-    Ok(())
-}
-
-/// 当前是否录制中
-#[tauri::command]
-pub fn timetracker_is_recording() -> bool {
-    collector::is_recording()
-}
-
 /// 设置应用分类
 #[tauri::command]
 pub fn timetracker_set_category(app: AppHandle, app_id: i64, category: String) -> Result<(), String> {
     let state = app.state::<Mutex<TimetrackerState>>();
     let s = state.lock().map_err(|e| format!("获取状态失败: {e}"))?;
     s.db.update_app_category(app_id, &category)
-}
-
-/// 删除事件
-#[tauri::command]
-pub fn timetracker_delete_event(app: AppHandle, event_id: i64) -> Result<(), String> {
-    let state = app.state::<Mutex<TimetrackerState>>();
-    let s = state.lock().map_err(|e| format!("获取状态失败: {e}"))?;
-    s.db.delete_event(event_id)
 }
 
 /// 单日分类占比（按分类聚合当日全部时长）
@@ -171,14 +141,6 @@ pub fn timetracker_add_rule(app: AppHandle, pattern: String, category: String) -
     let state = app.state::<Mutex<TimetrackerState>>();
     let s = state.lock().map_err(|e| format!("获取状态失败: {e}"))?;
     s.db.add_category_rule(&pattern, &category)
-}
-
-/// 更新分类规则
-#[tauri::command]
-pub fn timetracker_update_rule(app: AppHandle, id: i64, pattern: String, category: String) -> Result<(), String> {
-    let state = app.state::<Mutex<TimetrackerState>>();
-    let s = state.lock().map_err(|e| format!("获取状态失败: {e}"))?;
-    s.db.update_category_rule(id, &pattern, &category)
 }
 
 /// 删除分类规则

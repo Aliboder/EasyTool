@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod collector;
 pub mod db;
+pub mod db_stats;
 pub mod display_name;
 pub mod models;
 

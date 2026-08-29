@@ -63,6 +63,7 @@ struct SdkFns {
     get_result_size: unsafe extern "system" fn(u32, *mut i64) -> i32,
     get_result_date_modified: unsafe extern "system" fn(u32, *mut FILETIME) -> i32,
     is_folder_result: unsafe extern "system" fn(u32) -> i32,
+    #[allow(dead_code)] // 仅测试使用（is_db_loaded）
     is_db_loaded: unsafe extern "system" fn() -> i32,
     get_last_error: unsafe extern "system" fn() -> u32,
     reset: unsafe extern "system" fn(),

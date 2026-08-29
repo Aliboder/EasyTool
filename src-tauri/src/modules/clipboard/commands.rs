@@ -1,6 +1,6 @@
 //! Tauri 命令层：前端 invoke 的入口，仅做编排
 
-use super::models::{Item, ItemDto, ItemKind};
+use super::models::{Item, ItemDto};
 use super::state::AppState;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};

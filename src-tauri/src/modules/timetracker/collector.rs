@@ -35,17 +35,19 @@ static TRACK_TITLE: AtomicBool = AtomicBool::new(true);
 /// 系统有非静音声音播放时豁免离开判定（看视频/直播/音乐不算挂机）
 static AUDIO_EXEMPT: AtomicBool = AtomicBool::new(false);
 
-/// 应用配置（setup 与 set_module_config 保存后调用，幂等）
+/// 应用配置（setup 与 set_module_config 保存后调用，幂等）。
+/// 注意：配置经前端 useModuleConfig 落盘为 snake_case 键名，
+/// 此处必须以 snake_case 读取（早期 camelCase 读取导致 AFK/标题开关不生效）
 pub fn apply_config(app: &AppHandle) {
     let cfg = crate::config::module_cfg(app, "timetracker");
     let threshold = cfg
-        .get("afkThresholdSec")
+        .get("afk_threshold_sec")
         .and_then(|v| v.as_u64())
         .unwrap_or(120)
         .min(u32::MAX as u64) as u32;
     AFK_THRESHOLD.store(threshold, Ordering::Relaxed);
     let track_title = cfg
-        .get("trackWindowTitle")
+        .get("track_window_title")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     TRACK_TITLE.store(track_title, Ordering::Relaxed);
@@ -312,24 +314,4 @@ unsafe extern "system" fn on_foreground(
         app_name,
         window_title,
     });
-}
-
-/// 暂停/恢复录制（托盘菜单与设置命令共用入口）：
-/// 暂停瞬间立即结算当前会话，避免暂停期间时长继续累计
-pub fn set_recording(enabled: bool) {
-    RECORDING.store(enabled, Ordering::Relaxed);
-    if !enabled {
-        if let Some(app) = APP.get() {
-            if let Some(state) = app.try_state::<std::sync::Mutex<TimetrackerState>>() {
-                if let Ok(s) = state.lock() {
-                    let _ = s.db.close_current_event(&now_local());
-                }
-            }
-        }
-    }
-}
-
-/// 当前是否录制中
-pub fn is_recording() -> bool {
-    RECORDING.load(Ordering::Relaxed)
 }
