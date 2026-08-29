@@ -70,7 +70,10 @@ function Countdown({ ts }: { ts: number | null }) {
   return <span>{m} 分</span>;
 }
 
-/** 峰/谷计价档位徽章（北京时间规则，30 秒刷新倒计时） */
+/** 峰/谷计价档位徽章（北京时间规则，30 秒刷新倒计时）。
+ * 固定用在余额卡的渐变头上（正常/低余额橙/告急红三种底色），
+ * 因此采用白字+半透明黑底的高对比胶囊，峰/谷语义用小色点区分，
+ * 保证任何渐变底、任何强调色下都可读。 */
 function TierBadge() {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -83,14 +86,12 @@ function TierBadge() {
   const remaining = fmtRemaining(next.remainingMs);
   return (
     <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
-        peak ? "bg-amber-500/15 text-amber-600" : "bg-sky-500/15 text-sky-600",
-      )}
+      className="inline-flex items-center gap-1.5 rounded-full bg-black/15 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm"
       title={`${peak ? "峰价时段" : "谷价时段"} · ${remaining}后切换为${next.tier === "peak" ? "峰时" : "谷时"}价（工作日 09–12 / 14–18 峰时，周末全天谷价）`}
     >
+      <span className={cn("size-1.5 rounded-full", peak ? "bg-amber-300" : "bg-sky-300")} />
       {peak ? "峰价" : "谷价"}
-      <span className="opacity-70">· {remaining}</span>
+      <span className="opacity-80">· {remaining}</span>
     </span>
   );
 }
