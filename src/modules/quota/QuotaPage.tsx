@@ -10,16 +10,89 @@ import { Drawer } from "@/components/ui/drawer";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { QuotaSettings } from "./QuotaSettings";
 import { AccountCard } from "./quota-cards";
-import { type AccountStatusPayload, getKindMeta, knownKinds } from "./registry";
+import { type AccountStatusPayload, getKindMeta, knownKinds, fmtMoney } from "./registry";
+import { tierAt, nextBoundary } from "./pricing";
 
 interface StatusPayload {
   accounts: AccountStatusPayload[];
+  today_spend: number;
+  budget: number;
+  budget_warn_pct: number;
+  budget_critical_pct: number;
 }
 
 interface Settings {
   warn_threshold: number;
   critical_threshold: number;
   go_ring_remaining: boolean;
+  balance_max: number;
+}
+
+/** 今日消费 + 预算进度条（顶部摘要条） */
+function BudgetSummary({ status, settings }: { status: StatusPayload; settings: Settings | null }) {
+  const budget = status.budget ?? 0;
+  const today = status.today_spend ?? 0;
+  const pct = budget > 0 ? (today / budget) * 100 : 0;
+  const warn = settings ? status.budget_warn_pct ?? 80 : 80;
+  const crit = settings ? status.budget_critical_pct ?? 100 : 100;
+  const over = budget > 0 && pct >= crit;
+  const warnLevel = budget > 0 && pct >= warn && !over;
+  const barCls = over
+    ? "bg-red-500"
+    : warnLevel
+      ? "bg-orange-400"
+      : "bg-primary";
+  // 峰谷档位徽章（30s 刷新）
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+  const tier = tierAt(new Date());
+  const next = nextBoundary(new Date());
+  const mins = Math.max(1, Math.ceil(next.remainingMs / 60000));
+  const peak = tier === "peak";
+  return (
+    <div className="rounded-xl border bg-card p-4 shadow-sm">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div>
+          <div className="text-[11px] text-muted-foreground">今日消费（余额型账户合计）</div>
+          <div className="mt-0.5 text-xl font-bold tabular-nums">{fmtMoney(today)}</div>
+        </div>
+        {budget > 0 && (
+          <div className="min-w-[220px] flex-1">
+            <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>
+                每日预算 <span className="font-medium text-foreground">{fmtMoney(budget)}</span>
+              </span>
+              <span className={cn("font-medium", over ? "text-red-500" : warnLevel ? "text-orange-500" : "text-foreground")}>
+                {pct.toFixed(0)}%
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn("h-full rounded-full transition-all", barCls)}
+                style={{ width: `${Math.min(100, pct)}%` }}
+              />
+            </div>
+            {over && <div className="mt-1 text-[11px] text-red-500">今日消费已超过预算</div>}
+          </div>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
+              peak ? "bg-amber-500/15 text-amber-600" : "bg-sky-500/15 text-sky-600",
+            )}
+            title={`${mins} 分钟后切换为${next.tier === "peak" ? "峰时价" : "谷时价"}（工作日 09–12 / 14–18 峰时，周末全天谷价）`}
+          >
+            {peak ? "⏫ 峰价时段" : "⏬ 谷价时段"}
+            <span className="opacity-70">· {mins}min</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function QuotaPage() {
@@ -59,6 +132,7 @@ export function QuotaPage() {
     threshold: settings?.warn_threshold ?? 10,
     critical: settings?.critical_threshold ?? (settings?.warn_threshold ?? 10) / 2,
     ringRemaining: settings?.go_ring_remaining ?? false,
+    balanceMax: settings?.balance_max ?? 0,
   };
 
   // 按 kind 分组账户（仅含注册表已知的 kind，按 order 排序），组标题带供应商图标
@@ -103,6 +177,9 @@ export function QuotaPage() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="space-y-8 p-6">
+          {status != null && (status.accounts.length > 0 || status.budget > 0) && (
+            <BudgetSummary status={status} settings={settings} />
+          )}
           {status == null ? (
             <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
               加载中...
@@ -127,6 +204,7 @@ export function QuotaPage() {
                       threshold={thresholds.threshold}
                       critical={thresholds.critical}
                       ringRemaining={thresholds.ringRemaining}
+                      balanceMax={thresholds.balanceMax}
                     />
                   ))}
                 </div>

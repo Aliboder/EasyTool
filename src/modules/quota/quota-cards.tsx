@@ -12,9 +12,10 @@ import {
   type GoQuotaPayload,
   type StatsPayload,
   fmtMoney,
-  WINDOW_NAMES,
+  windowName,
 } from "./registry";
-import { DailyBars, Ring } from "./charts";
+import { DailyBars, Ring, SegmentBar } from "./charts";
+import { tierAt, nextBoundary } from "./pricing";
 
 function StatusBadge({
   account,
@@ -69,11 +70,37 @@ function Countdown({ ts }: { ts: number | null }) {
   return <span>{m} 分</span>;
 }
 
-/** 余额型内容体（DeepSeek）：渐变余额头 + 近7天消费趋势 */
-function BalanceBody({ account, threshold, critical }: {
+/** 峰/谷计价档位徽章（北京时间规则，30 秒刷新倒计时） */
+function TierBadge() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+  const tier = tierAt(new Date());
+  const next = nextBoundary(new Date());
+  const peak = tier === "peak";
+  const mins = Math.max(1, Math.ceil(next.remainingMs / 60000));
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+        peak ? "bg-amber-500/15 text-amber-600" : "bg-sky-500/15 text-sky-600",
+      )}
+      title={`${peak ? "峰价时段" : "谷价时段"} · ${mins} 分钟后切换为${next.tier === "peak" ? "峰时" : "谷时"}价（工作日 09–12 / 14–18 峰时，周末全天谷价）`}
+    >
+      {peak ? "峰价" : "谷价"}
+      <span className="opacity-70">· {mins}min</span>
+    </span>
+  );
+}
+
+/** 余额型内容体（DeepSeek / 自定义）：渐变余额头 + 三段进度条 + 近7天消费趋势 */
+function BalanceBody({ account, threshold, critical, balanceMax }: {
   account: AccountStatusPayload;
   threshold: number;
   critical: number;
+  balanceMax: number;
 }) {
   const [stats, setStats] = useState<StatsPayload | null>(null);
   useEffect(() => {
@@ -97,11 +124,22 @@ function BalanceBody({ account, threshold, critical }: {
   const days =
     stats && stats.avg_7d > 0 && account.balance != null ? Math.floor(account.balance / stats.avg_7d) : null;
 
+  // 三段进度条基准：手动设的 balanceMax > 充值+赠送 时用设置值，否则自动（充值+赠送）
+  const baseline =
+    balanceMax > 0
+      ? balanceMax
+      : account.granted + account.topped_up > 0
+        ? account.granted + account.topped_up
+        : 0;
+
   return (
     <div>
       {/* 渐变余额头 */}
       <div className={cn("rounded-xl bg-gradient-to-br px-4 pt-3 pb-3", accent)}>
-        <div className={cn("text-[11px] opacity-90", numCls)}>余额</div>
+        <div className={cn("flex items-center justify-between text-[11px] opacity-90", numCls)}>
+          <span>余额</span>
+          {account.kind === "deepseek" && <TierBadge />}
+        </div>
         <div className={cn("mt-0.5 text-3xl font-bold tracking-tight tabular-nums", numCls)}>
           {account.balance != null ? fmtMoney(account.balance) : "—"}
         </div>
@@ -111,6 +149,17 @@ function BalanceBody({ account, threshold, critical }: {
           {days != null && <span>约 {days} 天耗尽</span>}
         </div>
       </div>
+      {/* 三段进度条：蓝=余额，橙=今日消费，灰=已用 */}
+      {account.balance != null && baseline > 0 && (
+        <div className="mt-3">
+          <SegmentBar
+            balance={account.balance}
+            today={stats?.today ?? 0}
+            used={Math.max(0, baseline - account.balance)}
+            max={baseline}
+          />
+        </div>
+      )}
       {/* 近7天消费 */}
       <div className="mt-3">
         <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -124,25 +173,32 @@ function BalanceBody({ account, threshold, critical }: {
             暂无历史
           </div>
         )}
-        <div className="mt-1.5 text-[11px] text-muted-foreground">
-          {account.available ? "账户可用" : "账户不可用"}
-          {stats && stats.avg_7d > 0 && <span> · 日均 {fmtMoney(stats.avg_7d)}</span>}
+        <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>
+            {account.available ? "账户可用" : "账户不可用"}
+            {stats && stats.avg_7d > 0 && <span> · 日均 {fmtMoney(stats.avg_7d)}</span>}
+          </span>
+          {account.error && <span className="text-orange-600">{account.error}</span>}
         </div>
-        {account.error && (
-          <div className="mt-1 text-xs text-orange-600" title={account.error}>
-            {account.error.length > 40 ? account.error.slice(0, 40) + "…" : account.error}
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-/** Go 单窗口：环形用量（环形 + 窗口名/剩余/重置三行信息） */
+/** Go 单窗口：环形用量（环形 + 窗口名/剩余/重置三行信息）；文本窗口直接展示文本 */
 function GoWindowBlock({ win, ringRemaining }: {
   win: GoQuotaPayload;
   ringRemaining: boolean;
 }) {
+  // 文本窗口（余额类）：无百分比环
+  if (win.text) {
+    return (
+      <div className="flex min-w-0 flex-1 flex-col items-center gap-1">
+        <div className="mt-2 text-sm font-medium text-foreground">{windowName(win.window)}</div>
+        <div className="text-base font-semibold tabular-nums">{win.text}</div>
+      </div>
+    );
+  }
   const used = win.used_percent;
   // 展示模式：按实际用量（未用为空环，随用量填充）/ 从 100% 逐次递减（显示剩余量）
   // 颜色按已用量判断：剩余越少越红（展示剩余量时颜色不能随剩余值走，否则剩余 80% 会误标橙）
@@ -151,7 +207,7 @@ function GoWindowBlock({ win, ringRemaining }: {
     <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
       <Ring percent={shown} size={72} colorPercent={used} />
       <div className="flex w-full min-w-0 flex-col items-center text-center">
-        <span className="text-sm font-medium text-foreground">{WINDOW_NAMES[win.window] ?? win.window}</span>
+        <span className="text-sm font-medium text-foreground">{windowName(win.window)}</span>
         <span className="text-[11px] text-muted-foreground">
           {ringRemaining ? `已用 ${used}%` : `剩余 ${Math.max(0, 100 - used)}%`}
         </span>
@@ -187,11 +243,13 @@ export function AccountCard({
   threshold,
   critical,
   ringRemaining,
+  balanceMax,
 }: {
   account: AccountStatusPayload;
   threshold: number;
   critical: number;
   ringRemaining: boolean;
+  balanceMax: number;
 }) {
   const meta = getKindMeta(account.kind);
   const Icon = meta.icon;
@@ -206,7 +264,7 @@ export function AccountCard({
       </CardHeader>
       <CardContent>
         {meta.shape === "balance" ? (
-          <BalanceBody account={account} threshold={threshold} critical={critical} />
+          <BalanceBody account={account} threshold={threshold} critical={critical} balanceMax={balanceMax} />
         ) : (
           <UsageBody account={account} ringRemaining={ringRemaining} />
         )}
