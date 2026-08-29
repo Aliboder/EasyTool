@@ -123,6 +123,8 @@ export function CalendarPage() {
   const [detail, setDetail] = useState<EventDto | null>(null);
   // 点「今天」时自增：让日/周视图把时间轴滚到当前时刻
   const [nowFocus, setNowFocus] = useState(0);
+  // 视图切换方向（1=日→周→月 前推，-1=后退），用于滑动方向
+  const [viewDir, setViewDir] = useState<1 | -1>(1);
 
   const loadSubs = useCallback(() => {
     invoke<{ id: number; color: string; name: string }[]>("calendar_list_subscriptions")
@@ -205,6 +207,9 @@ export function CalendarPage() {
   // ---------- 导航 ----------
 
   const switchTab = (id: ViewKey) => {
+    const oldIdx = TABS.findIndex((t) => t.id === tab);
+    const newIdx = TABS.findIndex((t) => t.id === id);
+    if (newIdx >= 0 && oldIdx >= 0 && newIdx !== oldIdx) setViewDir(newIdx > oldIdx ? 1 : -1);
     if (id === "todo") {
       setTab("todo");
       return;
@@ -472,6 +477,15 @@ export function CalendarPage() {
       />
 
       <div className="min-h-0 flex-1 overflow-hidden">
+        <div
+          key={tab}
+          className={cn(
+            "h-full",
+            viewDir === 1
+              ? "animate-in fade-in-0 slide-in-from-right-3 duration-200 ease-out"
+              : "animate-in fade-in-0 slide-in-from-left-3 duration-200 ease-out",
+          )}
+        >
         {tab === "month" && (
           <div className="flex h-full flex-col">
             <div className="grid shrink-0 grid-cols-7 border-b px-2 py-1 text-center text-[11px] text-muted-foreground">
@@ -577,6 +591,7 @@ export function CalendarPage() {
             onAdd={() => setDrawer({ mode: "todo", editing: null })}
           />
         )}
+        </div>
       </div>
 
       {/* 右键菜单 */}
