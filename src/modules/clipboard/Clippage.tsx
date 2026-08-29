@@ -9,7 +9,7 @@ import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { CLIPBOARD_DEFAULTS } from "./config";
 import { Drawer } from "@/components/ui/drawer";
-import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, X, Loader2, Smile, MessageSquare, StickyNote, SearchX, ClipboardList, ImageOff, FileQuestion, Type, ExternalLink } from "lucide-react";
+import { Pin, Trash2, Copy, FolderOpen, Eye, Settings2, X, Loader2, Smile, MessageSquare, StickyNote, SearchX, ClipboardList, ImageOff, FileQuestion, Type, ExternalLink, Image } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -319,12 +319,14 @@ export function Clippage() {
   const cellSize = clipCfg.cellSize;
   const textLines = clipCfg.textLines;
   const showTimestamps = clipCfg.showTimestamps;
+  const listMode = clipCfg.listMode;
   const imgItems = composite ? items.filter(isImageItem) : [];
   const fileItems = composite
     ? items.filter((it) => it.kind === "files" && !isImageItem(it))
     : [];
   const textItems = composite ? items.filter((it) => it.kind === "text") : [];
-  const ordered = composite ? [...imgItems, ...fileItems, ...textItems] : items;
+  // 列表模式：全部条目（含各单类型 Tab）统一按时间倒序排列，不分区
+  const ordered = listMode ? items : composite ? [...imgItems, ...fileItems, ...textItems] : items;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -350,19 +352,21 @@ export function Clippage() {
     invoke("set_pin_order", { ids: next.map((it) => it.id) }).catch(console.error);
   };
 
-  const sections: { start: number; end: number; type: "gridWrap" | "list" }[] = composite
-    ? [
-        { start: 0, end: imgItems.length, type: "list" },
-        { start: imgItems.length, end: imgItems.length + fileItems.length, type: "list" },
-        { start: imgItems.length + fileItems.length, end: ordered.length, type: "list" },
-      ]
-    : [
-        {
-          start: 0,
-          end: ordered.length,
-          type: filter === "image" || filter === "files" ? "gridWrap" : "list",
-        },
-      ];
+  const sections: { start: number; end: number; type: "gridWrap" | "list" }[] = listMode
+    ? [{ start: 0, end: ordered.length, type: "list" }]
+    : composite
+      ? [
+          { start: 0, end: imgItems.length, type: "list" },
+          { start: imgItems.length, end: imgItems.length + fileItems.length, type: "list" },
+          { start: imgItems.length + fileItems.length, end: ordered.length, type: "list" },
+        ]
+      : [
+          {
+            start: 0,
+            end: ordered.length,
+            type: filter === "image" || filter === "files" ? "gridWrap" : "list",
+          },
+        ];
 
   const { ref: imgScrollRef } = useHorizontalWheel<HTMLDivElement>();
   const { ref: fileScrollRef } = useHorizontalWheel<HTMLDivElement>();
@@ -596,6 +600,130 @@ export function Clippage() {
     <li key={item.id}>{textRowCard(item, index)}</li>
   );
 
+  // 列表模式通用行：图标 | 内容 | 时间（右侧操作常驻）——图片/文件/文本共用
+  const listRowCard = (item: ItemDto, index: number) => {
+    const isFile = item.kind === "files";
+    const isImg = item.kind === "image" || (isFile && isImageItem(item));
+    let iconBox: React.ReactNode;
+    if (item.kind === "image") {
+      iconBox = thumbs[item.id] ? (
+        <img
+          src={`data:image/png;base64,${thumbs[item.id]}`}
+          className="size-9 shrink-0 rounded-md object-cover"
+          alt=""
+        />
+      ) : (
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+          <Image className="size-4 text-muted-foreground" />
+        </div>
+      );
+    } else if (isFile) {
+      const path = item.preview;
+      if (isImg && fileThumbs[path]) {
+        iconBox = (
+          <img
+            src={`data:image/png;base64,${fileThumbs[path]}`}
+            className="size-9 shrink-0 rounded-md object-cover"
+            alt=""
+          />
+        );
+      } else if (fileIcons[path]) {
+        iconBox = (
+          <img
+            src={`data:image/png;base64,${fileIcons[path]}`}
+            className="size-9 shrink-0 rounded-md bg-muted p-1 object-contain"
+            alt=""
+          />
+        );
+      } else {
+        iconBox = (
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted">
+            <FolderOpen className="size-4 text-muted-foreground" />
+          </div>
+        );
+      }
+    } else {
+      iconBox = (
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-emerald-500/10">
+          <Type className="size-4 text-emerald-500" />
+        </div>
+      );
+    }
+    const title = isFile ? `${fileBasename(item.preview)}\n${item.preview}` : (item.full ?? item.preview);
+    return (
+      <div
+        data-index={index}
+        onClick={() => doPaste(item.id)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY, item });
+        }}
+        onMouseEnter={() => setSelected(item.id)}
+        className={cn(
+          "flex w-full cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 transition-colors",
+          selected === item.id
+            ? "border-primary ring-2 ring-primary/40"
+            : "border-border bg-card hover:border-accent",
+        )}
+      >
+        {iconBox}
+        <div className="min-w-0 flex-1">
+          <div
+            className={cn(
+              "text-xs leading-relaxed",
+              item.kind === "text" ? (LINE_CLAMP[textLines] ?? "line-clamp-2") : "truncate",
+            )}
+            title={title}
+          >
+            {item.kind === "text"
+              ? highlight(item.preview, searchKws)
+              : isFile
+                ? fileBasename(item.preview)
+                : (item.preview || "剪贴板图片")}
+          </div>
+          {isFile && <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{item.preview}</div>}
+        </div>
+        {/* 右侧：时间 + 常驻操作 */}
+        <div className="flex min-w-[64px] shrink-0 flex-col items-end gap-1 border-l pl-2.5">
+          {showTimestamps && (
+            <div className="text-[10px] tabular-nums text-muted-foreground">
+              {fmtTime(item.created_at)}
+            </div>
+          )}
+          <div className="flex items-center gap-0.5 text-muted-foreground">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                del(item.id);
+              }}
+              aria-label="删除"
+              className="rounded p-1 transition-colors hover:bg-destructive/15 hover:text-destructive"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePin(item.id, !item.pinned);
+              }}
+              aria-label={item.pinned ? "取消置顶" : "置顶"}
+              className={cn(
+                "rounded p-1 transition-colors hover:bg-accent",
+                item.pinned ? "text-primary" : "hover:text-foreground",
+              )}
+            >
+              <Pin className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const listRow = (item: ItemDto, index: number) => (
+    <li key={item.id}>{listRowCard(item, index)}</li>
+  );
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (showSettings) return;
     if (e.key === "Escape") {
@@ -708,7 +836,31 @@ export function Clippage() {
         </div>
       )}
 
-      {composite ? (
+      {listMode ? (
+        <div ref={textListRef} className="flex-1 overflow-y-auto p-1">
+          {items.length === 0 ? (
+            <EmptyState
+              icon={search ? SearchX : ClipboardList}
+              title={
+                search
+                  ? `未找到匹配「${search}」的记录`
+                  : filter === "text"
+                    ? "暂无文本记录"
+                    : filter === "image"
+                      ? "暂无图片记录"
+                      : filter === "files"
+                        ? "暂无文件记录"
+                        : "暂无剪贴板记录"
+              }
+              description={!search ? "复制内容后会自动出现在这里" : undefined}
+            />
+          ) : (
+            <ul className="space-y-2">
+              {ordered.map((item, i) => listRow(item, i))}
+            </ul>
+          )}
+        </div>
+      ) : composite ? (
         <div className="flex flex-1 flex-col overflow-hidden">
           {imgItems.length > 0 && (
             <div ref={imgScrollRef} className="shrink-0 overflow-x-auto px-2 pt-2">

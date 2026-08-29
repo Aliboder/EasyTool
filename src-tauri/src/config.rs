@@ -38,7 +38,8 @@ impl Default for AppConfig {
                 "cell_size": 80,
                 "text_lines": 2,
                 "show_timestamps": true,
-                "paste_plain": false
+                "paste_plain": false,
+                "list_mode": false
             }),
         );
         modules.insert(

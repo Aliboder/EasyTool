@@ -215,6 +215,18 @@ export function ClipSettings({
               onCheckedChange={(v) => saveAdv({ showTimestamps: v })}
             />
           </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">列表模式</div>
+              <div className="text-xs text-muted-foreground">
+                图片/文件/文本不分区，全部按「图标 · 内容 · 时间」列表呈现
+              </div>
+            </div>
+            <Switch
+              checked={adv.listMode}
+              onCheckedChange={(v) => saveAdv({ listMode: v })}
+            />
+          </div>
         </CardContent>
       </Card>
 
