@@ -195,31 +195,34 @@ export function WeekView({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* 列头（跨月时在换月那列上方标出月份） */}
+      {/* 列头：第一行 MM/DD 日期（今天主题圆底色），第二行 星期（周一~周日） */}
       <div className="flex shrink-0 border-b">
         <div className="w-10 shrink-0" />
-        {days.map((k, i) => {
-          const m = Math.floor((k % 10000) / 100);
-          const prevM = i > 0 ? Math.floor((days[i - 1] % 10000) / 100) : m;
-          const boundary = i === 0 || m !== prevM;
+        {days.map((k) => {
+          const d = k % 100;
+          const mth = Math.floor((k % 10000) / 100);
+          const dateStr = `${String(mth).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
           return (
             <button
               key={k}
               onClick={() => onSelectDay(k)}
               className={cn(
-                "flex flex-1 flex-col items-center py-1.5",
+                "flex flex-1 flex-col items-center gap-0.5 py-1.5",
                 k === today ? "rounded-t-md bg-primary/10" : "hover:bg-accent",
               )}
             >
-              <span className="text-[10px] text-muted-foreground">周{["一", "二", "三", "四", "五", "六", "日"][weekdayOfKey(k)]}</span>
-              {boundary && <span className="text-[9px] leading-3 text-muted-foreground">{m}月</span>}
               <span
                 className={cn(
-                  "mt-0.5 flex size-5 items-center justify-center rounded-full text-[11px]",
+                  "flex min-w-9 items-center justify-center rounded-full px-1 py-0.5 text-[11px] tabular-nums",
                   k === today ? "bg-primary font-semibold text-primary-foreground" : "text-foreground",
                 )}
               >
-                {k % 100}
+                {dateStr}
+              </span>
+              <span
+                className={cn("text-[10px]", k === today ? "font-medium text-primary" : "text-muted-foreground")}
+              >
+                周{["一", "二", "三", "四", "五", "六", "日"][weekdayOfKey(k)]}
               </span>
             </button>
           );
