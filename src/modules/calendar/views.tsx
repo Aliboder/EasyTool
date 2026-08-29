@@ -82,7 +82,7 @@ function EventBlock({
   onClick: EventClick;
   onMenu: EventMenu;
 }) {
-  const compact = height < 30;
+  const compact = height < 34;
   const tint = eventTint(event, subColors);
   return (
     <div
@@ -109,16 +109,16 @@ function EventBlock({
         onMenu(event, e.clientX, e.clientY);
       }}
     >
-      {/* 标题（重点） */}
+      {/* 标题（重点）：小卡片让出全部空间，优先完整显示（可换行最多 2 行） */}
       <div
         className={cn(
-          "truncate leading-tight",
-          compact ? "text-[11px] font-semibold" : "text-xs font-semibold",
+          "break-words leading-tight",
+          compact ? "line-clamp-2 text-[11px] font-semibold" : "truncate text-xs font-semibold",
         )}
       >
         {event.title}
       </div>
-      {/* 时间 + 地点 一行小字 */}
+      {/* 时间 + 地点 一行小字（仅较高卡片显示） */}
       {!compact && (
         <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/85">
           <span className="size-1 flex-none rounded-full bg-white/80" />
@@ -129,12 +129,6 @@ function EventBlock({
               <span className="truncate opacity-80">{event.location}</span>
             </>
           )}
-        </div>
-      )}
-      {/* 很矮的卡片：底部补一行开始时间 */}
-      {height > 8 && height < 30 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center text-[9px] tabular-nums text-white/80">
-          {fmtHM(event.start_ms)}
         </div>
       )}
     </div>
