@@ -241,7 +241,9 @@ function UsageBody({ account, ringRemaining }: { account: AccountStatusPayload; 
   );
 }
 
-/** 账户卡拖拽排序包装：整卡可拖（PointerSensor 距离阈值避免误触），拖时半透明置顶 */
+/** 账户卡拖拽排序包装：整卡可拖（PointerSensor 距离阈值避免误触），拖时半透明置顶。
+ * h-full：网格单元被拉伸到行高，卡片必须撑满单元，否则 dnd-kit 的排序矩形
+ * 会比可见卡片高出一截（幽灵空白），跨不同高度的卡片拖动时会互相压叠变形 */
 export function SortableCard({ id, children }: { id: string; children: ReactNode }) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id,
@@ -259,7 +261,7 @@ export function SortableCard({ id, children }: { id: string; children: ReactNode
       style={style}
       title="拖拽排序"
       className={cn(
-        "group relative cursor-grab active:cursor-grabbing",
+        "group relative h-full cursor-grab select-none active:cursor-grabbing",
         isDragging && "z-10 opacity-80",
       )}
     >
@@ -286,7 +288,7 @@ export function AccountCard({
   const meta = getKindMeta(account.kind);
   const Icon = meta.icon;
   return (
-    <Card>
+    <Card className="h-full">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
           <Icon className="size-4 shrink-0 text-muted-foreground" />
