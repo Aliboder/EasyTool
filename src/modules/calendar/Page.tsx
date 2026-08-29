@@ -21,7 +21,7 @@ import {
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Pencil, Repeat, Settings2, StickyNote, Trash2 } from "lucide-react";
+import { Bell, CalendarDays, ChevronLeft, ChevronRight, Clock, Folder, MapPin, Pencil, Repeat, Settings2, StickyNote, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
@@ -107,23 +107,41 @@ export function CalendarPage() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  // 订阅 id → 颜色（只读事件着色）
+  // 订阅 id → 颜色（只读事件着色）与名称（详情「日历账户」）
   const [subColors, setSubColors] = useState<Record<number, string>>({});
+  const [subNames, setSubNames] = useState<Record<number, string>>({});
+  // 导入源 id → 文件名（详情「日历账户」）
+  const [importNames, setImportNames] = useState<Record<number, string>>({});
+  // 详情浮窗（点事件先看详情）
+  const [detail, setDetail] = useState<EventDto | null>(null);
 
   const loadSubs = useCallback(() => {
-    invoke<{ id: number; color: string }[]>("calendar_list_subscriptions")
-      .then((list) => setSubColors(Object.fromEntries(list.map((s) => [s.id, s.color]))))
+    invoke<{ id: number; color: string; name: string }[]>("calendar_list_subscriptions")
+      .then((list) => {
+        setSubColors(Object.fromEntries(list.map((s) => [s.id, s.color])));
+        setSubNames(Object.fromEntries(list.map((s) => [s.id, s.name])));
+      })
+      .catch(() => {});
+  }, []);
+
+  const loadImportNames = useCallback(() => {
+    invoke<{ id: number; name: string }[]>("calendar_list_ics_imports")
+      .then((list) => setImportNames(Object.fromEntries(list.map((i) => [i.id, i.name]))))
       .catch(() => {});
   }, []);
 
   useEffect(() => {
     loadSubs();
-  }, [loadSubs]);
+    loadImportNames();
+  }, [loadSubs, loadImportNames]);
 
-  // 关闭设置抽屉后刷新订阅色（新增/改色即时生效）
+  // 关闭设置抽屉后刷新订阅色/来源名（新增/改色即时生效）
   useEffect(() => {
-    if (!showSettings) loadSubs();
-  }, [showSettings, loadSubs]);
+    if (!showSettings) {
+      loadSubs();
+      loadImportNames();
+    }
+  }, [showSettings, loadSubs, loadImportNames]);
 
   // 启动后按配置的默认视图落地
   useEffect(() => {
@@ -227,6 +245,7 @@ export function CalendarPage() {
     start_ms: number;
     end_ms: number;
     rrule: string | null;
+    remind_minutes: number | null;
     instance?: { eventId: number; instanceDate: number } | null;
   }) => {
     setBusy(true);
@@ -247,6 +266,7 @@ export function CalendarPage() {
               start_ms: input.start_ms,
               end_ms: input.end_ms,
               rrule: null,
+              remind_minutes: null,
             },
           },
         });
@@ -369,20 +389,22 @@ export function CalendarPage() {
     else setMenu({ kind, todo: item as TodoDto, x, y });
   };
 
-  /// 事件点击：订阅事件只读（弹详情），本地事件进编辑
-  const onEventTap = (e: EventDto) => {
-    if (e.subscription_id != null) {
-      toast(
-        `${e.title}（订阅）\n${new Date(e.start_ms).toLocaleString("zh-CN", {
-          month: "numeric",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        })}${e.location ? " · " + e.location : ""}`,
-      );
-      return;
+  /// 事件点击：先弹详情浮窗（含来源/重复/提醒信息；订阅事件只读、本地事件可编辑删除）
+  const onEventTap = (e: EventDto) => setDetail(e);
+
+  /// 删除详情里的单次本地事件（不经菜单）
+  const deleteDetailSingle = async () => {
+    const d = detail;
+    if (!d) return;
+    if (!window.confirm(`删除「${d.title}」？`)) return;
+    try {
+      await invoke("calendar_delete_event", { id: d.id });
+      toast("已删除");
+      setDetail(null);
+      loadRange();
+    } catch (e) {
+      toast(`删除失败：${e}`);
     }
-    openEventDrawer(e, localDayKey(e.start_ms));
   };
 
   const cells = monthGrid(ym.y, ym.m);
@@ -622,6 +644,7 @@ export function CalendarPage() {
               dayKey={drawer.dayKey}
               instance={drawer.instance ?? null}
               busy={busy}
+              globalRemindMinutes={cfg.eventRemindMinutes}
               onSave={saveEvent}
               onCancel={() => setDrawer(null)}
               heading={drawer.instance ? "仅此一次：编辑这一天" : drawer.editing ? "编辑事件" : "新建事件"}
@@ -638,6 +661,48 @@ export function CalendarPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      {/* 事件详情浮窗 */}
+      <Dialog open={detail !== null} onOpenChange={(v) => { if (!v) setDetail(null); }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+          {detail && (
+            <EventDetail
+              event={detail}
+              subNames={subNames}
+              importNames={importNames}
+              globalRemindMinutes={cfg.eventRemindMinutes}
+              onClose={() => setDetail(null)}
+              onEdit={() => {
+                const d = detail;
+                setDetail(null);
+                openEventDrawer(d, localDayKey(d.start_ms));
+              }}
+              onEditInstance={() => {
+                const d = detail;
+                if (!d || d.instance_date == null) return;
+                setDetail(null);
+                openEventDrawer(d, localDayKey(d.start_ms), { eventId: d.id, instanceDate: d.instance_date });
+              }}
+              onEditRule={() => {
+                const d = detail;
+                setDetail(null);
+                openEventDrawer({ ...d, instance_date: null }, localDayKey(d.start_ms), null);
+              }}
+              onDeleteInstance={() => {
+                const d = detail;
+                setDetail(null);
+                deleteInstanceOnly(d);
+              }}
+              onDeleteAll={() => {
+                const d = detail;
+                setDetail(null);
+                deleteRecurringAll(d);
+              }}
+              onDelete={deleteDetailSingle}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -652,6 +717,9 @@ const RECUR_OPTIONS = [
   { value: "monthlyNth", label: "每月第 N 个星期几" },
 ];
 
+/// 单条提醒可选提前量（分钟；0=准时）
+const REMIND_CHOICES = [0, 5, 10, 20, 30, 60, 120, 180];
+
 /// 信息摘要小标签（浮窗顶部展示事件的关键信息）
 function InfoChip({ icon, text }: { icon: ReactNode; text: string }) {
   return (
@@ -662,12 +730,127 @@ function InfoChip({ icon, text }: { icon: ReactNode; text: string }) {
   );
 }
 
+/// 事件详情浮窗：标题 + 时间/地点/重复/提醒/日历账户/备注 + 操作按钮
+function EventDetail({
+  event,
+  subNames,
+  importNames,
+  globalRemindMinutes,
+  onClose,
+  onEdit,
+  onEditInstance,
+  onEditRule,
+  onDeleteInstance,
+  onDeleteAll,
+  onDelete,
+}: {
+  event: EventDto;
+  subNames: Record<number, string>;
+  importNames: Record<number, string>;
+  globalRemindMinutes: number;
+  onClose: () => void;
+  onEdit: () => void;
+  onEditInstance: () => void;
+  onEditRule: () => void;
+  onDeleteInstance: () => void;
+  onDeleteAll: () => void;
+  onDelete: () => void;
+}) {
+  const isSub = event.subscription_id != null;
+  const seriesText = useMemo(() => {
+    if (!event.rrule) return "";
+    const p = parseRrule(event.rrule);
+    if (!p || p.freq === "none") return "";
+    return `${fmtRruleSummary(p)}${p.untilKey != null ? `，至 ${fmtKey(p.untilKey)} 结束` : ""}`;
+  }, [event.rrule]);
+  const remindText =
+    event.remind_minutes != null
+      ? event.remind_minutes === 0
+        ? "准时（本条单独设置）"
+        : `开始前 ${event.remind_minutes} 分钟（本条单独设置）`
+      : globalRemindMinutes === 0
+        ? "准时（跟随全局）"
+        : `开始前 ${globalRemindMinutes} 分钟（跟随全局）`;
+  const sourceText = isSub
+    ? (subNames[event.subscription_id!] ?? "订阅日历")
+    : event.ics_import_id != null
+      ? (importNames[event.ics_import_id] ?? "导入文件")
+      : "我的日历";
+  const timeText = event.all_day ? "全天" : `${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)}`;
+  return (
+    <div className="space-y-4">
+      <DialogHeader className="gap-1">
+        <DialogTitle className="text-lg leading-snug">{event.title}</DialogTitle>
+      </DialogHeader>
+      <div className="space-y-2.5">
+        <DetailRow
+          icon={<CalendarDays className="size-3.5" />}
+          label="时间"
+          value={`${fmtKeyLong(localDayKey(event.start_ms))}  ${timeText}`}
+        />
+        {event.location && <DetailRow icon={<MapPin className="size-3.5" />} label="地点" value={event.location} />}
+        {seriesText && <DetailRow icon={<Repeat className="size-3.5" />} label="重复" value={seriesText} />}
+        <DetailRow icon={<Bell className="size-3.5" />} label="提醒" value={remindText} />
+        <DetailRow icon={<Folder className="size-3.5" />} label="日历账户" value={sourceText} />
+        {event.notes && <DetailRow icon={<StickyNote className="size-3.5" />} label="备注" value={event.notes} />}
+      </div>
+      <div className="flex flex-wrap justify-end gap-2 border-t pt-3">
+        {!isSub && event.rrule && event.instance_date != null ? (
+          <>
+            <Button variant="outline" size="sm" onClick={onEditRule}>
+              编辑全部
+            </Button>
+            <Button variant="outline" size="sm" onClick={onEditInstance}>
+              编辑这一次
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-red-500/40 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+              onClick={onDeleteInstance}
+            >
+              删这一次
+            </Button>
+            <Button variant="destructive" size="sm" onClick={onDeleteAll}>
+              删全部
+            </Button>
+          </>
+        ) : !isSub ? (
+          <>
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              编辑
+            </Button>
+            <Button variant="destructive" size="sm" onClick={onDelete}>
+              删除
+            </Button>
+          </>
+        ) : null}
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          关闭
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/// 详情行：图标 + 灰字标签 + 内容
+function DetailRow({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
+      <span className="w-16 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 break-words text-sm text-foreground">{value}</span>
+    </div>
+  );
+}
+
 function EventForm({
   heading,
   editing,
   dayKey,
   instance,
   busy,
+  globalRemindMinutes,
   onSave,
   onCancel,
 }: {
@@ -676,6 +859,7 @@ function EventForm({
   dayKey: number;
   instance: { eventId: number; instanceDate: number } | null;
   busy: boolean;
+  globalRemindMinutes: number;
   onSave: (input: {
     title: string;
     location: string;
@@ -684,6 +868,7 @@ function EventForm({
     start_ms: number;
     end_ms: number;
     rrule: string | null;
+    remind_minutes: number | null;
     instance?: { eventId: number; instanceDate: number } | null;
   }) => void;
   onCancel: () => void;
@@ -716,6 +901,11 @@ function EventForm({
   });
   const [err, setErr] = useState<string | null>(null);
   const [recErr, setRecErr] = useState<string | null>(null);
+  // 提醒：默认跟随全局；可单条覆盖（仅此一次模式不支持改提醒，沿用规则事件默认）
+  const [remindOverride, setRemindOverride] = useState(
+    instance == null && editing != null && editing.remind_minutes != null,
+  );
+  const [remindMinutes, setRemindMinutes] = useState<number>(editing?.remind_minutes ?? globalRemindMinutes);
 
   const submit = () => {
     const t = title.trim();
@@ -735,6 +925,7 @@ function EventForm({
         return;
       }
     }
+    const remind = instance ? null : remindOverride ? remindMinutes : null;
     if (allDay) {
       const ms = fromDateInput(dayStr);
       onSave({
@@ -745,6 +936,7 @@ function EventForm({
         start_ms: ms,
         end_ms: dayEndMs(ms),
         rrule,
+        remind_minutes: remind,
         instance,
       });
     } else {
@@ -754,7 +946,17 @@ function EventForm({
         setErr("结束时间不能早于开始时间");
         return;
       }
-      onSave({ title: t, location, notes, all_day: false, start_ms: startMs, end_ms: endMs, rrule, instance });
+      onSave({
+        title: t,
+        location,
+        notes,
+        all_day: false,
+        start_ms: startMs,
+        end_ms: endMs,
+        rrule,
+        remind_minutes: remind,
+        instance,
+      });
     }
   };
 
@@ -839,6 +1041,35 @@ function EventForm({
         </Label>
         <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="带什么、和谁" />
       </div>
+      {!instance && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-medium">提醒</div>
+            <div className="text-xs text-muted-foreground">
+              {remindOverride
+                ? `本条单独设置：开始前 ${remindMinutes} 分钟`
+                : `跟随全局提前量（开始前 ${globalRemindMinutes} 分钟）`}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Switch checked={remindOverride} onCheckedChange={setRemindOverride} aria-label="单独设置提醒" />
+            {remindOverride && (
+              <Select value={String(remindMinutes)} onValueChange={(v) => setRemindMinutes(Number(v))}>
+                <SelectTrigger className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REMIND_CHOICES.map((m) => (
+                    <SelectItem key={m} value={String(m)}>
+                      {m === 0 ? "准时" : `${m} 分钟前`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
+      )}
       {!instance && (
         <div className="space-y-3 rounded-lg border border-dashed p-3">
           <div className="flex items-center justify-between">

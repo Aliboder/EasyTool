@@ -102,10 +102,10 @@ fn reminder_loop(app: AppHandle) {
             .unwrap_or(true);
 
         let now = db::now_ms();
-        let lead = minutes * 60_000;
-        // 睡眠补扫窗口：过去 1 小时（错过的事件仍补一条）→ 未来提前量
+        // 睡眠补扫窗口：过去 1 小时（错过的事件仍补一条）→ 未来 24h（覆盖单条更大的提前量；
+        // 实际提醒时刻按每条事件自身的提前量判定）
         let window_start = now - 3_600_000;
-        let window_end = now + lead.max(60_000);
+        let window_end = now + 24 * 3_600_000;
 
         let mut alerts: Vec<(String, String)> = Vec::new();
         {
@@ -115,12 +115,15 @@ fn reminder_loop(app: AppHandle) {
             if remind_enabled {
                 if let Ok(events) = db.events_in_window(window_start, window_end) {
                     for e in &events {
+                        // 单条提前量优先（NULL=跟随全局）
+                        let lead = e.remind_minutes.unwrap_or(minutes) * 60_000;
+                        let max_start = now + lead;
                         if let Some(rule) = &e.rrule {
                             // 重复事件：现场展开实例，落在窗口内的才提醒
                             let start_dt = expand::ts_to_local(e.start_ms);
                             for inst in expand::expand(start_dt, rule) {
                                 let s = expand::local_to_ts(inst);
-                                if s < window_start || s > window_end {
+                                if s < window_start || s > max_start {
                                     continue;
                                 }
                                 let day_key = expand::local_day_key(inst);
@@ -141,7 +144,7 @@ fn reminder_loop(app: AppHandle) {
                             }
                         } else {
                             let s = e.start_ms;
-                            if s < window_start || s > window_end {
+                            if s < window_start || s > max_start {
                                 continue;
                             }
                             let day_key = expand::local_day_key(expand::ts_to_local(s));

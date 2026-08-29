@@ -6,6 +6,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::expand;
+
 pub type DbResult<T> = Result<T, String>;
 
 pub fn now_ms() -> i64 {
@@ -41,6 +43,10 @@ pub struct Event {
     pub rrule: Option<String>,
     pub created_ms: i64,
     pub updated_ms: i64,
+    /// 单条提醒提前量（分钟；NULL = 跟随全局提前量）
+    pub remind_minutes: Option<i64>,
+    /// 来源：手动创建为 None；.ics 导入为对应导入源 id
+    pub ics_import_id: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +114,8 @@ impl CalendarDb {
                     start_ms INTEGER NOT NULL,
                     end_ms INTEGER NOT NULL,
                     rrule TEXT,
+                    remind_minutes INTEGER,
+                    ics_import_id INTEGER,
                     created_ms INTEGER NOT NULL,
                     updated_ms INTEGER NOT NULL
                 );
@@ -192,6 +200,12 @@ impl CalendarDb {
                 .execute("ALTER TABLE events ADD COLUMN ics_import_id INTEGER", [])
                 .map_err(|e| e.to_string())?;
         }
+        // 增量迁移：老库补 events.remind_minutes 列（单条提前量覆盖；NULL=跟随全局）
+        if !cols.iter().any(|c| c == "remind_minutes") {
+            self.conn
+                .execute("ALTER TABLE events ADD COLUMN remind_minutes INTEGER", [])
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
@@ -200,8 +214,8 @@ impl CalendarDb {
     pub fn insert_event(&self, e: &Event) -> DbResult<i64> {
         self.conn
             .execute(
-                "INSERT INTO events (title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                "INSERT INTO events (title, location, notes, all_day, start_ms, end_ms, rrule, remind_minutes, ics_import_id, created_ms, updated_ms)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
                 params![
                     e.title,
                     e.location,
@@ -210,6 +224,8 @@ impl CalendarDb {
                     e.start_ms,
                     e.end_ms,
                     e.rrule,
+                    e.remind_minutes,
+                    e.ics_import_id,
                     e.created_ms,
                     e.updated_ms
                 ],
@@ -221,7 +237,7 @@ impl CalendarDb {
     pub fn update_event(&self, e: &Event) -> DbResult<()> {
         self.conn
             .execute(
-                "UPDATE events SET title=?1, location=?2, notes=?3, all_day=?4, start_ms=?5, end_ms=?6, rrule=?7, updated_ms=?8 WHERE id=?9",
+                "UPDATE events SET title=?1, location=?2, notes=?3, all_day=?4, start_ms=?5, end_ms=?6, rrule=?7, remind_minutes=?8, updated_ms=?9 WHERE id=?10",
                 params![
                     e.title,
                     e.location,
@@ -230,6 +246,7 @@ impl CalendarDb {
                     e.start_ms,
                     e.end_ms,
                     e.rrule,
+                    e.remind_minutes,
                     e.updated_ms,
                     e.id
                 ],
@@ -250,7 +267,7 @@ impl CalendarDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms
+                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id
                  FROM events WHERE (rrule IS NULL AND start_ms <= ?2 AND end_ms >= ?1)
                                OR (rrule IS NOT NULL AND start_ms <= ?2)
                  ORDER BY start_ms ASC",
@@ -265,7 +282,7 @@ impl CalendarDb {
     pub fn get_event(&self, id: i64) -> DbResult<Option<Event>> {
         self.conn
             .query_row(
-                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms
+                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id
                  FROM events WHERE id = ?1",
                 params![id],
                 row_to_event,
@@ -279,7 +296,7 @@ impl CalendarDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms
+                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id
                  FROM events ORDER BY start_ms ASC",
             )
             .map_err(|e| e.to_string())?;
@@ -506,20 +523,21 @@ impl CalendarDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
-    /// 批量插入导入条目（单事务；ICS 物化结果；ics_import_id 关联导入源）
+    /// 批量插入导入条目（单事务；重复规则整条保留 + EXDATE 转删除型例外；ics_import_id 关联导入源）
     pub fn insert_imported(&self, items: &[super::ics::ImportItem], ics_import_id: Option<i64>) -> DbResult<()> {
         if items.is_empty() {
             return Ok(());
         }
         let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let now = now_ms();
+        let mut inserted: Vec<(i64, &super::ics::ImportItem)> = Vec::new();
         {
             let mut stmt = tx
                 .prepare(
                     "INSERT INTO events (title, location, notes, all_day, start_ms, end_ms, rrule, ics_import_id, created_ms, updated_ms)
-                     VALUES (?1,?2,?3,?4,?5,?6,NULL,?7,?8,?8)",
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9)",
                 )
                 .map_err(|e| e.to_string())?;
-            let now = now_ms();
             for it in items {
                 stmt.execute(params![
                     it.title,
@@ -528,9 +546,32 @@ impl CalendarDb {
                     it.all_day as i32,
                     it.start_ms,
                     it.end_ms,
+                    it.rrule,
                     ics_import_id,
                     now
                 ])
+                .map_err(|e| e.to_string())?;
+                inserted.push((tx.last_insert_rowid(), it));
+            }
+        }
+        // EXDATE → 删除型例外（记录该次原始时刻，ICS 再导出时变回 EXDATE）
+        for (id, it) in &inserted {
+            if it.exdates.is_empty() {
+                continue;
+            }
+            let Some(rule) = &it.rrule else { continue };
+            let start_dt = expand::ts_to_local(it.start_ms);
+            for day_key in &it.exdates {
+                let inst_start = expand::expand(start_dt, rule)
+                    .into_iter()
+                    .find(|i| expand::local_day_key(*i) == *day_key)
+                    .map(expand::local_to_ts)
+                    .unwrap_or(0);
+                tx.execute(
+                    "INSERT INTO event_overrides (event_id, instance_date, variant, start_ms)
+                     VALUES (?1,?2,'delete',?3)",
+                    params![id, day_key, inst_start],
+                )
                 .map_err(|e| e.to_string())?;
             }
         }
@@ -863,6 +904,8 @@ fn row_to_event(r: &rusqlite::Row<'_>) -> rusqlite::Result<Event> {
         rrule: r.get(7)?,
         created_ms: r.get(8)?,
         updated_ms: r.get(9)?,
+        remind_minutes: r.get(10)?,
+        ics_import_id: r.get(11)?,
     })
 }
 
@@ -899,6 +942,8 @@ mod tests {
             rrule: None,
             created_ms: 0,
             updated_ms: 0,
+            remind_minutes: None,
+            ics_import_id: None,
         }
     }
 
@@ -1001,6 +1046,8 @@ mod tests {
             all_day: false,
             start_ms: 300,
             end_ms: 400,
+            rrule: None,
+            exdates: vec![],
         };
         // 同名第一次导入
         let id1 = db.replace_ics_import("课表.ics", 1).unwrap();
@@ -1107,6 +1154,8 @@ mod tests {
             all_day: true,
             start_ms: 1000,
             end_ms: 2000,
+            rrule: None,
+            exdates: vec![],
         };
         db.replace_feed(sid, &[item]).unwrap();
         let subs = db.list_subscriptions().unwrap();

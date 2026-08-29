@@ -1,5 +1,6 @@
-//! ICS 导入：ical crate 解析 VEVENT（+VTODO 占位），重复规则就地"物化展开"为具体条目。
-//! 物化决策：课表/日程导入后可见即所得，后续改某一节课不影响其它；规则编辑（批次 3）面向用户新建的重复事件。
+//! ICS 导入：ical crate 解析 VEVENT（+VTODO 占位），重复规则整条保留（连同 EXDATE 例外）。
+//! 决策：导入的课表/订阅日程属于"外部来源"，保留规则 → 跨周有联系（详情可见"每周"），
+//! 且改标题/地点/规则一次生效整学期；按文件整份管理、可随时重导。
 //! 时区：TZID 提示一律按本机时区解读（导入文件为 Asia/Shanghai，与本机一致）；值带 Z 视为 UTC 转本地。
 
 use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
@@ -12,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use super::db::{now_ms, CalendarDb, Event, Todo};
 use super::expand;
 
-/// 一条待入库的具体条目（已展开，无规则）
+/// 一条待入库的条目：重复事件整条（rrule）+ 它的 EXDATE 例外日键；单次事件无规则
 #[derive(Debug, Clone)]
 pub struct ImportItem {
     pub title: String,
@@ -21,6 +22,10 @@ pub struct ImportItem {
     pub all_day: bool,
     pub start_ms: i64,
     pub end_ms: i64,
+    /// 重复规则（Some = 保留整条规则；EXDATE 例外由 exdates 记录）
+    pub rrule: Option<String>,
+    /// 该规则的例外删除日键（local day key，来自 EXDATE）
+    pub exdates: Vec<i64>,
 }
 
 /// 一个 VEVENT 解析出的原始信息
@@ -32,62 +37,101 @@ struct RawEvent {
     start: NaiveDateTime,
     duration_ms: i64,
     rrule: Option<String>,
+    /// EXDATE 例外删除日键（本地日 yyyymmdd）
+    exdates: Vec<i64>,
 }
 
 /// 导入结果统计（前端 toast 展示）
 #[derive(Debug, Default, serde::Serialize)]
 pub struct ImportReport {
-    pub events: usize,          // 解析成功的事件数（仅含规则下也按 1 计）
-    pub instances: usize,       // 实际入库的具体条目数（含展开）
+    pub events: usize,          // 解析成功的事件数（含规则下也按 1 计）
+    pub instances: usize,       // 实际入库条目数（重复规则=1 条）
+    pub expanded: usize,        // 规则全部展开后的总场次数（用于 UI 提示）
     pub repeated: usize,        // 含重复规则的事件数
     pub skipped: usize,         // 跳过数（缺标题/时间非法/坏条目）
     pub unsupported: usize,     // 规则不支持而降级为单次的事件数
 }
 
-/// 解析 ICS 文本（纯函数，便于单测）→ 展开后的具体条目
+/// 解析 ICS 文本（纯函数，便于单测）→ 待入库条目：重复规则整条保留 + EXDATE 例外
 pub fn parse_ics(text: &str) -> ParseResult {
     let mut items: Vec<ImportItem> = Vec::new();
     let mut events = 0usize;
     let mut skipped = 0usize;
     let mut repeated = 0usize;
     let mut unsupported = 0usize;
+    let mut expanded = 0usize;
 
     let mut calendar_iter = IcalParser::new(text.as_bytes());
     let calendar = match calendar_iter.next() {
         Some(Ok(cal)) => cal,
-        _ => return ParseResult { items, events, skipped, repeated, unsupported },
+        _ => {
+            return ParseResult {
+                items,
+                events,
+                skipped,
+                repeated,
+                unsupported,
+                expanded,
+            }
+        }
     };
     for event in calendar.events {
         match parse_event(&event) {
             Ok(raw) => {
                 events += 1;
                 repeated += raw.rrule.is_some() as usize;
-                // 物化：有规则 → 展开为多次；无规则 → 一次
-                let instances = match &raw.rrule {
-                    Some(rule) => {
-                        let ex = expand::expand(raw.start, rule);
-                        if ex.len() == 1 && expand::parse_rule(rule).is_none() {
-                            unsupported += 1;
-                        }
-                        ex
+                if let Some(rule) = &raw.rrule {
+                    let ex = expand::expand(raw.start, rule);
+                    if ex.len() == 1 && expand::parse_rule(rule).is_none() {
+                        // 规则不支持：降级为单次（仅保留首次）
+                        unsupported += 1;
+                        items.push(ImportItem {
+                            title: raw.title.clone(),
+                            location: raw.location.clone(),
+                            notes: raw.notes.clone(),
+                            all_day: raw.all_day,
+                            start_ms: local_ts(raw.start),
+                            end_ms: local_ts(raw.start) + raw.duration_ms,
+                            rrule: None,
+                            exdates: vec![],
+                        });
+                        continue;
                     }
-                    None => vec![raw.start],
-                };
-                for inst in instances {
+                    expanded += ex.len();
                     items.push(ImportItem {
                         title: raw.title.clone(),
                         location: raw.location.clone(),
                         notes: raw.notes.clone(),
                         all_day: raw.all_day,
-                        start_ms: local_ts(inst),
-                        end_ms: local_ts(inst) + raw.duration_ms,
+                        start_ms: local_ts(raw.start),
+                        end_ms: local_ts(raw.start) + raw.duration_ms,
+                        rrule: Some(rule.clone()),
+                        exdates: raw.exdates.clone(),
+                    });
+                } else {
+                    items.push(ImportItem {
+                        title: raw.title.clone(),
+                        location: raw.location.clone(),
+                        notes: raw.notes.clone(),
+                        all_day: raw.all_day,
+                        start_ms: local_ts(raw.start),
+                        end_ms: local_ts(raw.start) + raw.duration_ms,
+                        rrule: None,
+                        exdates: vec![],
                     });
                 }
             }
             Err(_) => skipped += 1,
         }
     }
-    ParseResult { items, events, skipped, repeated, unsupported }
+    ParseResult {
+        items,
+        events,
+        skipped,
+        repeated,
+        unsupported,
+        expanded,
+    }
 }
 
 pub struct ParseResult {
@@ -96,6 +140,55 @@ pub struct ParseResult {
     pub skipped: usize,
     pub repeated: usize,
     pub unsupported: usize,
+    pub expanded: usize,
+}
+
+/// 取所有 EXDATE 属性值（可逗号分隔多项），转本地日键（取前 8 位日期；带 Z 同取日期部分）
+fn extract_exdates(props: &[Property]) -> Vec<i64> {
+    let mut out = Vec::new();
+    for p in props {
+        if !p.name.eq_ignore_ascii_case("EXDATE") {
+            continue;
+        }
+        let Some(v) = &p.value else { continue };
+        for part in v.split(',') {
+            let t = part.trim();
+            if t.len() < 8 {
+                continue;
+            }
+            if let Ok(key) = t[0..8].parse::<i64>() {
+                out.push(key);
+            }
+        }
+    }
+    out
+}
+
+/// 把保留规则的条目展开成逐场实例（订阅源等只读用途；导入主流程不用）
+pub fn flatten(items: &[ImportItem]) -> Vec<ImportItem> {
+    let mut out = Vec::new();
+    for it in items {
+        match &it.rrule {
+            Some(rule) => {
+                let start_dt = expand::ts_to_local(it.start_ms);
+                for inst in expand::expand(start_dt, rule) {
+                    let s = expand::local_to_ts(inst);
+                    out.push(ImportItem {
+                        title: it.title.clone(),
+                        location: it.location.clone(),
+                        notes: it.notes.clone(),
+                        all_day: it.all_day,
+                        start_ms: s,
+                        end_ms: s + (it.end_ms - it.start_ms).max(0),
+                        rrule: None,
+                        exdates: vec![],
+                    });
+                }
+            }
+            None => out.push(it.clone()),
+        }
+    }
+    out
 }
 
 fn prop(props: &[Property], name: &str) -> Option<String> {
@@ -150,6 +243,7 @@ fn parse_event(ev: &IcalEvent) -> Result<RawEvent, ()> {
         start,
         duration_ms,
         rrule: prop(&ev.properties, "RRULE").filter(|s| !s.trim().is_empty()),
+        exdates: extract_exdates(&ev.properties),
     })
 }
 
@@ -244,7 +338,10 @@ pub fn fetch_feed(url: &str) -> Result<ParseResult, String> {
         return Err(format!("订阅地址返回 HTTP {}", resp.status().as_u16()));
     }
     let body = resp.text().map_err(|e| format!("读取响应失败：{e}"))?;
-    Ok(parse_ics(&body))
+    // 订阅源按展开后的逐场实例入库（feed 层无规则列；只读展示无需规则）
+    let mut parsed = parse_ics(&body);
+    parsed.items = flatten(&parsed.items);
+    Ok(parsed)
 }
 
 /// 入库入口（仅测试/无源导入用；正式导入走 command 的按源管理）
@@ -255,6 +352,7 @@ pub fn import_ics_text(db: &CalendarDb, text: &str) -> Result<ImportReport, Stri
     Ok(ImportReport {
         events: parsed.events,
         instances: parsed.items.len(),
+        expanded: parsed.expanded,
         repeated: parsed.repeated,
         skipped: parsed.skipped,
         unsupported: parsed.unsupported,
@@ -405,6 +503,8 @@ pub struct JsonEvent {
     pub start_ms: i64,
     pub end_ms: i64,
     pub rrule: Option<String>,
+    #[serde(default)]
+    pub remind_minutes: Option<i64>,
     pub created_ms: i64,
     pub updated_ms: i64,
 }
@@ -459,6 +559,7 @@ pub fn export_json_text(db: &CalendarDb) -> String {
                 start_ms: e.start_ms,
                 end_ms: e.end_ms,
                 rrule: e.rrule,
+                remind_minutes: e.remind_minutes,
                 created_ms: e.created_ms,
                 updated_ms: e.updated_ms,
             })
@@ -540,6 +641,8 @@ pub fn import_json_text(db: &CalendarDb, text: &str) -> Result<JsonImportReport,
             start_ms: ev.start_ms,
             end_ms: ev.end_ms,
             rrule: ev.rrule.clone(),
+            remind_minutes: ev.remind_minutes,
+            ics_import_id: None,
             created_ms: ev.created_ms,
             updated_ms: now,
         };
@@ -562,6 +665,8 @@ pub fn import_json_text(db: &CalendarDb, text: &str) -> Result<JsonImportReport,
                 start_ms: o.start_ms.unwrap_or(0),
                 end_ms: o.end_ms.unwrap_or(0),
                 rrule: None,
+                remind_minutes: None,
+                ics_import_id: None,
                 created_ms: now,
                 updated_ms: now,
             })
@@ -576,6 +681,8 @@ pub fn import_json_text(db: &CalendarDb, text: &str) -> Result<JsonImportReport,
                 start_ms: o.start_ms.unwrap_or(0),
                 end_ms: 0,
                 rrule: None,
+                remind_minutes: None,
+                ics_import_id: None,
                 created_ms: now,
                 updated_ms: now,
             })
@@ -619,21 +726,40 @@ mod tests {
     }
 
     #[test]
-    fn parse_tzid_local_rrule_expands() {
+    fn parse_rrule_keeps_rule_with_exdates() {
         let text = cal(
-            "BEGIN:VEVENT\nDTSTAMP:20260714T201948Z\nUID:a\nSUMMARY:大学物理(2)\nDTSTART;TZID=Asia/Shanghai:20260915T083000\nDTEND;TZID=Asia/Shanghai:20260915T100500\nRRULE:FREQ=WEEKLY;UNTIL=20261228T160000Z;INTERVAL=1\nLOCATION:教1-333\nEND:VEVENT",
+            "BEGIN:VEVENT\nDTSTAMP:20260714T201948Z\nUID:a\nSUMMARY:大学物理(2)\nDTSTART;TZID=Asia/Shanghai:20260915T083000\nDTEND;TZID=Asia/Shanghai:20260915T100500\nRRULE:FREQ=WEEKLY;UNTIL=20261228T160000Z;INTERVAL=1\nEXDATE:20260929T083000\nLOCATION:教1-333\nEND:VEVENT",
         );
         let r = parse_ics(&text);
         assert_eq!(r.events, 1);
         assert_eq!(r.repeated, 1);
         assert_eq!(r.unsupported, 0);
-        assert!(r.items.len() >= 15, "9/15~12/28 每周约 16 次，实际 {}", r.items.len());
-        assert_eq!(r.items[0].title, "大学物理(2)");
-        let d0 = Local.timestamp_millis_opt(r.items[0].start_ms).earliest().unwrap();
+        assert_eq!(r.items.len(), 1, "重复规则整条保留为 1 条，不再摊开");
+        let it = &r.items[0];
+        assert_eq!(it.title, "大学物理(2)");
+        assert!(it.rrule.is_some(), "规则应保留");
+        assert_eq!(it.exdates, vec![20260929], "EXDATE 转例外日键");
+        assert!(r.expanded >= 15, "展开总场次应≥15，实际 {}", r.expanded);
+        let d0 = Local.timestamp_millis_opt(it.start_ms).earliest().unwrap();
         assert_eq!((d0.month(), d0.day(), d0.hour(), d0.minute()), (9, 15, 8, 30));
-        assert_eq!(r.items[0].end_ms - r.items[0].start_ms, 95 * 60_000);
-        // 相邻次间隔 7 天
-        assert_eq!(r.items[1].start_ms - r.items[0].start_ms, 7 * 86_400_000);
+        assert_eq!(it.end_ms - it.start_ms, 95 * 60_000);
+    }
+
+    #[test]
+    fn import_rule_and_exdate_stores_override() {
+        let text = cal(
+            "BEGIN:VEVENT\nSUMMARY:高数\nDTSTART;TZID=Asia/Shanghai:20260915T083000\nDTEND;TZID=Asia/Shanghai:20260915T100500\nRRULE:FREQ=WEEKLY;UNTIL=20261228T160000Z\nEXDATE:20260922T083000\nEND:VEVENT",
+        );
+        let db = CalendarDb::open(Path::new(":memory:")).unwrap();
+        let report = import_ics_text(&db, &text).unwrap();
+        assert_eq!(report.instances, 1, "规则事件只存 1 条");
+        let evs = db.events_in_window(0, 9_000_000_000_000).unwrap();
+        assert_eq!(evs.len(), 1);
+        assert!(evs[0].rrule.is_some());
+        let ovs = db.overrides_for(evs[0].id).unwrap();
+        assert_eq!(ovs.len(), 1);
+        assert_eq!(ovs[0].variant, "delete");
+        assert_eq!(ovs[0].instance_date, 20260922);
     }
 
     #[test]
@@ -643,6 +769,7 @@ mod tests {
         );
         let r = parse_ics(&text);
         assert_eq!(r.items.len(), 1);
+        assert!(r.items[0].rrule.is_none(), "不支持的规则降级为单次");
         assert_eq!(r.unsupported, 1);
     }
 
@@ -711,6 +838,8 @@ mod tests {
             rrule: Some("FREQ=WEEKLY;BYDAY=MO,WE,FR".into()),
             created_ms: 0,
             updated_ms: 0,
+            remind_minutes: Some(20),
+            ics_import_id: None,
         };
         weekly.start_ms = day_of(2026, 9, 15, 9, 0); // 周二
         weekly.end_ms = weekly.start_ms + 3600_000;
@@ -726,6 +855,8 @@ mod tests {
             rrule: None,
             created_ms: 0,
             updated_ms: 0,
+            remind_minutes: None,
+            ics_import_id: None,
         };
         db.insert_event(&single).unwrap();
         // 仅此一次删除：9/18（周五）那次
@@ -750,7 +881,10 @@ mod tests {
         assert!(ics.contains("SUMMARY:看牙"));
         let reparsed = parse_ics(&ics);
         assert_eq!(reparsed.events, 2); // 规则 VEVENT + 单次 VEVENT（待办不计入 events）
-        assert!(reparsed.items.len() >= 3); // 展开出的多次 + 单次（注：EXDATE 删除型暂不参与解析）
+        // 规则事件保留整条 + EXDATE 例外还原；单次事件独立成条目
+        assert_eq!(reparsed.items.len(), 2);
+        let rule_item = reparsed.items.iter().find(|i| i.rrule.is_some()).unwrap();
+        assert_eq!(rule_item.exdates, vec![20260918]);
 
         // JSON 导出 → 导入到空库 → 数量吻合；再导一次全跳过
         let json = export_json_text(&db);
@@ -762,6 +896,14 @@ mod tests {
         assert_eq!(r1.skipped, 0);
         assert_eq!(db2.all_todos().unwrap().len(), 1);
         assert_eq!(db2.all_overrides().unwrap().len(), 1);
+        // 提醒提前量随备份往返
+        assert!(
+            db2.all_events()
+                .unwrap()
+                .iter()
+                .any(|e| e.remind_minutes == Some(20)),
+            "提醒提前量应随 JSON 备份往返"
+        );
         let r2 = import_json_text(&db2, &json).unwrap();
         assert_eq!(r2.events, 0);
         assert_eq!(r2.todos, 0);

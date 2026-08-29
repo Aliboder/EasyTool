@@ -23,6 +23,10 @@ pub struct EventDto {
     pub instance_date: Option<i64>,
     /// 订阅来源（订阅日历事件为 Some(订阅 id)，只读；本地事件为 None）
     pub subscription_id: Option<i64>,
+    /// 导入源 id（.ics 导入的事件；手建为 None）
+    pub ics_import_id: Option<i64>,
+    /// 单条提醒提前量（分钟；NULL=跟随全局）
+    pub remind_minutes: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,6 +58,9 @@ pub struct EventInput {
     pub end_ms: i64,
     #[serde(default)]
     pub rrule: Option<String>,
+    /// 单条提醒提前量（分钟；None=跟随全局）。0 = 准时
+    #[serde(default)]
+    pub remind_minutes: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,6 +142,8 @@ pub fn calendar_get_range(
                     rrule: Some(rule.clone()),
                     instance_date: Some(day_key),
                     subscription_id: None,
+                    ics_import_id: e.ics_import_id,
+                    remind_minutes: e.remind_minutes,
                 });
             }
         } else if e.end_ms >= start_ms && e.start_ms <= end_ms {
@@ -149,6 +158,8 @@ pub fn calendar_get_range(
                 rrule: None,
                 instance_date: None,
                 subscription_id: None,
+                ics_import_id: e.ics_import_id,
+                remind_minutes: e.remind_minutes,
             });
         }
     }
@@ -165,6 +176,8 @@ pub fn calendar_get_range(
             rrule: None,
             instance_date: None,
             subscription_id: Some(f.subscription_id),
+            ics_import_id: None,
+            remind_minutes: None,
         });
     }
     out.sort_by_key(|d| d.start_ms);
@@ -215,6 +228,8 @@ pub fn calendar_override_event(
                 start_ms: v.start_ms,
                 end_ms: v.end_ms,
                 rrule: None,
+                remind_minutes: None,
+                ics_import_id: None,
                 created_ms: base.created_ms,
                 updated_ms: now_ms(),
             };
@@ -251,6 +266,8 @@ pub fn calendar_create_event(
         start_ms: input.start_ms,
         end_ms: input.end_ms,
         rrule: input.rrule.filter(|s| !s.trim().is_empty()),
+        remind_minutes: input.remind_minutes.map(|m| m.clamp(0, 4320)),
+        ics_import_id: None,
         created_ms: now,
         updated_ms: now,
     };
@@ -274,6 +291,7 @@ pub fn calendar_update_event(
     e.start_ms = input.start_ms;
     e.end_ms = input.end_ms;
     e.rrule = input.rrule.filter(|s| !s.trim().is_empty());
+    e.remind_minutes = input.remind_minutes.map(|m| m.clamp(0, 4320));
     e.updated_ms = now_ms();
     db.update_event(&e)
 }
@@ -357,6 +375,7 @@ pub fn calendar_import_ics(
     Ok(super::ics::ImportReport {
         events: parsed.events,
         instances: parsed.items.len(),
+        expanded: parsed.expanded,
         repeated: parsed.repeated,
         skipped: parsed.skipped,
         unsupported: parsed.unsupported,
@@ -459,6 +478,8 @@ pub fn calendar_list_all_events(db: State<'_, Mutex<CalendarDb>>) -> Result<Vec<
             rrule: e.rrule,
             instance_date: None,
             subscription_id: None,
+            ics_import_id: e.ics_import_id,
+            remind_minutes: e.remind_minutes,
         })
         .collect())
 }

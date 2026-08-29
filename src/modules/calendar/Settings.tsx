@@ -309,12 +309,13 @@ export function CalendarSettings({
         const r = await invoke<{
           events: number;
           instances: number;
+          expanded: number;
           repeated: number;
           skipped: number;
           unsupported: number;
         }>("calendar_import_ics", { path });
-        const parts = [`新增 ${r.instances} 条`];
-        if (r.repeated > 0) parts.push(`含 ${r.repeated} 门重复课程（已展开成每次）`);
+        const parts = [`新增 ${r.events} 组日程`];
+        if (r.repeated > 0) parts.push(`${r.repeated} 门重复课程已保留规则（跨周相连，展开共 ${r.expanded} 场）`);
         if (r.unsupported > 0) parts.push(`${r.unsupported} 条规则暂不支持，仅保留首次`);
         if (r.skipped > 0) parts.push(`跳过 ${r.skipped} 条`);
         toast(`导入完成：${parts.join("，")}`);
