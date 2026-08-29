@@ -36,7 +36,7 @@ html {
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .press-in, .outline-num, .reveal { animation: none !important; opacity: 1 !important; transform: none !important; clip-path: none !important; }
+  .press-in, .reveal { animation: none !important; opacity: 1 !important; transform: none !important; clip-path: none !important; }
 }
 
 body {
@@ -132,21 +132,6 @@ body::after {
 .press-in:nth-child(2) { animation-delay: 0.1s; }
 .press-in:nth-child(3) { animation-delay: 0.2s; }
 
-/* ---- section outline number ---- */
-.outline-num {
-  font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 0.8;
-  color: transparent;
-  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.08);
-  user-select: none;
-  transition: -webkit-text-stroke-color 0.4s ease;
-}
-section:hover .outline-num {
-  -webkit-text-stroke-color: rgba(16, 185, 129, 0.28);
-}
-
 /* ---- bento card hover ---- */
 .bento-card {
   transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
@@ -169,10 +154,6 @@ section:hover .outline-num {
   border-color: rgba(16, 185, 129, 0.25);
   box-shadow: 0 8px 32px -8px rgba(16, 185, 129, 0.12);
 }
-
-/* ---- feature row hover ---- */
-.feat-row { transition: background 0.15s ease; }
-.feat-row:hover { background: rgba(16, 185, 129, 0.05); }
 
 /* ---- page boom ---- */
 @keyframes page-boom {
@@ -225,13 +206,6 @@ body.boom { animation: page-boom 0.5s ease; }
   50% { transform: translateY(-8px); }
 }
 .float-anim { animation: float 4s ease-in-out infinite; }
-
-/* ---- glow pulse ---- */
-@keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.1); }
-  50% { box-shadow: 0 0 30px rgba(16, 185, 129, 0.2); }
-}
-.glow-pulse { animation: glow-pulse 3s ease-in-out infinite; }
 
 /* ---- section divider ---- */
 .section-divider {

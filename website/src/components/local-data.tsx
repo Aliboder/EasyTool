@@ -9,13 +9,14 @@ const PROMISES = [
 ];
 
 const TREE: [string, string][] = [
-  ["config.json", "应用配置"],
+  ["config.json", "应用配置 · 原子写入"],
   ["clipboard.db", "剪贴板历史 · SQLite WAL"],
-  ["images\\", "图片原文"],
-  ["thumbs\\", "缩略图缓存"],
-  ["balance_history_*.json", "额度消费历史（按账户分文件）"],
-  ["timetracker.db", "软件使用时长 · SQLite WAL"],
+  ["quota.db", "额度历史 / Go 用量周期"],
   ["apps.db", "已安装应用使用频率"],
+  ["timetracker.db", "软件使用时长 · SQLite WAL"],
+  ["images\\", "图片原文（最长边 ≤2048）"],
+  ["thumbs\\", "256px 缩略图缓存"],
+  ["easytool.log", "运行日志（自动轮转）"],
 ];
 
 const COMPARE = [
@@ -31,7 +32,7 @@ export function LocalData() {
   return (
     <section id="data" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
-        <SectionHead no="05" title="数据只属于你" sub="你的每一条复制记录、每一笔消费历史，都落在下面这个文件夹里——删了就是真没了。" />
+        <SectionHead eyebrow="数据所有权" title="数据只属于你" sub="你的每一条复制记录、每一笔消费历史，都落在下面这个文件夹里，删了就是真没了。" />
       </Reveal>
 
       <div className="mt-12 grid gap-8 lg:grid-cols-2">
@@ -63,6 +64,9 @@ export function LocalData() {
                   <span className="text-zinc-500">　{comment}</span>
                 </p>
               ))}
+              <p className="mt-3 whitespace-nowrap text-zinc-600">
+                ※ 旧版 balance_history_*.json 已一次性导入 quota.db，遗留文件不再写入
+              </p>
             </div>
           </Reveal>
         </div>

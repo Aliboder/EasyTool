@@ -39,8 +39,8 @@ const TECHS = [siRust, siTauri, siReact, siTypescript, siTailwindcss, siVite, si
 const HIGHLIGHTS = [
   {
     icon: FlaskConical,
-    title: "61+ 后端单元测试",
-    body: "去重、自写守卫、数据迁移、热键解析、时长聚合等核心逻辑全覆盖。",
+    title: "66+ 后端单元测试",
+    body: "去重、自写守卫、数据迁移、热键解析、时长聚合等核心逻辑全覆盖；另有 11 个前端单测。",
   },
   {
     icon: Cpu,
@@ -50,7 +50,7 @@ const HIGHLIGHTS = [
   {
     icon: Blocks,
     title: "模块注册表架构",
-    body: "一个 manifest.json 声明模块，壳 UI 自动识别——即插即用，互不侵入。",
+    body: "一个 manifest.json 声明模块，壳 UI 自动识别，即插即用，互不侵入。",
   },
 ];
 
@@ -74,7 +74,7 @@ export function DevZone() {
             为开发者而建
           </h2>
           <p className="mt-3 max-w-[52ch] leading-relaxed text-zinc-400">
-            整个项目开源在 GitHub 上——每一行代码都可以审阅、修改、重新分发。
+            整个项目开源在 GitHub 上，每一行代码都可以审阅、修改、重新分发。
           </p>
         </Reveal>
 

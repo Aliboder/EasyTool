@@ -1,182 +1,198 @@
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Clock, ClipboardList, Gauge, Search, Smile } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
+import {
+  BellRing,
+  Clock,
+  ClipboardList,
+  Copy,
+  FolderOpen,
+  Gauge,
+  History,
+  ImageDown,
+  Languages,
+  Layers,
+  Search,
+  SearchCode,
+  SearchX,
+  Send,
+  ShieldAlert,
+  SlidersHorizontal,
+  Smile,
+  SortAsc,
+  Sparkles,
+  StickyNote,
+  TimerOff,
+  WandSparkles,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useState } from "react";
 import { Reveal } from "./reveal";
 import { SectionHead } from "./section-head";
+
+type Feature = { icon: LucideIcon; text: string };
 
 type ModuleInfo = {
   id: string;
   name: string;
-  icon: LucideIcon;
   tagline: string;
   desc: string;
-  features: { icon: string; text: string }[];
+  features: Feature[];
   meta: string[];
+  accent: string;
 };
 
 const MODULES: ModuleInfo[] = [
   {
-    id: "clipboard", name: "剪贴板历史", icon: ClipboardList,
+    id: "clipboard",
+    name: "剪贴板历史",
     tagline: "复制过的一切，随时找回",
-    desc: "监听系统剪贴板，自动记录每一次复制。文本、图片、文件分类存储，固定常用项不丢失。",
+    desc: "监听系统剪贴板，文本、图片、文件自动入历史。固定、拖拽、搜索、备注，跟手粘贴不打断工作流。",
     features: [
-      { icon: "📋", text: "默认保留 500 条，文本 / 图片 / 文件分类记录" },
-      { icon: "🖼️", text: "图片自动生成 256px 缩略图，悬停预览大图" },
-      { icon: "📌", text: "固定常用条目，拖拽调整顺序，置顶永不挤掉" },
-      { icon: "🔍", text: "内容指纹去重，自身写入不误记" },
-      { icon: "🎯", text: "点条目自动隐藏面板并粘贴回原窗口，跟手不打断" },
+      { icon: Layers, text: "上限 500 条，内容指纹去重，重复复制只更新时间" },
+      { icon: Copy, text: "「粘贴为纯文本」开关与右键复制纯文本，去格式一键完成" },
+      { icon: SearchX, text: "空格分词搜索，多关键词全部命中并逐处高亮" },
+      { icon: StickyNote, text: "条目备注、固定排序、使用过的记录自动置顶为最新" },
+      { icon: ImageDown, text: "图片降采样到最长边 2048 存储 + 256 缩略图懒加载，右键可调系统看图" },
     ],
     meta: ["跟手粘贴", "SQLite", "WM_CLIPBOARDUPDATE"],
+    accent: "text-emerald-400",
   },
   {
-    id: "quota", name: "额度监控", icon: Gauge,
+    id: "quota",
+    name: "额度监控",
     tagline: "AI 花销，心里有数",
-    desc: "实时监控多个 AI 服务账户余额与消费趋势，阈值告警不遗漏。",
+    desc: "多账户额度与消费趋势，阈值告警直接弹 Windows 通知；消费突增自动提醒。",
     features: [
-      { icon: "👥", text: "DeepSeek / OpenCode Go 多账户，独立密钥与余额" },
-      { icon: "⏱️", text: "轮询间隔自由调节（默认 30 秒，最低 5 秒）" },
-      { icon: "⚠️", text: "预警 + 告警双阈值，余额吃紧提前知道" },
-      { icon: "📊", text: "每账户独立保存 5000 条消费历史" },
-      { icon: "🔔", text: "消费突增自动提醒，异常用量不放过" },
+      { icon: Gauge, text: "DeepSeek / OpenCode Go 多账户，独立密钥与余额" },
+      { icon: BellRing, text: "预警 + 紧急双阈值，跌破即弹系统通知（Toast）" },
+      { icon: ShieldAlert, text: "消费突增检测：单日消费超近 7 天日均 3 倍时提醒" },
+      { icon: History, text: "每账户 5000 条余额历史 + Go 用量周期自动追踪" },
+      { icon: SlidersHorizontal, text: "轮询间隔可调（默认 30s，最低 5s），后台静默运行" },
     ],
     meta: ["后台轮询", "多账户", "凭据管理器", "reqwest"],
+    accent: "text-cyan-400",
   },
   {
-    id: "emoji", name: "表情面板", icon: Smile,
+    id: "emoji",
+    name: "表情面板",
     tagline: "1900+ 表情，一按即出",
-    desc: "分类浏览、收藏置顶、多语言搜索。文本表情直输不污染剪贴板。",
+    desc: "分类浏览、最近使用、收藏置顶、多语言搜索；文本表情直输不污染剪贴板，支持自定义图片表情。",
     features: [
-      { icon: "⭐", text: "分类浏览 + 收藏置顶，常用表情一步直达" },
-      { icon: "🔎", text: "中文名 / 英文名 / shortcode 三种方式搜索" },
-      { icon: "⌨️", text: "文本表情经 SendInput 直输，不污染剪贴板" },
-      { icon: "🎨", text: "系统字体优先渲染，缺失时 Twemoji 兜底" },
-      { icon: "✨", text: "图片表情自动写入并粘贴，全流程无感" },
+      { icon: Sparkles, text: "最近使用区 + 收藏置顶，高频表情一步直达" },
+      { icon: Languages, text: "中文名 / 英文名 / shortcode 三种方式搜索" },
+      { icon: Send, text: "文本表情经 SendInput 直输，不写剪贴板、不打断粘贴" },
+      { icon: ImageDown, text: "系统字体优先渲染，缺字形自动 Twemoji 兜底" },
+      { icon: FolderOpen, text: "导入本地图片做自定义表情，分组管理" },
     ],
-    meta: ["SendInput", "Twemoji"],
+    meta: ["SendInput", "Twemoji", "自定义表情"],
+    accent: "text-amber-400",
   },
   {
-    id: "search", name: "文件秒搜", icon: Search,
+    id: "search",
+    name: "文件秒搜",
     tagline: "全盘文件，输入即达",
-    desc: "调用 Everything NTFS 索引引擎，毫秒级返回全盘文件名结果；内置已安装应用中心。",
+    desc: "Everything NTFS 索引引擎毫秒返回；内置已安装应用中心，频率排序、一键启动、可置顶。",
     features: [
-      { icon: "⚡", text: "基于 Everything 引擎，文件名毫秒级返回" },
-      { icon: "🖥️", text: "「应用」Tab = 已安装应用中心，点击即启动" },
-      { icon: "🔧", text: "正则、大小写、全字匹配、路径匹配随意组合" },
-      { icon: "📐", text: "结果列与排序自定义，列表 / 网格双视图" },
-      { icon: "🔗", text: "复制路径自动进入剪贴板历史，跨模块联动" },
+      { icon: Search, text: "Everything 引擎，文件名毫秒级返回（需装 Everything）" },
+      { icon: SortAsc, text: "「应用」Tab = 应用中心：按使用频率排序，可右键置顶 / 打开位置" },
+      { icon: SearchCode, text: "正则、大小写、全字、路径匹配随意组合" },
+      { icon: History, text: "搜索历史记录与一键清空" },
+      { icon: Copy, text: "复制路径自动进入剪贴板历史，跨模块联动" },
     ],
-    meta: ["Everything", "DLL"],
+    meta: ["Everything", "DLL", "应用中心"],
+    accent: "text-blue-400",
   },
   {
-    id: "timetracker", name: "时长统计", icon: Clock,
+    id: "timetracker",
+    name: "时长统计",
     tagline: "时间花在哪，一目了然",
-    desc: "自动记录前台软件使用时长，多维度排行 + 甘特时间线 + 应用分类，隐私本地存储。",
+    desc: "自动记录前台软件使用时长，多维度排行 + 甘特时间线 + 自动分类，数据全部本地。",
     features: [
-      { icon: "⏱️", text: "今日 / 本周 / 本月总览，昨日对比一目了然" },
-      { icon: "📊", text: "应用排行：总时长 + 活跃时长双维度排序" },
-      { icon: "📈", text: "每日甘特时间线，翻看任意一天的分布" },
-      { icon: "🏷️", text: "自动分类（效率/资源/视听/学习/游戏），可自定义规则" },
-      { icon: "😴", text: "离开检测：无键鼠输入自动剔除 AFK 时间" },
+      { icon: Clock, text: "今日 / 本周 / 本月总览，昨日对比" },
+      { icon: SortAsc, text: "应用排行：总时长 + 活跃时长双维度" },
+      { icon: Layers, text: "每日甘特时间线，翻看任意一天分布" },
+      { icon: WandSparkles, text: "自动分类 + 自定义正则规则，规则变更存量自动重分类" },
+      { icon: TimerOff, text: "AFK 离开剔除，播放音频（视频/直播/音乐）不计挂机" },
     ],
-    meta: ["SQLite", "Win32 钩子"],
+    meta: ["SQLite", "Win32 钩子", "WASAPI"],
+    accent: "text-violet-400",
   },
 ];
 
-const MOD_COLORS = ["text-emerald-400", "text-blue-400", "text-amber-400", "text-cyan-400", "text-violet-400"];
-
 export function DeepDive() {
-  const [active, setActive] = useState(0);
   const reduce = useReducedMotion();
-  const mod = MODULES[active];
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
-        <SectionHead no="02" title="每个模块，都有真功夫" sub="特性清单直接来自源码——没有营销话术。" />
+        <SectionHead
+          eyebrow="模块深潜"
+          title="每个模块，都有真功夫"
+          sub="特性清单直接来自 v0.7.0 源码，没有营销话术。"
+        />
       </Reveal>
 
-      <Reveal delay={0.08}>
-        <div className="mt-10 grid gap-4 md:grid-cols-[240px_1fr] md:gap-8">
-          {/* tab list */}
-          <div role="tablist" aria-label="模块列表" className="flex gap-1.5 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0">
-            {MODULES.map((m, i) => (
-              <button
-                key={m.id}
-                role="tab"
-                aria-selected={i === active}
-                onClick={() => setActive(i)}
-                className={`group relative flex shrink-0 items-center gap-3 rounded-xl px-4 py-3.5 text-left text-sm transition-all duration-200 ${
-                  i === active
-                    ? "bg-emerald-500/10 font-medium text-emerald-500 dark:text-emerald-400"
-                    : "text-zinc-500 hover:bg-white/[0.03] hover:text-zinc-300"
-                }`}
-              >
-                <div className={`absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-full bg-emerald-500 transition-all duration-200 ${i === active ? "opacity-100" : "opacity-0"}`} />
-                <span className={`flex size-8 items-center justify-center rounded-lg text-xs font-bold transition-all ${
-                  i === active ? "bg-emerald-500/15" : "bg-white/5"
-                } ${MOD_COLORS[i]}`}>
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div className="min-w-0">
-                  <span className="block truncate">{m.name}</span>
-                  <span className="block truncate text-[10px] text-zinc-600 dark:text-zinc-500">{m.tagline}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* detail panel */}
-          <div className="min-h-[380px] overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.03] to-transparent p-7 md:p-9">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={mod.id}
-                initial={reduce ? false : { opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={reduce ? undefined : { opacity: 0, x: -20 }}
-                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-              >
-                {/* header */}
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <mod.icon className={`size-5 ${MOD_COLORS[active]}`} />
-                      <h3 className="font-display text-2xl font-bold">{mod.tagline}</h3>
-                    </div>
-                    <p className="mt-2 max-w-[50ch] text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">{mod.desc}</p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-white/5 px-3 py-1 font-mono text-xs text-zinc-500">
-                    {active + 1}/{MODULES.length}
+      {/* 逐模块「规格单」：全宽横排，模块名左、特性右，板块间用细分隔线 */}
+      <div className="mt-12">
+        {MODULES.map((m, i) => (
+          <Reveal key={m.id} delay={0.04}>
+            <article
+              className={`group grid gap-6 py-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] md:gap-12 ${
+                i > 0 ? "border-t border-white/5" : ""
+              }`}
+            >
+              {/* 左：模块身份 */}
+              <div>
+                <div className="flex items-center gap-3">
+                  <span className={`flex size-10 items-center justify-center rounded-xl bg-white/5 ${m.accent}`}>
+                    {(() => {
+                      const icons: Record<string, LucideIcon> = {
+                        clipboard: ClipboardList,
+                        quota: Gauge,
+                        emoji: Smile,
+                        search: Search,
+                        timetracker: Clock,
+                      };
+                      const Icon = icons[m.id];
+                      return <Icon className="size-5" />;
+                    })()}
                   </span>
+                  <h3 className="font-display text-xl font-bold">{m.name}</h3>
                 </div>
-
-                {/* features */}
-                <div className="mt-6 grid gap-2 sm:grid-cols-2">
-                  {mod.features.map((f, i) => (
-                    <motion.div
-                      key={f.text}
-                      initial={reduce ? false : { opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.25, delay: i * 0.04 }}
-                      className="flex items-start gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3.5 transition-colors hover:border-emerald-500/20"
+                <p className={`mt-3 font-display text-sm font-semibold ${m.accent}`}>{m.tagline}</p>
+                <p className="mt-2 max-w-[38ch] text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  {m.desc}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {m.meta.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-emerald-500/15 bg-emerald-500/5 px-2.5 py-1 font-mono text-[11px] text-emerald-400/90"
                     >
-                      <span className="mt-0.5 text-base">{f.icon}</span>
-                      <span className="text-[13px] leading-snug text-zinc-300">{f.text}</span>
-                    </motion.div>
+                      {tag}
+                    </span>
                   ))}
                 </div>
+              </div>
 
-                {/* meta */}
-                <div className="mt-5 flex flex-wrap gap-2 border-t border-white/5 pt-4">
-                  {mod.meta.map((m) => (
-                    <span key={m} className="rounded-full bg-emerald-500/10 px-3 py-1 font-mono text-[11px] text-emerald-400/80">{m}</span>
-                  ))}
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        </div>
-      </Reveal>
+              {/* 右：特性清单 */}
+              <div className="grid gap-2 sm:grid-cols-2">
+                {m.features.map((f, j) => (
+                  <motion.div
+                    key={f.text}
+                    initial={reduce ? false : { opacity: 0, y: 6 }}
+                    whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
+                    viewport={{ once: true, margin: "-60px" }}
+                    transition={{ duration: 0.3, delay: j * 0.03 }}
+                    className="flex items-start gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3.5 transition-colors hover:border-emerald-500/20"
+                  >
+                    <f.icon className={`mt-0.5 size-4 shrink-0 ${m.accent} opacity-80`} />
+                    <span className="text-[13px] leading-snug text-zinc-300">{f.text}</span>
+                  </motion.div>
+                ))}
+              </div>
+            </article>
+          </Reveal>
+        ))}
+      </div>
     </section>
   );
 }

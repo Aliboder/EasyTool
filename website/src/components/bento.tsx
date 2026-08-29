@@ -68,57 +68,64 @@ export function Bento() {
     <section id="modules" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
         <SectionHead
-          no="01"
+          eyebrow="核心模块"
           title="五个模块，各司其职"
-          sub="下面的演示都是真实交互，不是截图——动手试试。"
+          sub="下面的演示都是真实交互，不是截图，动手试试。"
         />
       </Reveal>
 
-      {/* 2x2 grid for first 4 modules */}
-      <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Card
-          icon={ClipboardList}
-          title="剪贴板历史"
-          desc="文本、图片、文件统统记住。悬停任意条目，试试固定和复制。"
-        >
-          <MiniClipboard />
-        </Card>
+      {/* 非对称占比：剪贴板大格（2 行高）+ 右侧三小格 + 底部表情/搜索双格 */}
+      <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-6">
+        <div className="lg:col-span-3 lg:row-span-2">
+          <Card
+            icon={ClipboardList}
+            title="剪贴板历史"
+            desc="文本、图片、文件统统记住。悬停任意条目，试试固定、删除和搜索。"
+          >
+            <MiniClipboard />
+          </Card>
+        </div>
 
-        <Card
-          icon={Gauge}
-          title="额度监控"
-          desc="多账户余额与消费曲线，低于阈值自动告警。切换账户看看。"
-        >
-          <MiniQuota />
-        </Card>
+        <div className="lg:col-span-3">
+          <Card
+            icon={Clock}
+            title="时长统计"
+            desc="自动记录软件使用时长，今日/本周/本月排行与时间线，一览无余。"
+            accent
+          >
+            <MiniTimetracker />
+          </Card>
+        </div>
 
-        <Card
-          icon={Smile}
-          title="表情面板"
-          desc="点一下，试试手感。分类浏览、收藏置顶。"
-        >
-          <MiniEmoji />
-        </Card>
+        <div className="lg:col-span-3">
+          <Card
+            icon={Gauge}
+            title="额度监控"
+            desc="多账户余额与消费曲线，低于阈值自动弹系统通知。"
+          >
+            <MiniQuota />
+          </Card>
+        </div>
 
-        <Card
-          icon={Clock}
-          title="时长统计"
-          desc="自动记录软件使用时长，今日/本周/本月排行与时间线，一览无余。"
-          accent
-        >
-          <MiniTimetracker />
-        </Card>
-      </div>
+        <div className="lg:col-span-2">
+          <Card
+            icon={Smile}
+            title="表情面板"
+            desc="点一下试试手感。分类、最近使用、收藏置顶。"
+          >
+            <MiniEmoji />
+          </Card>
+        </div>
 
-      {/* search full width */}
-      <div className="mt-4">
-        <Card
-          icon={Search}
-          title="文件秒搜"
-          desc="Everything 全文引擎 + 已安装应用中心，输入即出结果（需安装 Everything）。"
-        >
-          <MiniSearch />
-        </Card>
+        <div className="lg:col-span-4">
+          <Card
+            icon={Search}
+            title="文件秒搜"
+            desc="Everything 全文引擎 + 已安装应用中心，输入即出结果（需安装 Everything）。"
+          >
+            <MiniSearch />
+          </Card>
+        </div>
       </div>
     </section>
   );

@@ -25,7 +25,7 @@ export function Download() {
   return (
     <section id="download" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
-        <SectionHead no="09" title="现在就装一个" sub="免费开源，装完即用。" />
+        <SectionHead eyebrow="下载" title="现在就装一个" sub="免费开源，装完即用。" />
       </Reveal>
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[1fr_1.2fr]">

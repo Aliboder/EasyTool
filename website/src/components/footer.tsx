@@ -14,7 +14,7 @@ export function Footer() {
               EASYTOOL
             </p>
             <p className="mt-2 max-w-[280px] text-sm leading-relaxed text-zinc-500">
-              Windows 效率工具箱——剪贴板历史、AI 额度监控、表情面板、文件秒搜、时长统计。本地优先，开源免费。
+              Windows 效率工具箱，剪贴板历史、AI 额度监控、表情面板、文件秒搜、时长统计。本地优先，开源免费。
             </p>
             <div className="mt-4 flex items-center gap-3">
               <a href={REPO} target="_blank" rel="noreferrer" className="flex size-8 items-center justify-center rounded-lg border border-white/10 text-zinc-400 transition-colors hover:border-emerald-500/50 hover:text-white">

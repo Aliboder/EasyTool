@@ -24,8 +24,8 @@ export function Hero() {
                 <ScrambleText text="EASYTOOL" delay={200} speed={40} />
               </span>
               <span>
-                vol. <span className="font-bold text-emerald-600 dark:text-emerald-400">0.7.0</span>{" "}
-                <span className="text-zinc-400 dark:text-zinc-600">· 2026.08</span>
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">Windows 10/11</span>{" "}
+                <span className="text-zinc-400 dark:text-zinc-600">· x64</span>
               </span>
             </div>
 
@@ -43,7 +43,7 @@ export function Hero() {
 
                 <BlurReveal delay={0.3}>
                   <p className="mt-6 max-w-[42ch] text-[15px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                    剪贴板历史、AI 额度监控、表情面板、文件秒搜、时长统计——模块化工具箱，数据全部留在本地。
+                    剪贴板历史、AI 额度监控、表情面板、文件秒搜、时长统计，模块化工具箱，数据全部留在本地。
                   </p>
                 </BlurReveal>
 

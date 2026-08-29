@@ -15,8 +15,9 @@ const QA: { q: string; tag: string; tagColor: string; tagBg: string; a: ReactNod
   { q: "我的数据会被上传吗？", tag: "隐私", tagColor: "text-blue-400", tagBg: "bg-blue-500/15", a: "不会。所有历史与配置都存在本机 SQLite，API 密钥只进 Windows 凭据管理器。EasyTool 没有自建服务器，也不收集任何遥测数据。你甚至可以在断网环境下使用全部功能（额度查询除外）。" },
   { q: "为什么需要单独安装 Everything？", tag: "依赖", tagColor: "text-amber-400", tagBg: "bg-amber-500/15", a: "EasyTool 直接调用 Everything 的 NTFS 索引引擎，毫秒级返回全盘文件名，而不是自己重复造一个慢索引。Everything 同样免费开源（MIT），安装一次即可，体积不到 2MB。" },
   { q: "支持 macOS 或 Linux 吗？", tag: "平台", tagColor: "text-cyan-400", tagBg: "bg-cyan-500/15", a: "目前仅支持 Windows 10 / 11 x64。剪贴板监听（WM_CLIPBOARDUPDATE）、全局热键（RegisterHotKey）、表情直输（SendInput）都深度依赖 Win32 API，跨平台需要完全重写底层，暂无计划。" },
-  { q: "如何参与贡献？", tag: "开源", tagColor: "text-violet-400", tagBg: "bg-violet-500/15", a: <>欢迎在 GitHub 提交 {link(`${REPO}/issues`, "Issue")} 反馈问题，或直接提 {link(`${REPO}/pulls`, "PR")}。想开发自己的功能模块，先读 {link(`${REPO}/blob/master/docs/module-guide.md`, "模块开发指南")}——一个 manifest.json 加一个 Rust 后端文件和一个 React 前端组件即可接入，壳 UI 自动识别。</> },
+  { q: "如何参与贡献？", tag: "开源", tagColor: "text-violet-400", tagBg: "bg-violet-500/15", a: <>欢迎在 GitHub 提交 {link(`${REPO}/issues`, "Issue")} 反馈问题，或直接提 {link(`${REPO}/pulls`, "PR")}。想开发自己的功能模块，先读 {link(`${REPO}/blob/master/docs/module-guide.md`, "模块开发指南")}，一个 manifest.json 加一个 Rust 后端文件和一个 React 前端组件即可接入，壳 UI 自动识别。</> },
   { q: "换电脑怎么迁移？", tag: "迁移", tagColor: "text-rose-400", tagBg: "bg-rose-500/15", a: "复制 %APPDATA%\\com.aliboder.easytool\\ 整个文件夹到新电脑的相同路径即可。剪贴板历史、配置、消费记录全部迁移。密钥需要重新设置（系统凭据管理器不支持导出）。" },
+  { q: "如何更新到新版本？", tag: "更新", tagColor: "text-emerald-400", tagBg: "bg-emerald-500/15", a: "设置页点「检查更新」，或留意启动时的更新横幅。有新版时下载签名安装包（每个安装包都带 .sig 签名校验），重启应用即完成升级。托盘右键菜单也内置了「检查更新」快捷入口。" },
 ];
 
 export function Faq() {
@@ -27,7 +28,7 @@ export function Faq() {
   return (
     <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
-        <SectionHead no="08" title="常见问题" />
+        <SectionHead eyebrow="帮助" title="常见问题" />
       </Reveal>
 
       <div className="mt-12 hidden gap-6 lg:grid lg:grid-cols-[300px_1fr]">

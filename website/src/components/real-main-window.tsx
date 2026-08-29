@@ -5,9 +5,9 @@ const FILES = [
   { icon: FileText, name: "交通流理论_第3章.pdf", path: "D:\\资料\\交通运输学", size: "2.4 MB", time: "2026-08-12", type: "doc" },
   { icon: Image, name: "微信图片_20260814.jpg", path: "D:\\微信文件", size: "820 KB", time: "2026-08-14", type: "image" },
   { icon: FileText, name: "开题报告_v3.docx", path: "D:\\SystemFiles\\Documents", size: "156 KB", time: "2026-08-10", type: "doc" },
-  { icon: Folder, name: "课程设计", path: "D:\\", size: "—", time: "2026-07-20", type: "folder" },
+  { icon: Folder, name: "课程设计", path: "D:\\", size: "-", time: "2026-07-20", type: "folder" },
   { icon: FileText, name: "交叉口仿真数据.xlsx", path: "D:\\课程设计", size: "1.1 MB", time: "2026-08-08", type: "doc" },
-  { icon: FileText, name: "EasyTool_0.4.5_x64-setup.exe", path: "D:\\Downloads", size: "8.2 MB", time: "2026-08-21", type: "doc" },
+  { icon: FileText, name: "EasyTool_0.7.0_x64-setup.exe", path: "D:\\Downloads", size: "8.2 MB", time: "2026-08-29", type: "doc" },
   { icon: Image, name: "毕业合照.jpg", path: "D:\\微信文件", size: "3.2 MB", time: "2026-07-15", type: "image" },
   { icon: FileText, name: "数据结构复习笔记.md", path: "D:\\资料\\编程", size: "42 KB", time: "2026-08-18", type: "doc" },
 ];

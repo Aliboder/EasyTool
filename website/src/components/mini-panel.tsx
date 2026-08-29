@@ -14,8 +14,8 @@ const POOL: Omit<Item, "id">[] = [
   { type: "link", text: "api-docs.deepseek.com/zh-cn" },
 ];
 
-// 时间标签按位置递推，最新一条永远是「刚刚」
-const TIMES = ["刚刚", "1 分钟前", "3 分钟前", "8 分钟前", "12 分钟前"];
+// 时间标签按位置递推（与 App 一致的固定 MM/DD HH:mm 格式）
+const TIMES = ["08/29 14:30", "08/29 14:12", "08/29 13:58", "08/29 13:41", "08/29 13:27"];
 
 // 主面板底部模块栏（与真实 App 底栏一致：5 模块 + 设置）
 const MODULES = [
@@ -65,7 +65,7 @@ export function MiniPanel() {
       <ul className="space-y-1 p-2">
         <li className="flex items-center gap-3 rounded-xl bg-emerald-500/10 px-3 py-2.5">
           <ItemIcon type="file" />
-          <span className="min-w-0 flex-1 truncate text-sm">EasyTool_0.6.7_x64-setup.exe</span>
+          <span className="min-w-0 flex-1 truncate text-sm">EasyTool_0.7.0_x64-setup.exe</span>
         </li>
 
         <AnimatePresence initial={false} mode="popLayout">

@@ -63,7 +63,7 @@ export function Hotkeys() {
 
   return (
     <section id="hotkeys" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
-      <SectionHead no="03" title="手不离键盘" sub="全局热键一键呼出，所有快捷键都支持录制自定义。" />
+      <SectionHead eyebrow="快捷键" title="手不离键盘" sub="全局热键一键呼出，所有快捷键都支持录制自定义。" />
 
       <div className="mt-10 grid gap-6 lg:grid-cols-[1fr_1.3fr]">
         <div className="space-y-4">
