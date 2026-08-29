@@ -16,6 +16,8 @@ export interface EventDto {
   ics_import_id: number | null;
   /** 单条提醒提前量（分钟；null = 跟随全局） */
   remind_minutes: number | null;
+  /** 事件颜色（hex；null = 默认色） */
+  color: string | null;
 }
 
 export interface TodoDto {

@@ -27,6 +27,8 @@ pub struct EventDto {
     pub ics_import_id: Option<i64>,
     /// 单条提醒提前量（分钟；NULL=跟随全局）
     pub remind_minutes: Option<i64>,
+    /// 事件颜色（hex；NULL=默认色）
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,6 +63,9 @@ pub struct EventInput {
     /// 单条提醒提前量（分钟；None=跟随全局）。0 = 准时
     #[serde(default)]
     pub remind_minutes: Option<i64>,
+    /// 事件颜色（hex；None=默认色）
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,6 +149,7 @@ pub fn calendar_get_range(
                     subscription_id: None,
                     ics_import_id: e.ics_import_id,
                     remind_minutes: e.remind_minutes,
+                    color: e.color.clone(),
                 });
             }
         } else if e.end_ms >= start_ms && e.start_ms <= end_ms {
@@ -160,6 +166,7 @@ pub fn calendar_get_range(
                 subscription_id: None,
                 ics_import_id: e.ics_import_id,
                 remind_minutes: e.remind_minutes,
+                color: e.color.clone(),
             });
         }
     }
@@ -178,6 +185,7 @@ pub fn calendar_get_range(
             subscription_id: Some(f.subscription_id),
             ics_import_id: None,
             remind_minutes: None,
+            color: None,
         });
     }
     out.sort_by_key(|d| d.start_ms);
@@ -230,6 +238,7 @@ pub fn calendar_override_event(
                 rrule: None,
                 remind_minutes: None,
                 ics_import_id: None,
+                color: None,
                 created_ms: base.created_ms,
                 updated_ms: now_ms(),
             };
@@ -267,6 +276,7 @@ pub fn calendar_create_event(
         end_ms: input.end_ms,
         rrule: input.rrule.filter(|s| !s.trim().is_empty()),
         remind_minutes: input.remind_minutes.map(|m| m.clamp(0, 4320)),
+        color: input.color.filter(|c| !c.trim().is_empty()),
         ics_import_id: None,
         created_ms: now,
         updated_ms: now,
@@ -280,11 +290,15 @@ pub fn calendar_update_event(
     db: State<'_, Mutex<CalendarDb>>,
     id: i64,
     input: EventInput,
-) -> Result<(), String> {
+    sync_same_name: bool,
+) -> Result<usize, String> {
     validate_event(&input)?;
     let db = db.lock().map_err(|e| e.to_string())?;
     let mut e = db.get_event(id)?.ok_or("事件不存在")?;
-    e.title = input.title.trim().into();
+    let old_title = e.title.clone();
+    let new_title = input.title.trim().to_string();
+    let new_color = input.color.filter(|c| !c.trim().is_empty());
+    e.title = new_title.clone();
     e.location = input.location;
     e.notes = input.notes;
     e.all_day = input.all_day;
@@ -292,8 +306,22 @@ pub fn calendar_update_event(
     e.end_ms = input.end_ms;
     e.rrule = input.rrule.filter(|s| !s.trim().is_empty());
     e.remind_minutes = input.remind_minutes.map(|m| m.clamp(0, 4320));
+    e.color = new_color.clone();
     e.updated_ms = now_ms();
-    db.update_event(&e)
+    db.update_event(&e)?;
+    // 同名课程同步：只同步标题与颜色，不动时间/地点/规则（改名/换色一次全改）
+    let mut synced = 0usize;
+    if sync_same_name {
+        let peers = db.events_with_title_excluding(&old_title, id)?;
+        for mut p in peers {
+            p.title = new_title.clone();
+            p.color = new_color.clone();
+            p.updated_ms = now_ms();
+            db.update_event(&p)?;
+            synced += 1;
+        }
+    }
+    Ok(synced)
 }
 
 #[tauri::command]
@@ -480,6 +508,7 @@ pub fn calendar_list_all_events(db: State<'_, Mutex<CalendarDb>>) -> Result<Vec<
             subscription_id: None,
             ics_import_id: e.ics_import_id,
             remind_minutes: e.remind_minutes,
+            color: e.color,
         })
         .collect())
 }

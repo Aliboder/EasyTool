@@ -505,6 +505,8 @@ pub struct JsonEvent {
     pub rrule: Option<String>,
     #[serde(default)]
     pub remind_minutes: Option<i64>,
+    #[serde(default)]
+    pub color: Option<String>,
     pub created_ms: i64,
     pub updated_ms: i64,
 }
@@ -560,6 +562,7 @@ pub fn export_json_text(db: &CalendarDb) -> String {
                 end_ms: e.end_ms,
                 rrule: e.rrule,
                 remind_minutes: e.remind_minutes,
+                color: e.color,
                 created_ms: e.created_ms,
                 updated_ms: e.updated_ms,
             })
@@ -642,6 +645,7 @@ pub fn import_json_text(db: &CalendarDb, text: &str) -> Result<JsonImportReport,
             end_ms: ev.end_ms,
             rrule: ev.rrule.clone(),
             remind_minutes: ev.remind_minutes,
+            color: ev.color.clone(),
             ics_import_id: None,
             created_ms: ev.created_ms,
             updated_ms: now,
@@ -667,6 +671,7 @@ pub fn import_json_text(db: &CalendarDb, text: &str) -> Result<JsonImportReport,
                 rrule: None,
                 remind_minutes: None,
                 ics_import_id: None,
+                color: None,
                 created_ms: now,
                 updated_ms: now,
             })
@@ -683,6 +688,7 @@ pub fn import_json_text(db: &CalendarDb, text: &str) -> Result<JsonImportReport,
                 rrule: None,
                 remind_minutes: None,
                 ics_import_id: None,
+                color: None,
                 created_ms: now,
                 updated_ms: now,
             })
@@ -840,6 +846,7 @@ mod tests {
             updated_ms: 0,
             remind_minutes: Some(20),
             ics_import_id: None,
+            color: None,
         };
         weekly.start_ms = day_of(2026, 9, 15, 9, 0); // 周二
         weekly.end_ms = weekly.start_ms + 3600_000;
@@ -857,6 +864,7 @@ mod tests {
             updated_ms: 0,
             remind_minutes: None,
             ics_import_id: None,
+            color: None,
         };
         db.insert_event(&single).unwrap();
         // 仅此一次删除：9/18（周五）那次

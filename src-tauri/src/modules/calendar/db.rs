@@ -47,6 +47,8 @@ pub struct Event {
     pub remind_minutes: Option<i64>,
     /// 来源：手动创建为 None；.ics 导入为对应导入源 id
     pub ics_import_id: Option<i64>,
+    /// 事件颜色（hex，如 #3b82f6；NULL = 默认色）
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +118,7 @@ impl CalendarDb {
                     rrule TEXT,
                     remind_minutes INTEGER,
                     ics_import_id INTEGER,
+                    color TEXT,
                     created_ms INTEGER NOT NULL,
                     updated_ms INTEGER NOT NULL
                 );
@@ -206,6 +209,12 @@ impl CalendarDb {
                 .execute("ALTER TABLE events ADD COLUMN remind_minutes INTEGER", [])
                 .map_err(|e| e.to_string())?;
         }
+        // 增量迁移：老库补 events.color 列（本地事件颜色标签）
+        if !cols.iter().any(|c| c == "color") {
+            self.conn
+                .execute("ALTER TABLE events ADD COLUMN color TEXT", [])
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
@@ -214,8 +223,8 @@ impl CalendarDb {
     pub fn insert_event(&self, e: &Event) -> DbResult<i64> {
         self.conn
             .execute(
-                "INSERT INTO events (title, location, notes, all_day, start_ms, end_ms, rrule, remind_minutes, ics_import_id, created_ms, updated_ms)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                "INSERT INTO events (title, location, notes, all_day, start_ms, end_ms, rrule, remind_minutes, ics_import_id, color, created_ms, updated_ms)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
                 params![
                     e.title,
                     e.location,
@@ -226,6 +235,7 @@ impl CalendarDb {
                     e.rrule,
                     e.remind_minutes,
                     e.ics_import_id,
+                    e.color,
                     e.created_ms,
                     e.updated_ms
                 ],
@@ -237,7 +247,7 @@ impl CalendarDb {
     pub fn update_event(&self, e: &Event) -> DbResult<()> {
         self.conn
             .execute(
-                "UPDATE events SET title=?1, location=?2, notes=?3, all_day=?4, start_ms=?5, end_ms=?6, rrule=?7, remind_minutes=?8, updated_ms=?9 WHERE id=?10",
+                "UPDATE events SET title=?1, location=?2, notes=?3, all_day=?4, start_ms=?5, end_ms=?6, rrule=?7, remind_minutes=?8, color=?9, updated_ms=?10 WHERE id=?11",
                 params![
                     e.title,
                     e.location,
@@ -247,6 +257,7 @@ impl CalendarDb {
                     e.end_ms,
                     e.rrule,
                     e.remind_minutes,
+                    e.color,
                     e.updated_ms,
                     e.id
                 ],
@@ -267,7 +278,7 @@ impl CalendarDb {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id
+                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id, color
                  FROM events WHERE (rrule IS NULL AND start_ms <= ?2 AND end_ms >= ?1)
                                OR (rrule IS NOT NULL AND start_ms <= ?2)
                  ORDER BY start_ms ASC",
@@ -282,7 +293,7 @@ impl CalendarDb {
     pub fn get_event(&self, id: i64) -> DbResult<Option<Event>> {
         self.conn
             .query_row(
-                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id
+                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id, color
                  FROM events WHERE id = ?1",
                 params![id],
                 row_to_event,
@@ -291,12 +302,27 @@ impl CalendarDb {
             .map_err(|e| e.to_string())
     }
 
+    /// 与某事件同名的其它事件（同名课程分组同步用；排除自身）
+    pub fn events_with_title_excluding(&self, title: &str, exclude_id: i64) -> DbResult<Vec<Event>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id, color
+                 FROM events WHERE title = ?1 AND id != ?2 ORDER BY start_ms ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![title, exclude_id], row_to_event)
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
     /// 全部事件（导出/JSON 备份用）
     pub fn all_events(&self) -> DbResult<Vec<Event>> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id
+                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms, remind_minutes, ics_import_id, color
                  FROM events ORDER BY start_ms ASC",
             )
             .map_err(|e| e.to_string())?;
@@ -906,6 +932,7 @@ fn row_to_event(r: &rusqlite::Row<'_>) -> rusqlite::Result<Event> {
         updated_ms: r.get(9)?,
         remind_minutes: r.get(10)?,
         ics_import_id: r.get(11)?,
+        color: r.get(12)?,
     })
 }
 
@@ -944,6 +971,7 @@ mod tests {
             updated_ms: 0,
             remind_minutes: None,
             ics_import_id: None,
+            color: None,
         }
     }
 
@@ -1023,6 +1051,18 @@ mod tests {
         let ovs = db.overrides_for(id).unwrap();
         assert_eq!(ovs[0].variant, "delete");
         assert!(ovs[0].start_ms.is_none());
+    }
+
+    #[test]
+    fn same_title_peer_lookup_excludes_self() {
+        let db = mem();
+        let a = db.insert_event(&ev("高数", 100, 200)).unwrap();
+        let b = db.insert_event(&ev("高数", 300, 400)).unwrap();
+        let c = db.insert_event(&ev("英语", 500, 600)).unwrap();
+        let peers = db.events_with_title_excluding("高数", a).unwrap();
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].id, b);
+        assert!(peers.iter().all(|p| p.id != c));
     }
 
     #[test]

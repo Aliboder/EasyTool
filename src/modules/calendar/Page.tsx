@@ -59,7 +59,14 @@ interface RangePayload {
 }
 
 type DrawerState =
-  | { mode: "event"; editing: EventDto | null; dayKey: number; instance?: { eventId: number; instanceDate: number } | null }
+  | {
+      mode: "event";
+      editing: EventDto | null;
+      dayKey: number;
+      instance?: { eventId: number; instanceDate: number } | null;
+      /** 双击时间轴预填的开始时刻 */
+      presetStartMs?: number;
+    }
   | { mode: "todo"; editing: TodoDto | null }
   | null;
 
@@ -114,6 +121,8 @@ export function CalendarPage() {
   const [importNames, setImportNames] = useState<Record<number, string>>({});
   // 详情浮窗（点事件先看详情）
   const [detail, setDetail] = useState<EventDto | null>(null);
+  // 点「今天」时自增：让日/周视图把时间轴滚到当前时刻
+  const [nowFocus, setNowFocus] = useState(0);
 
   const loadSubs = useCallback(() => {
     invoke<{ id: number; color: string; name: string }[]>("calendar_list_subscriptions")
@@ -230,12 +239,22 @@ export function CalendarPage() {
       const n = new Date();
       setYm({ y: n.getFullYear(), m: n.getMonth() });
     }
+    setNowFocus((n) => n + 1);
   };
 
   // ---------- 增删改 ----------
 
-  const openEventDrawer = (editing: EventDto | null, dayKey: number, instance?: { eventId: number; instanceDate: number } | null) =>
-    setDrawer({ mode: "event", editing, dayKey, instance: instance ?? null });
+  const openEventDrawer = (
+    editing: EventDto | null,
+    dayKey: number,
+    instance?: { eventId: number; instanceDate: number } | null,
+    presetStartMs?: number,
+  ) => setDrawer({ mode: "event", editing, dayKey, instance: instance ?? null, presetStartMs });
+
+  /// 双击时间轴空白处：按点位时刻预填新建事件
+  const createEventAt = (startMs: number) => {
+    setDrawer({ mode: "event", editing: null, dayKey: localDayKey(startMs), instance: null, presetStartMs: startMs });
+  };
 
   const saveEvent = async (input: {
     title: string;
@@ -246,6 +265,8 @@ export function CalendarPage() {
     end_ms: number;
     rrule: string | null;
     remind_minutes: number | null;
+    color: string | null;
+    syncSameName: boolean;
     instance?: { eventId: number; instanceDate: number } | null;
   }) => {
     setBusy(true);
@@ -267,13 +288,18 @@ export function CalendarPage() {
               end_ms: input.end_ms,
               rrule: null,
               remind_minutes: null,
+              color: null,
             },
           },
         });
         toast("已只改这一次");
       } else if (editing) {
-        await invoke("calendar_update_event", { id: editing.id, input });
-        toast("事件已更新");
+        const n = await invoke<number>("calendar_update_event", {
+          id: editing.id,
+          input,
+          sync_same_name: input.syncSameName,
+        });
+        toast(n > 0 ? `事件已更新，并同步 ${n} 条同名事件` : "事件已更新");
       } else {
         await invoke("calendar_create_event", { input });
         toast("事件已添加");
@@ -481,19 +507,23 @@ export function CalendarPage() {
                     >
                       {cell.dayOfMonth}
                     </span>
-                    {evs.slice(0, 3).map((e) => (
-                      <span
-                        key={e.id}
-                        title={`${e.all_day ? "全天" : fmtHM(e.start_ms)} · ${e.title}`}
-                        className={cn(
-                          "truncate rounded px-1 py-px text-[10px]",
-                          e.all_day ? "bg-primary/25 text-primary" : "bg-secondary text-secondary-foreground",
-                        )}
-                      >
-                        {e.all_day ? "" : `${fmtHM(e.start_ms)} `}
-                        {e.title}
-                      </span>
-                    ))}
+                    {evs.slice(0, 3).map((e) => {
+                      const tint = e.subscription_id != null ? subColors[e.subscription_id] : e.color;
+                      return (
+                        <span
+                          key={e.id}
+                          title={`${e.all_day ? "全天" : fmtHM(e.start_ms)} · ${e.title}`}
+                          className={cn(
+                            "truncate rounded px-1 py-px text-[10px]",
+                            e.all_day ? "bg-primary/25 text-primary" : "bg-secondary text-secondary-foreground",
+                          )}
+                          style={tint ? { backgroundColor: `${tint}26`, color: tint } : undefined}
+                        >
+                          {e.all_day ? "" : `${fmtHM(e.start_ms)} `}
+                          {e.title}
+                        </span>
+                      );
+                    })}
                     {evs.length > 3 && (
                       <span className="px-1 text-[10px] text-muted-foreground">+{evs.length - 3}</span>
                     )}
@@ -514,9 +544,11 @@ export function CalendarPage() {
             selectedKey={selectedKey}
             showWeekend={cfg.weekShowWeekend !== false}
             subColors={subColors}
+            nowFocus={nowFocus}
             onSelectDay={setSelectedKey}
             onEventClick={onEventTap}
             onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
+            onCreateAt={createEventAt}
           />
         )}
 
@@ -526,12 +558,14 @@ export function CalendarPage() {
             todos={range?.todos ?? []}
             dayKey={selectedKey}
             subColors={subColors}
+            nowFocus={nowFocus}
             onEventClick={onEventTap}
             onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
             onToggleTodo={toggleTodo}
             onTodoMenu={(t, x, y) => openMenu("todo", t, x, y)}
             onAddEvent={() => setDrawer({ mode: "event", editing: null, dayKey: selectedKey })}
             onAddTodo={() => setDrawer({ mode: "todo", editing: null })}
+            onCreateAt={createEventAt}
           />
         )}
 
@@ -645,6 +679,7 @@ export function CalendarPage() {
               instance={drawer.instance ?? null}
               busy={busy}
               globalRemindMinutes={cfg.eventRemindMinutes}
+              presetStartMs={drawer.presetStartMs}
               onSave={saveEvent}
               onCancel={() => setDrawer(null)}
               heading={drawer.instance ? "仅此一次：编辑这一天" : drawer.editing ? "编辑事件" : "新建事件"}
@@ -719,6 +754,9 @@ const RECUR_OPTIONS = [
 
 /// 单条提醒可选提前量（分钟；0=准时）
 const REMIND_CHOICES = [0, 5, 10, 20, 30, 60, 120, 180];
+
+/// 本地事件可选颜色（hex；null=默认主题色）
+const EVENT_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#64748b"];
 
 /// 信息摘要小标签（浮窗顶部展示事件的关键信息）
 function InfoChip({ icon, text }: { icon: ReactNode; text: string }) {
@@ -851,6 +889,7 @@ function EventForm({
   instance,
   busy,
   globalRemindMinutes,
+  presetStartMs,
   onSave,
   onCancel,
 }: {
@@ -860,6 +899,7 @@ function EventForm({
   instance: { eventId: number; instanceDate: number } | null;
   busy: boolean;
   globalRemindMinutes: number;
+  presetStartMs?: number;
   onSave: (input: {
     title: string;
     location: string;
@@ -869,6 +909,8 @@ function EventForm({
     end_ms: number;
     rrule: string | null;
     remind_minutes: number | null;
+    color: string | null;
+    syncSameName: boolean;
     instance?: { eventId: number; instanceDate: number } | null;
   }) => void;
   onCancel: () => void;
@@ -878,10 +920,18 @@ function EventForm({
   const [notes, setNotes] = useState(editing?.notes ?? "");
   const [allDay, setAllDay] = useState(editing?.all_day ?? false);
   const [start, setStart] = useState(
-    editing ? toDateTimeInput(editing.start_ms) : `${toDateInput(dayStartMs(dayKey))}T09:00`,
+    editing
+      ? toDateTimeInput(editing.start_ms)
+      : presetStartMs != null
+        ? toDateTimeInput(presetStartMs)
+        : `${toDateInput(dayStartMs(dayKey))}T09:00`,
   );
   const [end, setEnd] = useState(
-    editing ? toDateTimeInput(editing.end_ms) : `${toDateInput(dayStartMs(dayKey))}T10:00`,
+    editing
+      ? toDateTimeInput(editing.end_ms)
+      : presetStartMs != null
+        ? toDateTimeInput(presetStartMs + 3_600_000)
+        : `${toDateInput(dayStartMs(dayKey))}T10:00`,
   );
   const [dayStr, setDayStr] = useState(
     editing?.all_day ? toDateInput(editing.start_ms) : toDateInput(dayStartMs(dayKey)),
@@ -906,6 +956,12 @@ function EventForm({
     instance == null && editing != null && editing.remind_minutes != null,
   );
   const [remindMinutes, setRemindMinutes] = useState<number>(editing?.remind_minutes ?? globalRemindMinutes);
+  // 颜色：默认(null)=主题色；可自定义
+  const [color, setColor] = useState<string | null>(editing?.color ?? null);
+  // 同名同步（编辑导入的重复课程时默认开：改名/换色一次改全）；仅此一次模式不可用
+  const [syncSameName, setSyncSameName] = useState(
+    instance == null && editing != null && editing.ics_import_id != null,
+  );
 
   const submit = () => {
     const t = title.trim();
@@ -926,6 +982,7 @@ function EventForm({
       }
     }
     const remind = instance ? null : remindOverride ? remindMinutes : null;
+    const evColor = instance ? null : color;
     if (allDay) {
       const ms = fromDateInput(dayStr);
       onSave({
@@ -937,6 +994,8 @@ function EventForm({
         end_ms: dayEndMs(ms),
         rrule,
         remind_minutes: remind,
+        color: evColor,
+        syncSameName: editing != null && !instance && syncSameName,
         instance,
       });
     } else {
@@ -955,6 +1014,8 @@ function EventForm({
         end_ms: endMs,
         rrule,
         remind_minutes: remind,
+        color: evColor,
+        syncSameName: editing != null && !instance && syncSameName,
         instance,
       });
     }
@@ -1068,6 +1129,47 @@ function EventForm({
               </Select>
             )}
           </div>
+        </div>
+      )}
+      {!instance && (
+        <div className="space-y-1.5">
+          <div className="text-sm font-medium">颜色</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setColor(null)}
+              className={cn(
+                "rounded-full border px-2 py-1 text-[11px] transition-transform hover:scale-105",
+                color === null
+                  ? "border-foreground/70 bg-accent text-foreground"
+                  : "border-border text-muted-foreground hover:bg-accent",
+              )}
+            >
+              默认
+            </button>
+            {EVENT_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setColor(c)}
+                className={cn(
+                  "size-6 rounded-full border-2 transition-transform",
+                  color === c ? "scale-110 border-foreground" : "border-transparent hover:scale-110",
+                )}
+                style={{ backgroundColor: c }}
+                aria-label={`颜色 ${c}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {editing && !instance && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-medium">同步同名课程</div>
+            <div className="text-xs text-muted-foreground">同时改其它同名事件的标题和颜色（时间地点各自保留）</div>
+          </div>
+          <Switch checked={syncSameName} onCheckedChange={setSyncSameName} aria-label="同步同名课程" />
         </div>
       )}
       {!instance && (
