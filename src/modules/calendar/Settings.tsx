@@ -1,10 +1,14 @@
-// 日程表设置抽屉（受控组件；配置走 Page 的 useModuleConfig；导入源管理自取数据）
-import { useEffect, useState } from "react";
+// 日程表设置抽屉（受控组件；配置走 Page 的 useModuleConfig；数据管理自取数据）
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Trash2 } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { fmtKeyLong } from "./utils";
 import type { CalendarConfig } from "./config";
 
 const VIEW_OPTIONS = [
@@ -28,6 +32,31 @@ interface IcsImportInfo {
   count: number;
 }
 
+interface StatsPayload {
+  events: number;
+  recurring: number;
+  todos: number;
+  todos_pending: number;
+  imports: number;
+}
+
+interface ManageEvent {
+  id: number;
+  title: string;
+  location: string;
+  start_ms: number;
+  end_ms: number;
+  all_day: boolean;
+  rrule: string | null;
+}
+
+function threeMonthsAgo(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 3);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 export function CalendarSettings({
   cfg,
   onUpdate,
@@ -38,13 +67,107 @@ export function CalendarSettings({
   onImportsChanged?: () => void;
 }) {
   const [imports, setImports] = useState<IcsImportInfo[]>([]);
+  const [stats, setStats] = useState<StatsPayload | null>(null);
+  const [events, setEvents] = useState<ManageEvent[]>([]);
+  const [keyword, setKeyword] = useState("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [purgeDate, setPurgeDate] = useState(threeMonthsAgo);
 
+  const loadStats = () => {
+    invoke<StatsPayload>("calendar_stats").then(setStats).catch(() => {});
+  };
+  const loadEvents = () => {
+    invoke<ManageEvent[]>("calendar_list_all_events").then(setEvents).catch(() => {});
+  };
   const loadImports = () => {
     invoke<IcsImportInfo[]>("calendar_list_ics_imports").then(setImports).catch(() => {});
   };
-  useEffect(() => {
+  const refreshAll = () => {
+    loadStats();
+    loadEvents();
     loadImports();
+    onImportsChanged?.();
+  };
+  useEffect(() => {
+    refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const filtered = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return kw
+      ? events.filter((e) => e.title.toLowerCase().includes(kw) || e.location.toLowerCase().includes(kw))
+      : events;
+  }, [events, keyword]);
+
+  const toggleSelect = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const deleteSelected = async () => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!window.confirm(`删除选中的 ${ids.length} 条事件？`)) return;
+    try {
+      const n = await invoke<number>("calendar_delete_events", { ids });
+      toast(`已删除 ${n} 条`);
+      setSelected(new Set());
+      refreshAll();
+    } catch (e) {
+      toast(`删除失败：${e}`);
+    }
+  };
+
+  const purgeOld = async () => {
+    const [y, m, d] = purgeDate.split("-").map(Number);
+    const beforeMs = new Date(y, m - 1, d).getTime();
+    const count = events.filter((e) => e.rrule == null && e.start_ms < beforeMs).length;
+    if (count === 0) {
+      toast("该日期前没有可清理的单次事件");
+      return;
+    }
+    const key = y * 10000 + m * 100 + d;
+    if (!window.confirm(`将删除 ${count} 条「${fmtKeyLong(key)}」前的单次事件（重复规则保留，可单独删），不可恢复。`)) return;
+    try {
+      const n = await invoke<number>("calendar_purge_before", { beforeMs });
+      toast(`已清理 ${n} 条旧事件`);
+      refreshAll();
+      loadRangeOnly();
+    } catch (e) {
+      toast(`清理失败：${e}`);
+    }
+  };
+
+  const loadRangeOnly = () => onImportsChanged?.();
+
+  const clearTodos = async (onlyDone: boolean) => {
+    const label = onlyDone ? "已完成" : "全部";
+    if (!window.confirm(`清空${label}待办？`)) return;
+    try {
+      const n = await invoke<number>("calendar_clear_todos", { onlyDone });
+      toast(`已清空 ${n} 条待办`);
+      refreshAll();
+    } catch (e) {
+      toast(`操作失败：${e}`);
+    }
+  };
+
+  const clearAll = async () => {
+    if (!window.confirm("清空全部数据（事件/待办/导入文件）？此操作不可恢复！")) return;
+    if (!window.confirm("最后确认：真的要全部清空吗？")) return;
+    try {
+      await invoke("calendar_clear_all");
+      toast("已清空全部数据");
+      refreshAll();
+    } catch (e) {
+      toast(`操作失败：${e}`);
+    }
+  };
 
   const removeImport = async (it: IcsImportInfo) => {
     if (!window.confirm(`删除「${it.name}」？它导入的 ${it.count} 条事件将一并清除，其它数据不受影响。`)) return;
@@ -150,6 +273,106 @@ export function CalendarSettings({
             </div>
           ))
         )}
+      </div>
+
+      {/* 数据管理 */}
+      <div className="space-y-2">
+        <div>
+          <div className="text-sm font-medium">数据管理</div>
+          <div className="text-xs text-muted-foreground">批量清理与逐条管理，删除不可恢复</div>
+        </div>
+        {stats && (
+          <div className="grid grid-cols-4 gap-1.5 text-center">
+            {[
+              [stats.events, "事件"],
+              [stats.recurring, "重复规则"],
+              [stats.todos_pending, "未完成待办"],
+              [stats.imports, "导入文件"],
+            ].map(([n, label]) => (
+              <div key={label as string} className="rounded-lg border p-1.5">
+                <div className="text-base font-bold tabular-nums">{n}</div>
+                <div className="text-[10px] text-muted-foreground">{label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            value={purgeDate}
+            onChange={(e) => setPurgeDate(e.target.value)}
+            className="w-36"
+            title="删除此日期之前的单次事件"
+          />
+          <Button variant="outline" size="sm" onClick={purgeOld}>
+            删除此日期前的旧事件
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => clearTodos(true)}>
+            清除已完成待办
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => clearTodos(false)}>
+            清空全部待办
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-red-500/40 text-red-600 hover:bg-red-500/10 hover:text-red-600"
+            onClick={clearAll}
+          >
+            清空全部数据
+          </Button>
+        </div>
+
+        {/* 精细管理：事件列表 */}
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2 border-b pb-1.5">
+            <Search className="size-3.5 text-muted-foreground" />
+            <Input
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="按标题/地点搜索事件…"
+              className="h-7 flex-1"
+            />
+          </div>
+          <div className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
+            {filtered.length === 0 && (
+              <div className="py-3 text-center text-xs text-muted-foreground">
+                {events.length === 0 ? "还没有事件" : "没有匹配的事件"}
+              </div>
+            )}
+            {filtered.map((e) => (
+              <div key={e.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent">
+                <input
+                  type="checkbox"
+                  checked={selected.has(e.id)}
+                  onChange={() => toggleSelect(e.id)}
+                  className="size-3.5 shrink-0 accent-primary"
+                />
+                <span className={cn("min-w-0 flex-1 truncate text-sm", e.rrule && "text-primary")}>
+                  {e.title}
+                  {e.rrule && <span className="ml-1 rounded bg-primary/15 px-1 text-[9px] text-primary">重复</span>}
+                </span>
+                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                  {new Date(e.start_ms).toLocaleDateString("zh-CN", {
+                    month: "numeric",
+                    day: "numeric",
+                  })}
+                </span>
+              </div>
+            ))}
+          </div>
+          {selected.size > 0 && (
+            <div className="flex items-center justify-between rounded-md bg-primary/10 px-2 py-1.5">
+              <span className="text-xs text-foreground">已选 {selected.size} 条</span>
+              <Button size="sm" variant="destructive" onClick={deleteSelected}>
+                删除选中
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

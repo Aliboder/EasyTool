@@ -377,6 +377,79 @@ pub fn calendar_delete_ics_import(db: State<'_, Mutex<CalendarDb>>, id: i64) -> 
     db.delete_ics_import(id).map(|_| ())
 }
 
+// ---------- 数据管理 ----------
+
+#[derive(Debug, serde::Serialize)]
+pub struct CalendarStats {
+    pub events: i64,
+    pub recurring: i64,
+    pub todos: i64,
+    pub todos_pending: i64,
+    pub imports: i64,
+}
+
+#[tauri::command]
+pub fn calendar_stats(db: State<'_, Mutex<CalendarDb>>) -> Result<CalendarStats, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    let (events, recurring, todos, todos_pending, imports) = db.stats()?;
+    Ok(CalendarStats {
+        events,
+        recurring,
+        todos,
+        todos_pending,
+        imports,
+    })
+}
+
+/// 删除某时刻之前的单次事件（重复规则保留）
+#[tauri::command]
+pub fn calendar_purge_before(db: State<'_, Mutex<CalendarDb>>, before_ms: i64) -> Result<u32, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.purge_single_before(before_ms)
+}
+
+/// 清待办：only_done=true 只清已完成的；false 全清
+#[tauri::command]
+pub fn calendar_clear_todos(db: State<'_, Mutex<CalendarDb>>, only_done: bool) -> Result<u32, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.clear_todos(only_done)
+}
+
+/// 清空全部数据
+#[tauri::command]
+pub fn calendar_clear_all(db: State<'_, Mutex<CalendarDb>>) -> Result<(), String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.clear_all()
+}
+
+/// 全部事件（数据管理的精细列表用；含重复标记）
+#[tauri::command]
+pub fn calendar_list_all_events(db: State<'_, Mutex<CalendarDb>>) -> Result<Vec<EventDto>, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    Ok(db
+        .all_events()?
+        .into_iter()
+        .map(|e| EventDto {
+            id: e.id,
+            title: e.title,
+            location: e.location,
+            notes: e.notes,
+            all_day: e.all_day,
+            start_ms: e.start_ms,
+            end_ms: e.end_ms,
+            rrule: e.rrule,
+            instance_date: None,
+        })
+        .collect())
+}
+
+/// 批量删除事件（ids）
+#[tauri::command]
+pub fn calendar_delete_events(db: State<'_, Mutex<CalendarDb>>, ids: Vec<i64>) -> Result<u32, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.delete_events_batch(&ids)
+}
+
 /// 导出 ICS 到指定路径
 #[tauri::command]
 pub fn calendar_export_ics(db: State<'_, Mutex<CalendarDb>>, path: String) -> Result<(), String> {

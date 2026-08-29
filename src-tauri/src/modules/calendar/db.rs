@@ -565,12 +565,86 @@ impl CalendarDb {
 
     /// 删除整份导入源（连带其事件；例外随 FK 级联）
     pub fn delete_ics_import(&self, import_id: i64) -> DbResult<u32> {
-        let deleted = self.delete_events_by_import(import_id)?;
-        let _ = deleted;
+        self.delete_events_by_import(import_id)?;
         self.conn
             .execute("DELETE FROM ics_imports WHERE id = ?1", params![import_id])
             .map_err(|e| e.to_string())?;
         Ok(0)
+    }
+
+    // ---------- 数据管理 ----------
+
+    /// 统计：(事件总数, 重复规则数, 待办总数, 未完成待办数, 导入源数)
+    pub fn stats(&self) -> DbResult<(i64, i64, i64, i64, i64)> {
+        let one = |sql: &str| -> DbResult<i64> {
+            self.conn
+                .query_row(sql, [], |r| r.get(0))
+                .map_err(|e| e.to_string())
+        };
+        Ok((
+            one("SELECT COUNT(*) FROM events")?,
+            one("SELECT COUNT(*) FROM events WHERE rrule IS NOT NULL")?,
+            one("SELECT COUNT(*) FROM todos")?,
+            one("SELECT COUNT(*) FROM todos WHERE done = 0")?,
+            one("SELECT COUNT(*) FROM ics_imports")?,
+        ))
+    }
+
+    /// 删除某时刻之前的单次事件（重复规则保留：规则删除会连累未来实例）
+    pub fn purge_single_before(&self, before_ms: i64) -> DbResult<u32> {
+        let n = self
+            .conn
+            .execute(
+                "DELETE FROM events WHERE rrule IS NULL AND start_ms < ?1",
+                params![before_ms],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(n as u32)
+    }
+
+    /// 清待办：only_done=true 只清已完成的；false 全清
+    pub fn clear_todos(&self, only_done: bool) -> DbResult<u32> {
+        let n = if only_done {
+            self.conn
+                .execute("DELETE FROM todos WHERE done = 1", [])
+                .map_err(|e| e.to_string())?
+        } else {
+            self.conn
+                .execute("DELETE FROM todos", [])
+                .map_err(|e| e.to_string())?
+        };
+        Ok(n as u32)
+    }
+
+    /// 清空全部数据（事件/例外/待办/导入源/提醒日志）
+    pub fn clear_all(&self) -> DbResult<()> {
+        for sql in [
+            "DELETE FROM events",
+            "DELETE FROM event_overrides",
+            "DELETE FROM todos",
+            "DELETE FROM ics_imports",
+            "DELETE FROM reminder_logs",
+        ] {
+            self.conn.execute(sql, []).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// 批量删除事件（按 id 列表）
+    pub fn delete_events_batch(&self, ids: &[i64]) -> DbResult<u32> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let placeholders = (1..=ids.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!("DELETE FROM events WHERE id IN ({placeholders})");
+        let n = self
+            .conn
+            .execute(&sql, rusqlite::params_from_iter(ids.iter()))
+            .map_err(|e| e.to_string())?;
+        Ok(n as u32)
     }
 
     // ---------- 提醒日志 ----------
@@ -780,6 +854,61 @@ mod tests {
         assert!(list.is_empty());
         drop(db);
         let _ = std::fs::remove_file(p);
+    }
+
+    #[test]
+    fn data_management_ops() {
+        let db = mem();
+        db.insert_event(&ev("旧的", 100, 200)).unwrap();
+        let mut weekly = ev("每周", 300, 400);
+        weekly.rrule = Some("FREQ=WEEKLY".into());
+        db.insert_event(&weekly).unwrap();
+        db.insert_event(&ev("晚的", 100_000, 200_000)).unwrap();
+        db.insert_todo(&Todo {
+            id: 0,
+            title: "做A".into(),
+            notes: String::new(),
+            due_date: None,
+            done: true,
+            done_at_ms: None,
+            created_ms: 0,
+            updated_ms: 0,
+        })
+        .unwrap();
+        db.insert_todo(&Todo {
+            id: 0,
+            title: "做B".into(),
+            notes: String::new(),
+            due_date: None,
+            done: false,
+            done_at_ms: None,
+            created_ms: 0,
+            updated_ms: 0,
+        })
+        .unwrap();
+
+        // 统计
+        let (events, recurring, todos, pending, imports) = db.stats().unwrap();
+        assert_eq!(events, 3);
+        assert_eq!(recurring, 1);
+        assert_eq!(todos, 2);
+        assert_eq!(pending, 1);
+        assert_eq!(imports, 0);
+
+        // 按日期清理：只清单次事件，重复规则保留
+        assert_eq!(db.purge_single_before(500).unwrap(), 1); // 旧的(100)
+        assert_eq!(db.events_in_window(0, 9_000_000_000_000).unwrap().len(), 2);
+
+        // 清已完成待办
+        assert_eq!(db.clear_todos(true).unwrap(), 1);
+        assert_eq!(db.all_todos().unwrap().len(), 1);
+        // 批量删
+        let ids: Vec<i64> = db.events_in_window(0, 9_000_000_000_000).unwrap().into_iter().map(|e| e.id).collect();
+        assert_eq!(db.delete_events_batch(&ids).unwrap(), 2);
+        assert!(db.events_in_window(0, 9_000_000_000_000).unwrap().is_empty());
+        // 清空全部
+        db.clear_all().unwrap();
+        assert!(db.all_todos().unwrap().is_empty());
     }
 
     #[test]
