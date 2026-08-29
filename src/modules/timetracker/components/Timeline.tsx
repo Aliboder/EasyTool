@@ -312,7 +312,7 @@ export function Timeline({
                             (idleSec > 0 ? (segments.length > 0 ? " · " : "") + `挂机 ${formatDuration(idleSec)}` : "")
                           : undefined
                       }
-                      className="group relative flex h-full flex-1 cursor-default flex-col justify-end rounded-t-sm bg-muted/30"
+                      className="group relative flex h-full flex-1 cursor-default flex-col justify-end rounded-t-sm border-r border-border/20 bg-muted/30 last:border-r-0"
                     >
                       {idx === i && (
                         <div className="pointer-events-none absolute inset-0 rounded-t-sm ring-1 ring-inset ring-primary/50" />
