@@ -772,18 +772,20 @@ export function TimeLineView({
                 {/* 时间轴主体：逐簇渲染（左小时尺 + 内容区） */}
                 <div className="absolute inset-x-0" style={{ top: TL_HEADER_H, height: Math.max(0, axisH) }}>
                   {d.clusters.map((c, ci) => {
-                    const hours = Math.max(1, Math.ceil(c.endHour - c.startHour));
+                    // 只画该簇覆盖到的整点小时，避免最后一条越界产生重影/遮挡
+                    const hourMarks: number[] = [];
+                    for (let m = Math.floor(c.startHour); m <= Math.floor(c.endHour); m++) hourMarks.push(m);
                     return (
                       <div key={ci} className="absolute inset-x-0" style={{ top: c.top, height: c.height }}>
                         {/* 左小时尺 */}
                         <div className="absolute inset-y-0 left-0 w-10 border-r border-border/40">
-                          {Array.from({ length: hours + 1 }, (_, i) => i).map((i) => (
+                          {hourMarks.map((m) => (
                             <span
-                              key={i}
+                              key={m}
                               className="absolute -top-1.5 right-1.5 text-[9px] tabular-nums text-muted-foreground"
-                              style={{ top: i * hourHeight }}
+                              style={{ top: (m - c.startHour) * hourHeight }}
                             >
-                              {String(Math.floor(c.startHour + i)).padStart(2, "0")}:00
+                              {String(Math.floor(m)).padStart(2, "0")}:00
                             </span>
                           ))}
                         </div>
@@ -797,8 +799,8 @@ export function TimeLineView({
                             onCreateAt?.(dayStartMs(d.dayKey) + snapped * 3_600_000);
                           }}
                         >
-                          {Array.from({ length: hours + 1 }, (_, i) => i).map((i) => (
-                            <div key={i} className="absolute inset-x-0 border-t border-border/40" style={{ top: i * hourHeight }} />
+                          {hourMarks.map((m) => (
+                            <div key={m} className="absolute inset-x-0 border-t border-border/40" style={{ top: (m - c.startHour) * hourHeight }} />
                           ))}
                           {layoutDay(
                             c.events.map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
