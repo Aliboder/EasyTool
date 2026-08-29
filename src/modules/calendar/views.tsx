@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button";
 import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs } from "./utils";
 import type { EventDto, TodoDto } from "./types";
 
-const START_HOUR = 0; // 时间轴起点（0 点）
-const END_HOUR = 24;
 const HOUR_HEIGHT = 46;
-const HOURS = END_HOUR - START_HOUR;
+/** 无事件时的默认纵向窗口（早 8 晚 21） */
+const DEF_START_HOUR = 8;
+const DEF_END_HOUR = 21;
 
 type EventClick = (e: EventDto) => void;
 type EventMenu = (e: EventDto, x: number, y: number) => void;
@@ -30,19 +30,39 @@ function useNow(): number {
   return now;
 }
 
-/** 双击时间轴空白处 → 由视口位置换算为 30 分钟对齐的开始毫秒 */
-function timeFromPointerY(el: HTMLElement, clientY: number): number | null {
+/** 双击时间轴空白处 → 由视口位置换算为 30 分钟对齐的开始小时 */
+function timeFromPointerY(el: HTMLElement, clientY: number, startHour: number, endHour: number): number | null {
   const rect = el.getBoundingClientRect();
   if (rect.height <= 0) return null;
-  const hourPx = (clientY - rect.top) / HOUR_HEIGHT + START_HOUR;
-  const snapped = Math.max(START_HOUR, Math.min(END_HOUR - 0.5, Math.round(hourPx * 2) / 2));
-  return snapped;
+  const hourPx = (clientY - rect.top) / HOUR_HEIGHT + startHour;
+  return Math.max(startHour, Math.min(endHour - 0.5, Math.round(hourPx * 2) / 2));
 }
 
 /** 事件的有效颜色：订阅色 > 事件自定义色 > 默认（透传 undefined 走默认主题色） */
 function eventTint(e: EventDto, subColors: SubColors): string | undefined {
   if (e.subscription_id != null) return subColors[e.subscription_id];
   return e.color ?? undefined;
+}
+
+/** 根据可见事件自动给出紧凑的纵向窗口（含 1 小时余量，至少 8 小时；无事件回退早 8 晚 21） */
+function fitWindow(events: EventDto[]): { start: number; end: number } {
+  const timed = events.filter((e) => !e.all_day);
+  if (timed.length === 0) return { start: DEF_START_HOUR, end: DEF_END_HOUR };
+  const toH = (ms: number) => new Date(ms).getHours() + new Date(ms).getMinutes() / 60;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const e of timed) {
+    min = Math.min(min, toH(e.start_ms));
+    max = Math.max(max, toH(e.end_ms));
+  }
+  let start = Math.max(0, Math.floor(min) - 1);
+  let end = Math.min(24, Math.ceil(max) + 1);
+  if (end - start < 8) {
+    const mid = (start + end) / 2;
+    start = Math.max(0, Math.floor(mid - 4));
+    end = Math.min(24, start + 8);
+  }
+  return { start, end };
 }
 
 function allDayOfDay(events: EventDto[], dayKey: number): EventDto[] {
@@ -53,10 +73,11 @@ function timedOfDay(events: EventDto[], dayKey: number): EventDto[] {
 }
 
 /** 时间轴背景：小时刻度线 */
-function TimelineGrid() {
+function TimelineGrid({ startHour, endHour }: { startHour: number; endHour: number }) {
+  const n = endHour - startHour;
   return (
     <>
-      {Array.from({ length: HOURS + 1 }, (_, i) => i).map((i) => (
+      {Array.from({ length: n + 1 }, (_, i) => i).map((i) => (
         <div key={i} className="absolute inset-x-0 border-t border-border/60" style={{ top: i * HOUR_HEIGHT }} />
       ))}
     </>
@@ -83,11 +104,12 @@ function EventBlock({
   onMenu: EventMenu;
 }) {
   const compact = height < 34;
+  const tall = height >= 80;
   const tint = eventTint(event, subColors);
   return (
     <div
       className={cn(
-        "absolute overflow-hidden rounded-lg border border-black/10 bg-primary px-1.5 py-1 text-primary-foreground shadow-sm transition-all hover:z-20 hover:shadow-md",
+        "absolute overflow-hidden rounded-xl border border-black/10 bg-primary px-2 py-1.5 text-primary-foreground shadow-sm transition-all hover:z-20 hover:shadow-md",
         !tint && "hover:bg-primary/95",
       )}
       style={{
@@ -109,43 +131,49 @@ function EventBlock({
         onMenu(event, e.clientX, e.clientY);
       }}
     >
-      {/* 标题（重点）：小卡片让出全部空间，优先完整显示（可换行最多 2 行） */}
+      {/* 标题（重点）：小/高卡片允许多行，优先完整显示 */}
       <div
         className={cn(
           "break-words leading-tight",
-          compact ? "line-clamp-2 text-[11px] font-semibold" : "truncate text-xs font-semibold",
+          compact ? "text-[11px] font-semibold" : "text-xs font-semibold",
+          compact || tall ? "line-clamp-2" : "truncate",
         )}
       >
         {event.title}
       </div>
       {/* 时间 + 地点 一行小字（仅较高卡片显示） */}
       {!compact && (
-        <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/85">
-          <span className="size-1 flex-none rounded-full bg-white/80" />
-          <span className="truncate tabular-nums">{fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}</span>
+        <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/90">
+          <span className="size-1 flex-none rounded-full bg-white/90" />
+          <span className="truncate font-medium tabular-nums">{fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}</span>
           {event.location && (
             <>
               <span className="flex-none text-white/50">·</span>
-              <span className="truncate opacity-80">{event.location}</span>
+              <span className="truncate opacity-90">{event.location}</span>
             </>
           )}
         </div>
+      )}
+      {/* 很高的卡片：补充备注，避免大块空蓝 */}
+      {tall && event.notes && (
+        <div className="mt-1 line-clamp-2 text-[10px] leading-snug text-white/75">{event.notes}</div>
       )}
     </div>
   );
 }
 
-/** 左侧 0–24 小时刻度列 */
-function HourAxis() {
+/** 左侧小时刻度列（窗口自适应） */
+function HourAxis({ startHour, endHour }: { startHour: number; endHour: number }) {
+  const n = endHour - startHour;
   return (
-    <div className="relative w-10 shrink-0" style={{ height: HOURS * HOUR_HEIGHT }}>
-      {Array.from({ length: HOURS + 1 }, (_, i) => i).map((i) => (
+    <div className="relative w-10 shrink-0" style={{ height: n * HOUR_HEIGHT }}>
+      {Array.from({ length: n + 1 }, (_, i) => i).map((i) => (
         <span
           key={i}
           className="absolute -top-1.5 right-1.5 text-[10px] tabular-nums text-muted-foreground"
           style={{ top: i * HOUR_HEIGHT }}
         >
-          {i}:00
+          {startHour + i}:00
         </span>
       ))}
       <div className="absolute inset-y-0 right-0 w-px bg-border" />
@@ -186,7 +214,9 @@ export function WeekView({
 
   const now = useNow();
   const today = localDayKey(now);
-  const nowPos = ((new Date(now).getHours() * 60 + new Date(now).getMinutes() - START_HOUR * 60) / 60) * HOUR_HEIGHT;
+  const { start: sH, end: eH } = useMemo(() => fitWindow(events), [events]);
+  const spanH = eH - sH;
+  const nowPos = ((new Date(now).getHours() * 60 + new Date(now).getMinutes() - sH * 60) / 60) * HOUR_HEIGHT;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const nowPosRef = useRef(nowPos);
   nowPosRef.current = nowPos;
@@ -263,24 +293,24 @@ export function WeekView({
       </div>
       {/* 时间轴主体 */}
       <div className="relative flex flex-1 overflow-y-auto" ref={scrollRef}>
-        <HourAxis />
+        <HourAxis startHour={sH} endHour={eH} />
         {days.map((k) => {
           const blocks = layoutDay(
             timedOfDay(events, k).map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
-            { startHour: START_HOUR, endHour: END_HOUR, hourHeight: HOUR_HEIGHT },
+            { startHour: sH, endHour: eH, hourHeight: HOUR_HEIGHT },
           );
           return (
             <div
               key={k}
               className={cn("relative flex-1 border-l", k === today && "bg-primary/[0.03]")}
-              style={{ height: HOURS * HOUR_HEIGHT }}
+              style={{ height: spanH * HOUR_HEIGHT }}
               onClick={() => onSelectDay(k)}
               onDoubleClick={(e) => {
-                const s = timeFromPointerY(e.currentTarget, e.clientY);
+                const s = timeFromPointerY(e.currentTarget, e.clientY, sH, eH);
                 if (s != null) onCreateAt?.(dayStartMs(k) + s * 3_600_000);
               }}
             >
-              <TimelineGrid />
+              <TimelineGrid startHour={sH} endHour={eH} />
               {blocks.map((b) => {
                 const ev = timedOfDay(events, k)[b.index];
                 return (
@@ -297,7 +327,7 @@ export function WeekView({
                   />
                 );
               })}
-              {k === today && nowPos >= 0 && nowPos <= HOURS * HOUR_HEIGHT && (
+              {k === today && nowPos >= 0 && nowPos <= spanH * HOUR_HEIGHT && (
                 <div className="absolute inset-x-0 z-10" style={{ top: nowPos }}>
                   <div className="h-px bg-red-500" />
                   <span className="absolute -top-2 -right-0 rounded bg-red-500 px-1 text-[9px] text-white">
@@ -352,7 +382,9 @@ export function DayView({
   const now = useNow();
   const today = localDayKey(now);
   const isToday = dayKey === today;
-  const nowPos = ((new Date(now).getHours() * 60 + new Date(now).getMinutes() - START_HOUR * 60) / 60) * HOUR_HEIGHT;
+  const { start: sH, end: eH } = useMemo(() => fitWindow(timed), [timed]);
+  const spanH = eH - sH;
+  const nowPos = ((new Date(now).getHours() * 60 + new Date(now).getMinutes() - sH * 60) / 60) * HOUR_HEIGHT;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const nowPosRef = useRef(nowPos);
   nowPosRef.current = nowPos;
@@ -412,18 +444,18 @@ export function DayView({
         {/* 时间轴 */}
         <div
           className="relative ml-10"
-          style={{ height: HOURS * HOUR_HEIGHT }}
+          style={{ height: spanH * HOUR_HEIGHT }}
           onDoubleClick={(e) => {
-            const s = timeFromPointerY(e.currentTarget, e.clientY);
+            const s = timeFromPointerY(e.currentTarget, e.clientY, sH, eH);
             if (s != null) onCreateAt?.(dayStartMs(dayKey) + s * 3_600_000);
           }}
         >
           <div className="absolute inset-y-0 -left-10 w-9 border-r" />
-          <div className="absolute inset-x-0" style={{ height: HOURS * HOUR_HEIGHT }}>
-            {Array.from({ length: HOURS + 1 }, (_, i) => i).map((i) => (
+          <div className="absolute inset-x-0" style={{ height: spanH * HOUR_HEIGHT }}>
+            {Array.from({ length: spanH + 1 }, (_, i) => i).map((i) => (
               <div key={i} className="absolute inset-x-0 border-t border-border/60" style={{ top: i * HOUR_HEIGHT }}>
                 <span className="absolute -top-2 -left-10 w-9 text-right text-[10px] text-muted-foreground">
-                  {String(i).padStart(2, "0")}:00
+                  {String(sH + i).padStart(2, "0")}:00
                 </span>
               </div>
             ))}
@@ -434,7 +466,7 @@ export function DayView({
             )}
             {layoutDay(
               timed.map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
-              { startHour: START_HOUR, endHour: END_HOUR, hourHeight: HOUR_HEIGHT },
+              { startHour: sH, endHour: eH, hourHeight: HOUR_HEIGHT },
             ).map((b) => {
               const ev = timed[b.index];
               return (
@@ -451,7 +483,7 @@ export function DayView({
                 />
               );
             })}
-            {isToday && nowPos >= 0 && nowPos <= HOURS * HOUR_HEIGHT && (
+            {isToday && nowPos >= 0 && nowPos <= spanH * HOUR_HEIGHT && (
               <div className="absolute inset-x-0 z-10" style={{ top: nowPos }}>
                 <div className="h-px bg-red-500" />
                 <span className="absolute -top-2 -right-0 rounded bg-red-500 px-1 text-[9px] text-white">{nowTime(now)}</span>
