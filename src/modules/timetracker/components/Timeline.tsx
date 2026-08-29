@@ -358,7 +358,7 @@ export function Timeline({
               {columns.map((col, i) => (
                 <span
                   key={col.key}
-                  className={`flex-1 ${isHour ? "text-left" : "text-center"}`}
+                  className="flex-1 text-center"
                 >
                   {isHour || i % labelEvery === 0 ? col.label : ""}
                 </span>
