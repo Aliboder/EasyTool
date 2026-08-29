@@ -768,7 +768,6 @@ pub fn run() {
             config::set_check_update_on_start,
             modules::clipboard::commands::github_latest_release,
             get_bootstrap,
-            modules::clipboard::commands::get_history,
             modules::clipboard::commands::get_all_history,
             modules::clipboard::commands::pin_item,
             modules::clipboard::commands::set_item_note,

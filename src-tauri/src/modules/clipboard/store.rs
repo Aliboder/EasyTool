@@ -36,11 +36,6 @@ impl FileStore {
         Ok(path)
     }
 
-    /// 原图 PNG 写入 images/{id}.png（兼容保留）
-    pub fn save_image(&self, id: i64, png_bytes: &[u8]) -> std::io::Result<PathBuf> {
-        self.save_media(id, "png", png_bytes)
-    }
-
     /// 缩略图 PNG 写入 thumbs/{id}.png
     pub fn save_thumb(&self, id: i64, png_bytes: &[u8]) -> std::io::Result<PathBuf> {
         let path = self.thumbs_dir().join(format!("{id}.png"));
@@ -112,7 +107,7 @@ mod tests {
     fn remove_files_deletes() {
         let dir = std::env::temp_dir().join(format!("pasteboard-test-rm-{}", std::process::id()));
         let store = FileStore::new(dir.clone()).unwrap();
-        let ip = store.save_image(7, b"png-bytes").unwrap();
+        let ip = store.save_media(7, "png", b"png-bytes").unwrap();
         let tp = store.save_thumb(7, b"thumb-bytes").unwrap();
         let item = Item {
             id: 7,

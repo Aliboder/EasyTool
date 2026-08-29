@@ -37,7 +37,7 @@ pub struct Item {
     pub html: Option<String>,
     /// kind=files 时存文件路径 JSON 数组
     pub file_paths: Option<String>,
-    /// kind=image 时存原图 PNG 磁盘绝对路径
+    /// kind=image 时存原图磁盘绝对路径（PNG 或 JPEG，按内容自适应）
     pub image_path: Option<String>,
     /// kind=image 时存缩略图磁盘绝对路径
     pub thumb_path: Option<String>,
@@ -62,8 +62,6 @@ pub struct ItemDto {
     pub preview: String,
     /// 超长文本的全文（仅 preview 被截断时携带，供悬停预览）
     pub full: Option<String>,
-    /// 图片缩略图 base64（仅 image 类型）
-    pub thumb: Option<String>,
     pub file_count: u32,
     pub pinned: bool,
     pub created_at: i64,
@@ -72,8 +70,8 @@ pub struct ItemDto {
 }
 
 impl Item {
-    /// 构建前端视图；thumb 由调用方补充（读文件转 base64）
-    pub fn to_dto(&self, thumb: Option<String>) -> ItemDto {
+    /// 构建前端视图（缩略图未随 DTO 下发：体积大，前端按需调 get_thumb）
+    pub fn to_dto(&self) -> ItemDto {
         let (preview, full, file_count) = match self.kind {
             ItemKind::Text => {
                 let content = self.content.clone().unwrap_or_default();
@@ -103,7 +101,6 @@ impl Item {
             kind: self.kind.to_string(),
             preview,
             full,
-            thumb,
             file_count,
             pinned: self.pinned,
             created_at: self.created_at,
@@ -136,7 +133,7 @@ mod tests {
     #[test]
     fn long_text_preview_truncated_with_full() {
         let long = "长".repeat(500);
-        let dto = text_item(&long).to_dto(None);
+        let dto = text_item(&long).to_dto();
         assert_eq!(dto.preview.chars().count(), PREVIEW_MAX_CHARS);
         assert_eq!(dto.full.as_deref(), Some(long.as_str()));
     }
@@ -144,7 +141,7 @@ mod tests {
     /// 短文本：preview 原文，无 full
     #[test]
     fn short_text_no_full() {
-        let dto = text_item("hello").to_dto(None);
+        let dto = text_item("hello").to_dto();
         assert_eq!(dto.preview, "hello");
         assert!(dto.full.is_none());
     }
@@ -153,7 +150,7 @@ mod tests {
     #[test]
     fn boundary_length_not_truncated() {
         let text = "x".repeat(PREVIEW_MAX_CHARS);
-        let dto = text_item(&text).to_dto(None);
+        let dto = text_item(&text).to_dto();
         assert_eq!(dto.preview.len(), PREVIEW_MAX_CHARS);
         assert!(dto.full.is_none());
     }

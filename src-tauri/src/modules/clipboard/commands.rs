@@ -34,68 +34,6 @@ impl From<super::db::DbError> for CommandError {
 
 type CmdResult<T> = Result<T, CommandError>;
 
-/// 可预览图片扩展名（文件条目是否算"图片"的判定口径，与前端一致）
-const IMAGE_EXTS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico", "avif", "tif", "tiff",
-];
-
-/// 文件条目的首个文件是否为图片（网格/横条展示的就是首个文件）
-fn first_file_is_image(item: &Item) -> bool {
-    let paths: Vec<String> =
-        serde_json::from_str(item.file_paths.as_deref().unwrap_or("[]")).unwrap_or_default();
-    let Some(first) = paths.first() else {
-        return false;
-    };
-    first
-        .rsplit('.')
-        .next()
-        .map(|e| IMAGE_EXTS.contains(&e.to_ascii_lowercase().as_str()))
-        .unwrap_or(false)
-}
-
-/// 历史列表（可搜索、按类型筛选、分页）
-/// 磁盘探测较重，放后台线程避免阻塞主线程
-#[tauri::command]
-pub async fn get_history(
-    app: AppHandle,
-    filter: Option<String>,
-    kind: Option<String>,
-    limit: Option<i64>,
-    offset: Option<i64>,
-) -> CmdResult<Vec<ItemDto>> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
-        // 锁内只查库；磁盘探测（Path::exists 可能卡在网络盘/U盘上秒级）放锁外，
-        // 避免监听线程写历史被饿、其余剪贴板命令排队
-        let mut items = {
-            let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            db.list_items(
-                filter.as_deref().unwrap_or(""),
-                kind.as_deref(),
-                limit.unwrap_or(100),
-                offset.unwrap_or(0),
-            )?
-        };
-        // 磁盘探测只在图片 Tab / 固定 Tab 时执行（搜索文本时无需验证图片文件是否存在）
-        let need_image_check = matches!(kind.as_deref(), Some("image") | Some("pinned"));
-        items.retain(|it| match it.kind {
-            ItemKind::Image if need_image_check => it
-                .image_path
-                .as_deref()
-                .map(|p| std::path::Path::new(p).exists())
-                .unwrap_or(false),
-            // 图片 Tab：文件条目仅保留首个文件为图片的
-            ItemKind::Files => kind.as_deref() != Some("image") || first_file_is_image(it),
-            _ => true,
-        });
-        Ok(items.iter().map(|i| to_dto(&state, i)).collect())
-    })
-    .await
-    .map_err(|e| CommandError {
-        message: format!("任务执行失败: {e}"),
-    })?
-}
-
 /// 全量历史列表（前端本地搜索用；一次性加载全部条目）
 #[tauri::command]
 pub fn get_all_history(state: State<'_, AppState>) -> CmdResult<Vec<ItemDto>> {
@@ -433,43 +371,5 @@ pub async fn get_file_preview(path: String) -> CmdResult<Option<String>> {
 
 /// 组装前端视图（缩略图由前端按需加载，避免列表全量读文件转 base64）
 fn to_dto(_state: &AppState, item: &Item) -> ItemDto {
-    item.to_dto(None)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn file_item(paths: &[&str]) -> Item {
-        Item {
-            id: 0,
-            kind: ItemKind::Files,
-            content: None,
-            html: None,
-            file_paths: Some(serde_json::to_string(paths).unwrap()),
-            image_path: None,
-            thumb_path: None,
-            hash: "h".into(),
-            pinned: false,
-            created_at: 0,
-            note: None,
-        }
-    }
-
-    /// 图片 Tab 的文件图片判定（首个文件扩展名）
-    #[test]
-    fn first_file_image_detection() {
-        assert!(first_file_is_image(&file_item(&["C:\\a\\b.png"])));
-        assert!(first_file_is_image(&file_item(&["C:\\a\\B.JPG"]))); // 大小写不敏感
-        assert!(!first_file_is_image(&file_item(&["C:\\a\\b.docx"])));
-        assert!(first_file_is_image(&file_item(&[
-            "C:\\a\\b.png",
-            "C:\\a\\c.pdf"
-        ]))); // 首个为图片
-        assert!(!first_file_is_image(&file_item(&[
-            "C:\\a\\b.pdf",
-            "C:\\a\\c.png"
-        ]))); // 首非图片
-        assert!(!first_file_is_image(&file_item(&[])));
-    }
+    item.to_dto()
 }

@@ -175,10 +175,7 @@ fn process_clipboard_change() {
     
     let state = app.state::<AppState>();
 
-    // 自身写入守卫：写入剪贴板后 300ms 内的变化跳过。
-    // 注意：事件路径与轮询路径都会走到这里，标记不能 swap(false) 一次性消费，
-    // 否则事件路径跳过、轮询路径会再次进入而误记录。改为按时间窗口判断，超时后清除。
-    // 自身写入守卫：窗口内且内容指纹与登记的自身写入一致才跳过。
+    // 自身写入守卫：写入剪贴板后窗口内、且内容指纹与登记的自身写入一致才跳过。
     // 指纹不同 = 粘贴后用户又复制了新内容，必须照常记录
     // （旧逻辑按时间一刀切，2s 内的真实复制被吞且轮询签名已推进、永不补录）
     if state.self_write.load(Ordering::SeqCst) {
@@ -277,26 +274,36 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
             return Ok(Some((item, false)));
         }
 
-        // 2.75 复制突发合并（防抖）：短窗口内文本连拷（如连续 Ctrl+C 微调选择），
-        //      直接更新最新一条而非新增，避免历史刷屏
+        // 2.75 复制突发合并（防抖）：短窗口内文本连拷，仅在「新内容包含旧内容」（如
+        //      逐步扩大选区/补全文本）时更新最新一条，避免历史刷屏；
+        //      两条无关/等长改写不合并——否则会导致前一条内容丢失
         if kind == ItemKind::Text {
             if let Some((last_id, last_ts)) = db.latest_unpinned()? {
                 if now.saturating_sub(last_ts) <= BURST_MERGE_MS {
                     if let Some(last_item) = db.get_item(last_id)? {
                         if last_item.kind == ItemKind::Text && !last_item.pinned {
-                            db.replace_text_content(
-                                last_id,
-                                content.as_deref().unwrap_or_default(),
-                                html.as_deref(),
-                                &hash,
-                                now,
-                            )?;
-                            let item = db
-                                .get_item(last_id)?
-                                .ok_or_else(|| DbError::Sql(rusqlite::Error::QueryReturnedNoRows))?;
-                            log::debug!("burst merge: updated item {last_id}");
-                            drop(db);
-                            return Ok(Some((item, false)));
+                            let new_text = content.as_deref().unwrap_or_default();
+                            let old_text = last_item.content.as_deref().unwrap_or_default();
+                            let extends_old = !old_text.is_empty()
+                                && !new_text.is_empty()
+                                && new_text.contains(old_text);
+                            if extends_old {
+                                db.replace_text_content(
+                                    last_id,
+                                    new_text,
+                                    html.as_deref(),
+                                    &hash,
+                                    now,
+                                )?;
+                                let item = db
+                                    .get_item(last_id)?
+                                    .ok_or_else(|| {
+                                        DbError::Sql(rusqlite::Error::QueryReturnedNoRows)
+                                    })?;
+                                log::debug!("burst merge: updated item {last_id}");
+                                drop(db);
+                                return Ok(Some((item, false)));
+                            }
                         }
                     }
                 }
@@ -404,7 +411,7 @@ pub(crate) fn save_files_batch(
 /// 组装前端视图；图片缩略图读取后转 base64
 /// 组装前端视图（缩略图由前端按需加载）
 fn item_dto(_state: &AppState, item: &Item) -> Option<ItemDto> {
-    Some(item.to_dto(None))
+    Some(item.to_dto())
 }
 
 pub fn base64_encode(bytes: &[u8]) -> String {

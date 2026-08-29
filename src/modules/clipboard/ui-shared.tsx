@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+// 纯日期工具（无 React 依赖）——测试直引 ./date-group
+export { fmtTime, dayKey, dayLabel } from "./date-group";
 
 export const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico", "avif", "tif", "tiff"];
 
@@ -25,32 +27,6 @@ export const LINE_CLAMP: Record<number, string> = {
   2: "line-clamp-2",
   3: "line-clamp-3",
 };
-
-/** 固定 MM/DD HH:mm（与 App 一致，不做人类化） */
-export function fmtTime(ts: number): string {
-  const d = new Date(ts);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-/** 日期分组的本地键（yyyy-m-d），用于相邻项跨天判断 */
-export function dayKey(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-}
-
-/** 日期分组标签：今天 / 昨天 / MM/DD 周X */
-export function dayLabel(ts: number): string {
-  const d = new Date(ts);
-  const now = new Date();
-  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
-  if (diff <= 0) return "今天";
-  if (diff === 1) return "昨天";
-  const W = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${W[d.getDay()]}`;
-}
 
 /** 按天分隔头：居中「今天 · 12」样式，左右细分隔线 */
 export function DayHeader({ label, count }: { label: string; count: number }) {
