@@ -388,7 +388,7 @@ export function CalendarPage() {
         const n = await invoke<number>("calendar_update_event", {
           id: editing.id,
           input,
-          sync_same_name: input.syncSameName,
+          syncSameName: input.syncSameName, // Tauri 命令行参数为驼峰（sync_same_name → syncSameName）
         });
         toast(n > 0 ? `事件已更新，并同步 ${n} 条同名事件` : "事件已更新");
       } else {
