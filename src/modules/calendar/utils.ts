@@ -91,9 +91,9 @@ export function toTimeInput(ms: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** yyyy-MM-dd → 本地 00:00 毫秒 */
+/** yyyy-MM-dd（或 yyyy/MM/dd）→ 本地 00:00 毫秒 */
 export function fromDateInput(v: string): number {
-  const [y, m, d] = v.split("-").map(Number);
+  const [y, m, d] = v.split(/[-/]/).map(Number);
   return new Date(y, m - 1, d).getTime();
 }
 
@@ -102,10 +102,10 @@ export function toDateTimeInput(ms: number): string {
   return `${toDateInput(ms)}T${toTimeInput(ms)}`;
 }
 
-/** yyyy-MM-ddTHH:mm → 本地毫秒 */
+/** ms_y → 本地 yyyy-MM-ddTHH:mm（datetime-local input 用） */
 export function fromDateTimeInput(v: string): number {
   const [date, time] = v.split("T");
-  const [y, m, d] = date.split("-").map(Number);
+  const [y, m, d] = date.split(/[-/]/).map(Number);
   const [hh, mm] = time.split(":").map(Number);
   return new Date(y, m - 1, d, hh, mm).getTime();
 }

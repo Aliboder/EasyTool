@@ -1134,7 +1134,7 @@ function EventForm({
         notes,
         all_day: true,
         start_ms: ms,
-        end_ms: dayEndMs(ms),
+        end_ms: ms + 86_400_000 - 1, // 当天 23:59:59.999（不能走 dayEndMs(ms)：ms 是时间戳，非日期键）
         rrule,
         remind_minutes: remind,
         color: evColor,
