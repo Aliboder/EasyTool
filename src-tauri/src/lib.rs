@@ -20,61 +20,6 @@ use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
 pub const MAIN_WINDOW_LABEL: &str = "main";
 
-/// 托盘图标双态缓存（常态 / 告警红点）
-static TRAY_ICONS: OnceLock<(tauri::image::Image<'static>, tauri::image::Image<'static>)> =
-    OnceLock::new();
-static TRAY_ALERT_STATE: AtomicBool = AtomicBool::new(false);
-/// 托盘句柄（修改图标用；构建时写入）
-static TRAY_HANDLE: OnceLock<tauri::tray::TrayIcon<tauri::Wry>> = OnceLock::new();
-
-/// 由底座图标生成（常态, 告警）双态：告警态在右上角叠加红色圆点 + 白描边
-fn build_tray_icons(
-    base: &tauri::image::Image<'_>,
-) -> (tauri::image::Image<'static>, tauri::image::Image<'static>) {
-    let (w, h) = (base.width(), base.height());
-    let normal = tauri::image::Image::new_owned(base.rgba().to_vec(), w, h);
-    if w == 0 || h == 0 {
-        return (normal.clone(), normal);
-    }
-    let mut px = base.rgba().to_vec();
-    let (cx, cy, r) = (w as f32 * 0.82, h as f32 * 0.18, w as f32 * 0.22);
-    for y in 0..h {
-        for x in 0..w {
-            let dx = x as f32 - cx;
-            let dy = y as f32 - cy;
-            let d = (dx * dx + dy * dy).sqrt();
-            let idx = ((y * w + x) * 4) as usize;
-            if d <= r {
-                px[idx] = 239;
-                px[idx + 1] = 68;
-                px[idx + 2] = 68;
-                px[idx + 3] = 255;
-            } else if d <= r + 1.5 {
-                px[idx] = 255;
-                px[idx + 1] = 255;
-                px[idx + 2] = 255;
-                px[idx + 3] = 255;
-            }
-        }
-    }
-    let alert = tauri::image::Image::new_owned(px, w, h);
-    (normal, alert)
-}
-
-/// 切换托盘图标告警态（无变化时跳过；供额度模块在跌破阈值/恢复时调用）
-pub fn set_tray_alert(alerted: bool) {
-    if TRAY_ALERT_STATE.swap(alerted, Ordering::SeqCst) == alerted {
-        return;
-    }
-    let Some((normal, alert)) = TRAY_ICONS.get() else {
-        return;
-    };
-    let Some(tray) = TRAY_HANDLE.get() else {
-        return;
-    };
-    let _ = tray.set_icon(Some(if alerted { alert.clone() } else { normal.clone() }));
-}
-
 /// 极简日志器：输出到 stderr + 日志文件（%APPDATA%/com.aliboder.easytool/easytool.log）。
 /// BufWriter 缓冲合并写盘，降低高频日志（热键/心跳/剪贴板）的系统调用与锁竞争；
 /// 缓冲超阈值时主动 flush，避免崩溃丢日志过多。
@@ -162,9 +107,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&show, &clipboard, &timetracker, &check_update, &quit])?;
 
     let icon = app.default_window_icon().cloned().expect("no window icon");
-    // 双态托盘图标：常态 + 告警（右上角红点，额度跌破预警时切换）
-    let _ = TRAY_ICONS.set(build_tray_icons(&icon));
-    let tray = TrayIconBuilder::new()
+    let _ = TrayIconBuilder::new()
         .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -200,7 +143,6 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             }
         })
         .build(app)?;
-    let _ = TRAY_HANDLE.set(tray);
     Ok(())
 }
 

@@ -404,13 +404,6 @@ pub fn fetch_once(app: &AppHandle) {
     }
 
     let _ = app.emit("quota://updated", serde_json::json!({}));
-
-    // 托盘图标告警态：任一已初始化账户余额跌破预警线 → 角标高亮
-    let alerted = st
-        .accounts
-        .iter()
-        .any(|a| a.initialized && a.balance.is_some_and(|b| b <= threshold));
-    crate::set_tray_alert(alerted);
 }
 
 /// 单账户网络查询结果
