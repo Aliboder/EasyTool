@@ -42,8 +42,14 @@
 - 创建/修改的文件：
   - `src/modules/calendar/{types.ts,views.tsx,Page.tsx,utils.ts,utils.test.ts}`
 
-### 阶段 3 · 批次 4：提醒线程
+### 阶段 3 · 批次 5：导入导出收尾（模块收官）
 - **状态：** complete（待用户手动验收）
+- 执行的操作：
+  - JSON 全量备份导出/导入（事件+例外+待办；按标题+开始时刻/标题去重合并，例外经 id 映射接回）
+  - ICS 导出（VEVENT：规则+EXDATE 删除型例外、编辑型例外独立 VEVENT；VTODO 含 DUE/STATUS）
+  - 前端：导入支持 .ics/.json 自动识别；顶栏「导出」菜单（ICS/JSON）+ 保存对话框
+- 创建/修改的文件：`src-tauri/src/modules/calendar/{commands.rs,db.rs,ics.rs}`、`src-tauri/src/lib.rs`、`src/modules/calendar/Page.tsx`
+- 验证：cargo 110 全绿、check 零警告、vitest 41、tsc/build 通过
 - 执行的操作：
   - 常驻提醒线程（30s 一跳，quota poll_loop 同模式）：事件提前 N 分钟系统通知、待办当日过期一次
   - 睡眠补扫：醒来补查过去 1 小时错过的实例；同一条只提醒一次（reminder_logs 唯一键）

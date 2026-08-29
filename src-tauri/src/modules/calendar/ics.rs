@@ -6,8 +6,10 @@ use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
 use ical::parser::ical::component::IcalEvent;
 use ical::parser::ical::IcalParser;
 use ical::property::Property;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
-use super::db::CalendarDb;
+use super::db::{now_ms, CalendarDb, Event, Todo};
 use super::expand;
 
 /// 一条待入库的具体条目（已展开，无规则）
@@ -227,10 +229,353 @@ pub fn import_ics_text(db: &CalendarDb, text: &str) -> Result<ImportReport, Stri
     })
 }
 
+// ---------- 导出与 JSON 备份 ----------
+
+fn ics_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace(';', "\\;")
+        .replace(',', "\\,")
+        .replace('\n', "\\n")
+}
+
+/// 行折叠：按 ≤60 字符切（避开 UTF-8 边界问题），续行以空格开头
+fn fold_line(line: &str, out: &mut String) {
+    let mut i = 0;
+    loop {
+        let end = (i + 60).min(line.chars().count());
+        let chunk: String = line.chars().skip(i).take(end - i).collect();
+        if chunk.is_empty() {
+            break;
+        }
+        if i == 0 {
+            out.push_str(&chunk);
+        } else {
+            out.push_str(&format!("\r\n {}", chunk));
+        }
+        i = end;
+        if i >= line.chars().count() {
+            break;
+        }
+    }
+    out.push_str("\r\n");
+}
+
+fn local_stamp(ms: i64) -> String {
+    let d = Local.timestamp_millis_opt(ms).earliest().unwrap();
+    d.format("%Y%m%dT%H%M%S").to_string()
+}
+
+fn local_date(ms: i64) -> String {
+    let d = Local.timestamp_millis_opt(ms).earliest().unwrap();
+    d.format("%Y%m%d").to_string()
+}
+
+/// 导出 ICS（VEVENT 含规则与 EXDATE 删除型例外、编辑型例外转独立 VEVENT、VTODO）
+pub fn export_ics_text(db: &CalendarDb) -> String {
+    use super::db::Event;
+    let mut out = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//EasyTool//Calendar//CN\r\n");
+    let now_utc = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+    let events = db.all_events().unwrap_or_default();
+    let ovs = db.all_overrides().unwrap_or_default();
+    let deletes: HashMap<i64, Vec<String>> = ovs
+        .iter()
+        .filter(|o| o.variant == "delete")
+        .fold(HashMap::new(), |mut m, o| {
+            m.entry(o.event_id).or_default().push(local_stamp(o.start_ms.unwrap_or(0)));
+            m
+        });
+
+    let push_event = |out: &mut String, e: &Event| {
+        let uid = format!("easytool-event-{}", e.id);
+        fold_line("BEGIN:VEVENT", out);
+        fold_line(&format!("UID:{}", uid), out);
+        fold_line(&format!("DTSTAMP:{}", now_utc), out);
+        fold_line(&format!("SUMMARY:{}", ics_escape(&e.title)), out);
+        if !e.location.is_empty() {
+            fold_line(&format!("LOCATION:{}", ics_escape(&e.location)), out);
+        }
+        if !e.notes.is_empty() {
+            fold_line(&format!("DESCRIPTION:{}", ics_escape(&e.notes)), out);
+        }
+        if e.all_day {
+            fold_line(&format!("DTSTART;VALUE=DATE:{}", local_date(e.start_ms)), out);
+            fold_line(&format!("DTEND;VALUE=DATE:{}", local_date(e.end_ms)), out);
+        } else {
+            fold_line(&format!("DTSTART:{}", local_stamp(e.start_ms)), out);
+            fold_line(&format!("DTEND:{}", local_stamp(e.end_ms)), out);
+        }
+        if let Some(rule) = &e.rrule {
+            fold_line(&format!("RRULE:{}", rule), out);
+            if let Some(list) = deletes.get(&e.id) {
+                fold_line(&format!("EXDATE:{}", list.join(",")), out);
+            }
+        }
+        fold_line("END:VEVENT", out);
+    };
+
+    for e in &events {
+        push_event(&mut out, e);
+    }
+    // 编辑型例外 → 独立 VEVENT（保留该次改后的时间/字段）
+    for o in &ovs {
+        if o.variant != "edit" {
+            continue;
+        }
+        let uid = format!("easytool-instance-{}-{}", o.event_id, o.instance_date);
+        fold_line("BEGIN:VEVENT", &mut out);
+        fold_line(&format!("UID:{}", uid), &mut out);
+        fold_line(&format!("DTSTAMP:{}", now_utc), &mut out);
+        fold_line(
+            &format!(
+                "SUMMARY:{}",
+                ics_escape(o.title.as_deref().unwrap_or("日程"))
+            ),
+            &mut out,
+        );
+        if let Some(s) = o.start_ms {
+            fold_line(&format!("DTSTART:{}", local_stamp(s)), &mut out);
+        }
+        if let Some(e2) = o.end_ms {
+            fold_line(&format!("DTEND:{}", local_stamp(e2)), &mut out);
+        }
+        fold_line("END:VEVENT", &mut out);
+    }
+    if let Ok(todos) = db.all_todos() {
+        for t in &todos {
+            fold_line("BEGIN:VTODO", &mut out);
+            fold_line(&format!("UID:easytool-todo-{}", t.id), &mut out);
+            fold_line(&format!("DTSTAMP:{}", now_utc), &mut out);
+            fold_line(&format!("SUMMARY:{}", ics_escape(&t.title)), &mut out);
+            if !t.notes.is_empty() {
+                fold_line(&format!("DESCRIPTION:{}", ics_escape(&t.notes)), &mut out);
+            }
+            if let Some(d) = t.due_date {
+                fold_line(&format!("DUE;VALUE=DATE:{:08}", d), &mut out);
+            }
+            if t.done {
+                fold_line("STATUS:COMPLETED", &mut out);
+            }
+            fold_line("END:VTODO", &mut out);
+        }
+    }
+    out.push_str("END:VCALENDAR\r\n");
+    out
+}
+
+/// JSON 备份文档结构
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonEvent {
+    pub id: i64,
+    pub title: String,
+    pub location: String,
+    pub notes: String,
+    pub all_day: bool,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub rrule: Option<String>,
+    pub created_ms: i64,
+    pub updated_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonOverride {
+    pub event_id: i64,
+    pub instance_date: i64,
+    pub variant: String,
+    pub title: Option<String>,
+    pub location: Option<String>,
+    pub notes: Option<String>,
+    pub all_day: Option<bool>,
+    pub start_ms: Option<i64>,
+    pub end_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonTodo {
+    pub id: i64,
+    pub title: String,
+    pub notes: String,
+    pub due_date: Option<i64>,
+    pub done: bool,
+    pub done_at_ms: Option<i64>,
+    pub created_ms: i64,
+    pub updated_ms: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JsonDoc {
+    pub exported_at: String,
+    pub events: Vec<JsonEvent>,
+    pub overrides: Vec<JsonOverride>,
+    pub todos: Vec<JsonTodo>,
+}
+
+/// 导出 JSON 全量备份（事件/例外/待办）
+pub fn export_json_text(db: &CalendarDb) -> String {
+    let doc = JsonDoc {
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        events: db
+            .all_events()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| JsonEvent {
+                id: e.id,
+                title: e.title,
+                location: e.location,
+                notes: e.notes,
+                all_day: e.all_day,
+                start_ms: e.start_ms,
+                end_ms: e.end_ms,
+                rrule: e.rrule,
+                created_ms: e.created_ms,
+                updated_ms: e.updated_ms,
+            })
+            .collect(),
+        overrides: db
+            .all_overrides()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|o| JsonOverride {
+                event_id: o.event_id,
+                instance_date: o.instance_date,
+                variant: o.variant,
+                title: o.title,
+                location: o.location,
+                notes: o.notes,
+                all_day: o.all_day,
+                start_ms: o.start_ms,
+                end_ms: o.end_ms,
+            })
+            .collect(),
+        todos: db
+            .all_todos()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|t| JsonTodo {
+                id: t.id,
+                title: t.title,
+                notes: t.notes,
+                due_date: t.due_date,
+                done: t.done,
+                done_at_ms: t.done_at_ms,
+                created_ms: t.created_ms,
+                updated_ms: t.updated_ms,
+            })
+            .collect(),
+    };
+    serde_json::to_string_pretty(&doc).unwrap_or_default()
+}
+
+/// JSON 导入结果统计
+#[derive(Debug, Default, serde::Serialize)]
+pub struct JsonImportReport {
+    pub events: usize,
+    pub overrides: usize,
+    pub todos: usize,
+    pub skipped: usize,
+}
+
+/// 恢复 JSON 备份：按「标题+开始时刻」去重跳过已有事件；例外经 id 映射接回；
+/// 待办按标题去重。均为追加合并，不覆盖现有数据。
+pub fn import_json_text(db: &CalendarDb, text: &str) -> Result<JsonImportReport, String> {
+    let doc: JsonDoc = serde_json::from_str(text).map_err(|e| format!("JSON 解析失败：{e}"))?;
+    let mut report = JsonImportReport::default();
+    let existing_events: HashSet<(String, i64)> = db
+        .all_events()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| (e.title, e.start_ms))
+        .collect();
+    let existing_todos: HashSet<String> = db
+        .all_todos()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|t| t.title)
+        .collect();
+    let mut id_map: HashMap<i64, i64> = HashMap::new();
+    let now = now_ms();
+    for ev in &doc.events {
+        if existing_events.contains(&(ev.title.clone(), ev.start_ms)) {
+            report.skipped += 1;
+            continue;
+        }
+        let e = Event {
+            id: 0,
+            title: ev.title.clone(),
+            location: ev.location.clone(),
+            notes: ev.notes.clone(),
+            all_day: ev.all_day,
+            start_ms: ev.start_ms,
+            end_ms: ev.end_ms,
+            rrule: ev.rrule.clone(),
+            created_ms: ev.created_ms,
+            updated_ms: now,
+        };
+        let new_id = db.insert_event(&e)?;
+        id_map.insert(ev.id, new_id);
+        report.events += 1;
+    }
+    for o in &doc.overrides {
+        let Some(nid) = id_map.get(&o.event_id) else {
+            report.skipped += 1;
+            continue;
+        };
+        let payload = if o.variant == "edit" {
+            Some(Event {
+                id: 0,
+                title: o.title.clone().unwrap_or_default(),
+                location: o.location.clone().unwrap_or_default(),
+                notes: o.notes.clone().unwrap_or_default(),
+                all_day: o.all_day.unwrap_or(false),
+                start_ms: o.start_ms.unwrap_or(0),
+                end_ms: o.end_ms.unwrap_or(0),
+                rrule: None,
+                created_ms: now,
+                updated_ms: now,
+            })
+        } else if o.start_ms.is_some() {
+            // 删除型例外也尽量带回原时刻（ICS EXDATE 用）
+            Some(Event {
+                id: 0,
+                title: String::new(),
+                location: String::new(),
+                notes: String::new(),
+                all_day: false,
+                start_ms: o.start_ms.unwrap_or(0),
+                end_ms: 0,
+                rrule: None,
+                created_ms: now,
+                updated_ms: now,
+            })
+        } else {
+            None
+        };
+        db.upsert_override(*nid, o.instance_date, &o.variant, &payload)?;
+        report.overrides += 1;
+    }
+    for t in &doc.todos {
+        if existing_todos.contains(&t.title) {
+            report.skipped += 1;
+            continue;
+        }
+        db.insert_todo(&Todo {
+            id: 0,
+            title: t.title.clone(),
+            notes: t.notes.clone(),
+            due_date: t.due_date,
+            done: t.done,
+            done_at_ms: t.done_at_ms,
+            created_ms: t.created_ms,
+            updated_ms: now,
+        })?;
+        report.todos += 1;
+    }
+    Ok(report)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::calendar::db::CalendarDb;
     use chrono::{Datelike, Local, TimeZone, Timelike};
     use std::path::Path;
 
@@ -317,6 +662,86 @@ mod tests {
         assert_eq!(report.events, 1);
         assert_eq!(report.instances, 1);
         assert_eq!(db.events_in_window(0, 9_000_000_000_000).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn export_and_json_roundtrip() {
+        let db = CalendarDb::open(Path::new(":memory:")).unwrap();
+        // 一条重复规则（每周一三五）+ 一条单次 + 一条待办
+        let mut weekly = Event {
+            id: 0,
+            title: "每周例会".into(),
+            location: "会议室".into(),
+            notes: "带笔记本".into(),
+            all_day: false,
+            start_ms: 0,
+            end_ms: 0,
+            rrule: Some("FREQ=WEEKLY;BYDAY=MO,WE,FR".into()),
+            created_ms: 0,
+            updated_ms: 0,
+        };
+        weekly.start_ms = day_of(2026, 9, 15, 9, 0); // 周二
+        weekly.end_ms = weekly.start_ms + 3600_000;
+        let w_id = db.insert_event(&weekly).unwrap();
+        let single = Event {
+            id: 0,
+            title: "看牙".into(),
+            location: String::new(),
+            notes: String::new(),
+            all_day: false,
+            start_ms: day_of(2026, 9, 30, 14, 0),
+            end_ms: day_of(2026, 9, 30, 15, 0),
+            rrule: None,
+            created_ms: 0,
+            updated_ms: 0,
+        };
+        db.insert_event(&single).unwrap();
+        // 仅此一次删除：9/18（周五）那次
+        db.insert_delete_override(w_id, 20260918, day_of(2026, 9, 18, 9, 0)).unwrap();
+        db.insert_todo(&Todo {
+            id: 0,
+            title: "交周报".into(),
+            notes: String::new(),
+            due_date: Some(20261001),
+            done: false,
+            done_at_ms: None,
+            created_ms: 0,
+            updated_ms: 0,
+        })
+        .unwrap();
+
+        // ICS 导出 → 能再解析出内容（规则事件含 RRULE、删除型变成 EXDATE、单次与待办都在）
+        let ics = export_ics_text(&db);
+        assert!(ics.contains("RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR"));
+        assert!(ics.contains("EXDATE:"));
+        assert!(ics.contains("BEGIN:VTODO"));
+        assert!(ics.contains("SUMMARY:看牙"));
+        let reparsed = parse_ics(&ics);
+        assert_eq!(reparsed.events, 2); // 规则 VEVENT + 单次 VEVENT（待办不计入 events）
+        assert!(reparsed.items.len() >= 3); // 展开出的多次 + 单次（注：EXDATE 删除型暂不参与解析）
+
+        // JSON 导出 → 导入到空库 → 数量吻合；再导一次全跳过
+        let json = export_json_text(&db);
+        let db2 = CalendarDb::open(Path::new(":memory:")).unwrap();
+        let r1 = import_json_text(&db2, &json).unwrap();
+        assert_eq!(r1.events, 2);
+        assert_eq!(r1.overrides, 1);
+        assert_eq!(r1.todos, 1);
+        assert_eq!(r1.skipped, 0);
+        assert_eq!(db2.all_todos().unwrap().len(), 1);
+        assert_eq!(db2.all_overrides().unwrap().len(), 1);
+        let r2 = import_json_text(&db2, &json).unwrap();
+        assert_eq!(r2.events, 0);
+        assert_eq!(r2.todos, 0);
+        assert_eq!(r2.skipped, 4); // 2 事件 + 1 待办按去重跳过 + 1 例外因事件未重导入而跳过
+    }
+
+    fn day_of(y: i32, m: u32, d: u32, h: u32, mi: u32) -> i64 {
+        let ndt = chrono::NaiveDate::from_ymd_opt(y, m, d)
+            .unwrap()
+            .and_hms_opt(h, mi, 0)
+            .unwrap();
+        Local.from_local_datetime(&ndt).earliest().unwrap().timestamp_millis()
     }
 
     /// 真实文件校验（默认忽略；设 EASYTOOL_ICS_FIXTURE 指向 .ics 路径后运行）

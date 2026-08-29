@@ -215,6 +215,49 @@ impl CalendarDb {
             .map_err(|e| e.to_string())
     }
 
+    /// 全部事件（导出/JSON 备份用）
+    pub fn all_events(&self) -> DbResult<Vec<Event>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms
+                 FROM events ORDER BY start_ms ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], row_to_event)
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// 全部例外（导出/JSON 备份用）
+    pub fn all_overrides(&self) -> DbResult<Vec<EventOverride>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, event_id, instance_date, variant, title, location, notes, all_day, start_ms, end_ms
+                 FROM event_overrides",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(EventOverride {
+                    id: r.get(0)?,
+                    event_id: r.get(1)?,
+                    instance_date: r.get(2)?,
+                    variant: r.get(3)?,
+                    title: r.get(4)?,
+                    location: r.get(5)?,
+                    notes: r.get(6)?,
+                    all_day: r.get(7).map(|v: i32| v != 0).ok(),
+                    start_ms: r.get(8)?,
+                    end_ms: r.get(9)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
     #[allow(dead_code)] // 批次 3（重复+例外）上线时启用
     pub fn overrides_for(&self, event_id: i64) -> DbResult<Vec<EventOverride>> {
         let mut stmt = self
@@ -304,6 +347,25 @@ impl CalendarDb {
                 .map_err(|e| e.to_string())?;
         }
         Ok(())
+    }
+
+    /// 删除型例外（记录该实例的原始时刻，ICS 导出 EXDATE 用）
+    pub fn insert_delete_override(
+        &self,
+        event_id: i64,
+        instance_date: i64,
+        original_start_ms: i64,
+    ) -> DbResult<()> {
+        self.conn
+            .execute(
+                "INSERT INTO event_overrides (event_id, instance_date, variant, start_ms)
+                 VALUES (?1,?2,'delete',?3)
+                 ON CONFLICT(event_id, instance_date) DO UPDATE SET variant='delete', start_ms=excluded.start_ms,
+                   title=NULL, location=NULL, notes=NULL, all_day=NULL, end_ms=NULL",
+                params![event_id, instance_date, original_start_ms],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     // ---------- 待办 ----------

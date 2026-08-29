@@ -171,7 +171,19 @@ pub fn calendar_override_event(
     let db = db.lock().map_err(|e| e.to_string())?;
     let base = db.get_event(event_id)?.ok_or("事件不存在")?;
     match input.variant.as_str() {
-        "delete" => db.upsert_override(event_id, instance_date, "delete", &None),
+        "delete" => {
+            // 记录该实例的原始时刻（ICS EXDATE 导出需要）
+            let rule = base.rrule.clone();
+            let original_start = match rule.as_deref() {
+                Some(r) => super::expand::expand(super::expand::ts_to_local(base.start_ms), r)
+                    .into_iter()
+                    .find(|i| super::expand::local_day_key(*i) == instance_date)
+                    .map(super::expand::local_to_ts)
+                    .unwrap_or(0),
+                None => 0,
+            };
+            db.insert_delete_override(event_id, instance_date, original_start)
+        }
         "edit" => {
             let v = input.input.ok_or("缺少编辑内容")?;
             validate_event(&v)?;
@@ -317,4 +329,31 @@ pub fn calendar_import_ics(
     let text = std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {e}"))?;
     let db = db.lock().map_err(|e| e.to_string())?;
     super::ics::import_ics_text(&db, &text)
+}
+
+/// 导出 ICS 到指定路径
+#[tauri::command]
+pub fn calendar_export_ics(db: State<'_, Mutex<CalendarDb>>, path: String) -> Result<(), String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    let text = super::ics::export_ics_text(&db);
+    std::fs::write(&path, text).map_err(|e| format!("写入失败: {e}"))
+}
+
+/// 导出 JSON 全量备份
+#[tauri::command]
+pub fn calendar_export_json(db: State<'_, Mutex<CalendarDb>>, path: String) -> Result<(), String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    let text = super::ics::export_json_text(&db);
+    std::fs::write(&path, text).map_err(|e| format!("写入失败: {e}"))
+}
+
+/// 导入 JSON 备份（去重合并）
+#[tauri::command]
+pub fn calendar_import_json(
+    db: State<'_, Mutex<CalendarDb>>,
+    path: String,
+) -> Result<super::ics::JsonImportReport, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {e}"))?;
+    let db = db.lock().map_err(|e| e.to_string())?;
+    super::ics::import_json_text(&db, &text)
 }

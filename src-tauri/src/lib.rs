@@ -825,6 +825,9 @@ modules::timetracker::commands::timetracker_get_category_breakdown_range,
             modules::calendar::commands::calendar_toggle_todo,
             modules::calendar::commands::calendar_delete_todo,
             modules::calendar::commands::calendar_import_ics,
+            modules::calendar::commands::calendar_export_ics,
+            modules::calendar::commands::calendar_export_json,
+            modules::calendar::commands::calendar_import_json,
         ])
         .on_window_event(|window, event| {
             match event {
