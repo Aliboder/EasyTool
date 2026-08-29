@@ -24,7 +24,7 @@ export function Hero() {
                 <ScrambleText text="EASYTOOL" delay={200} speed={40} />
               </span>
               <span>
-                vol. <span className="font-bold text-emerald-600 dark:text-emerald-400">0.6.9</span>{" "}
+                vol. <span className="font-bold text-emerald-600 dark:text-emerald-400">0.7.0</span>{" "}
                 <span className="text-zinc-400 dark:text-zinc-600">· 2026.08</span>
               </span>
             </div>

@@ -6,6 +6,16 @@ const RELEASES = "https://github.com/Aliboder/EasyTool/releases";
 
 const LOG = [
   {
+    version: "v0.7.0",
+    date: "2026-08-29",
+    highlight: true,
+    color: "text-emerald-400",
+    colorBg: "bg-emerald-500/15",
+    tag: "latest",
+    summary: "体验打磨：纯文本粘贴、托盘快捷入口、右键扩展、应用置顶、多关键词高亮。",
+    detail: "剪贴板新增「粘贴为纯文本」开关与右键「复制为纯文本」，图片条目支持「用系统看图打开」；历史满 500 条显示上限提示，时间戳恢复固定 MM/DD HH:mm 并统一卡片分割线对齐。托盘右键新增「打开剪贴板 / 打开时长统计 / 检查更新」快速入口。应用中心支持右键「置顶 / 打开所在位置」，置顶应用恒排最前。剪贴板搜索高亮升级为多关键词全部命中。图片管线异步化（最长边 2048 降采样 + 256 缩略图），日志缓冲写盘减少 IO。",
+  },
+  {
     version: "v0.6.9",
     date: "2026-08-28",
     highlight: true,
