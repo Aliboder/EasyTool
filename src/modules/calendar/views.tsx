@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { CalendarPlus, ChevronDown, ChevronRight, Clock, ListTodo, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { fmtHM, fmtKeyLong, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey } from "./utils";
+import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey } from "./utils";
 import type { EventDto, TodoDto } from "./types";
 
 const START_HOUR = 0; // 时间轴起点（0 点）
@@ -130,7 +130,7 @@ export function WeekView({
   const days = useMemo(() => {
     const start = weekStartKey(selectedKey);
     const count = showWeekend ? 7 : 5;
-    return Array.from({ length: count }, (_, i) => start + i).filter((k) =>
+    return Array.from({ length: count }, (_, i) => addDaysKey(start, i)).filter((k) =>
       showWeekend ? true : weekdayOfKey(k) < 5,
     );
   }, [selectedKey, showWeekend]);

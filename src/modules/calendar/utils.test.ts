@@ -12,6 +12,7 @@ import {
   parseRrule,
   buildRrule,
   keyToDateInput,
+  addDaysKey,
   type TimedEventLike,
 } from "./utils";
 
@@ -55,6 +56,18 @@ describe("calendar utils", () => {
     // 周一本身
     expect(weekStartKey(20260824)).toBe(20260824);
     expect(weekdayOfKey(20260824)).toBe(0);
+  });
+
+  it("addDaysKey 跨月/跨年正确换位", () => {
+    expect(addDaysKey(20260831, 1)).toBe(20260901);
+    expect(addDaysKey(20260830, 3)).toBe(20260902);
+    expect(addDaysKey(20260901, -1)).toBe(20260831);
+    expect(addDaysKey(20261231, 1)).toBe(20270101);
+    expect(addDaysKey(20260228, 1)).toBe(20260301); // 2026 平年
+    expect(addDaysKey(20280228, 1)).toBe(20280229); // 闰年
+    // 周视图窗口（月末跨月）：8/24 起 7 天
+    expect(addDaysKey(20260824, 6)).toBe(20260830);
+    expect(addDaysKey(20260831, 1)).not.toBe(20260832); // 不再出现 32
   });
 
   it("layoutDay 基础排布与重叠分列", () => {

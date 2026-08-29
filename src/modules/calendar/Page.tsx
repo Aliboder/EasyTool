@@ -30,6 +30,7 @@ import type { EventDto, TodoDto, ViewKey } from "./types";
 import { CalendarSettings } from "./Settings";
 import { DayView, TodoView, WeekView } from "./views";
 import {
+  addDaysKey,
   buildRrule,
   dayEndMs,
   dayStartMs,
@@ -77,7 +78,7 @@ const TABS: { id: ViewKey; label: string }[] = [
 function viewWindow(tab: ViewKey, ym: { y: number; m: number }, selectedKey: number): { start: number; end: number } {
   if (tab === "week") {
     const ws = weekStartKey(selectedKey);
-    return { start: ws, end: ws + 6 };
+    return { start: ws, end: addDaysKey(ws, 6) };
   }
   if (tab === "day") {
     return { start: selectedKey, end: selectedKey };

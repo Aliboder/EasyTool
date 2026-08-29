@@ -231,6 +231,15 @@ export function weekStartKey(key: number): number {
   return start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate();
 }
 
+/** 日键加减 N 天（正确处理跨月/跨年，如 8月31 +1 → 9月1） */
+export function addDaysKey(key: number, n: number): number {
+  const y = Math.floor(key / 10000);
+  const m = Math.floor((key % 10000) / 100) - 1;
+  const d = key % 100;
+  const dt = new Date(y, m, d + n);
+  return dt.getFullYear() * 10000 + (dt.getMonth() + 1) * 100 + dt.getDate();
+}
+
 /** 日键 → 周一=0 .. 周日=6 */
 export function weekdayOfKey(key: number): number {
   const y = Math.floor(key / 10000);
