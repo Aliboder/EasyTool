@@ -149,11 +149,17 @@ function EventBlock({
       >
         {event.title}
       </div>
-      {/* 地点（卡片够高才显示） */}
-      {showMeta && event.location && (
+      {/* 时间 + 地点：正常文档流，位于标题正下方，永不与标题重叠（卡片不够高时自动让位） */}
+      {showMeta && (
         <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/85">
           <span className="size-1 flex-none rounded-full bg-white/80" />
-          <span className="truncate opacity-90">{event.location}</span>
+          <span className="truncate font-medium tabular-nums">{fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}</span>
+          {event.location && (
+            <>
+              <span className="flex-none text-white/50">·</span>
+              <span className="truncate opacity-90">{event.location}</span>
+            </>
+          )}
         </div>
       )}
       {/* 高卡片：备注填充空档 */}
@@ -161,12 +167,6 @@ function EventBlock({
         <div className={cn("mt-1 text-[10px] leading-snug text-white/75", notesLines === 3 ? "line-clamp-3" : "line-clamp-2")}>
           {event.notes}
         </div>
-      )}
-      {/* 右下角：时间范围角标（卡片够高才显示，起定位作用） */}
-      {!compact && (
-        <span className="absolute bottom-1 right-1 rounded bg-black/25 px-1 py-px text-[9px] font-medium leading-none tabular-nums text-white/90">
-          {fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}
-        </span>
       )}
     </div>
   );
