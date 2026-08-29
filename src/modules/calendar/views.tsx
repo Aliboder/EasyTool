@@ -104,12 +104,15 @@ function EventBlock({
   onMenu: EventMenu;
 }) {
   const compact = height < 34;
-  const tall = height >= 80;
   const tint = eventTint(event, subColors);
+  // 空间分配：标题永远优先完整显示（不截断）；时间/地点只在卡片够高时出现；高卡片补备注填充
+  const showMeta = height >= 54;
+  const notesLines = height >= 110 ? 3 : height >= 80 ? 2 : 0;
+  const showNotes = notesLines > 0 && !!event.notes;
   return (
     <div
       className={cn(
-        "absolute overflow-hidden rounded-xl border border-black/10 bg-primary px-2 py-1.5 text-primary-foreground shadow-sm transition-all hover:z-20 hover:shadow-md",
+        "absolute overflow-hidden rounded-xl border border-black/15 bg-primary px-2 py-1.5 text-primary-foreground shadow-sm transition-all hover:z-20 hover:shadow-md",
         !tint && "hover:bg-primary/95",
       )}
       style={{
@@ -118,6 +121,7 @@ function EventBlock({
         left: `${left}%`,
         width: `${width}%`,
         ...(tint ? { backgroundColor: tint, color: "#ffffff" } : {}),
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)",
       }}
       title={`${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)} ${event.title}${event.subscription_id != null ? " · 订阅" : ""}${event.location ? " · " + event.location : ""}`}
       onClick={(e) => {
@@ -131,18 +135,17 @@ function EventBlock({
         onMenu(event, e.clientX, e.clientY);
       }}
     >
-      {/* 标题（重点）：小/高卡片允许多行，优先完整显示 */}
+      {/* 标题：不截断，自动换行，优先保证完整展示 */}
       <div
         className={cn(
-          "break-words leading-tight",
+          "break-words leading-snug",
           compact ? "text-[11px] font-semibold" : "text-xs font-semibold",
-          compact || tall ? "line-clamp-2" : "truncate",
         )}
       >
         {event.title}
       </div>
-      {/* 时间 + 地点 一行小字（仅较高卡片显示） */}
-      {!compact && (
+      {/* 时间 + 地点（卡片够高才显示） */}
+      {showMeta && (
         <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/90">
           <span className="size-1 flex-none rounded-full bg-white/90" />
           <span className="truncate font-medium tabular-nums">{fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}</span>
@@ -154,9 +157,16 @@ function EventBlock({
           )}
         </div>
       )}
-      {/* 很高的卡片：补充备注，避免大块空蓝 */}
-      {tall && event.notes && (
-        <div className="mt-1 line-clamp-2 text-[10px] leading-snug text-white/75">{event.notes}</div>
+      {/* 高卡片：备注填充空档 */}
+      {showNotes && (
+        <div
+          className={cn(
+            "mt-1 text-[10px] leading-snug text-white/75",
+            notesLines === 3 ? "line-clamp-3" : "line-clamp-2",
+          )}
+        >
+          {event.notes}
+        </div>
       )}
     </div>
   );
