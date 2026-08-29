@@ -66,11 +66,3 @@ pub(crate) fn position_at_cursor(win: &tauri::WebviewWindow) {
         }
     }
 }
-
-/// 供 search 模块联动：把一个文件路径写入剪贴板历史
-pub fn record_file_to_history(app: &tauri::AppHandle, path: &str) {
-    let Some(state) = app.try_state::<AppState>() else {
-        return;
-    };
-    let _ = monitor::save_files_batch(&state, app, std::slice::from_ref(&path.to_string()));
-}

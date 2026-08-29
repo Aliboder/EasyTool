@@ -72,18 +72,23 @@ impl AppsDb {
         Ok(Self { conn })
     }
 
-    /// 批量落库扫描到的目标（新目标从 0 起），返回 目标→(当前次数, 最近启动)
+    /// 批量落库扫描到的目标（新目标从 0 起），返回 目标→(当前次数, 最近启动)。
+    /// 单个事务内完成全部 INSERT，避免数百次自动提交的磁盘 fsync 开销
     pub fn sync_targets(&self, targets: &[String]) -> Result<Vec<(String, i64, i64)>, String> {
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| format!("开启事务失败: {e}"))?;
         for t in targets {
-            self.conn
-                .execute(
-                    "INSERT INTO app_usage(target, count)
-                     VALUES (?1, COALESCE((SELECT count FROM app_usage WHERE target = ?1), 0))
-                     ON CONFLICT(target) DO NOTHING",
-                    params![t],
-                )
-                .map_err(|e| format!("同步失败: {e}"))?;
+            tx.execute(
+                "INSERT INTO app_usage(target, count)
+                 VALUES (?1, COALESCE((SELECT count FROM app_usage WHERE target = ?1), 0))
+                 ON CONFLICT(target) DO NOTHING",
+                params![t],
+            )
+            .map_err(|e| format!("同步失败: {e}"))?;
         }
+        tx.commit().map_err(|e| format!("提交事务失败: {e}"))?;
         let mut stmt = self
             .conn
             .prepare("SELECT target, count, last_launched_ms FROM app_usage")

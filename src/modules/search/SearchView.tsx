@@ -4,14 +4,9 @@ import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
 import { ModuleHeader, HeaderButton, HeaderSort, type HeaderSortField } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
-import { ContextMenu } from "@/components/ui/context-menu";
-import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import {
-  FolderOpen,
-  Copy,
   File,
   Settings2,
-  ExternalLink,
   Loader2,
   LayoutList,
   LayoutGrid,
@@ -28,7 +23,6 @@ import {
   Archive,
   Clock,
   X,
-  Pin,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -38,6 +32,16 @@ import {
   type SearchSettingsData,
 } from "./SearchSettings";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
+import {
+  AppsContextMenu,
+  Highlight,
+  SearchResultMenu,
+  extractKeywords,
+  fmtSize,
+  fmtTime,
+  isImagePath,
+  type SearchResultDto,
+} from "./parts";
 import { AppsGrid, AppsSection, type ScannedApp } from "./AppsGrid";
 import { useFileIcons } from "@/hooks/useFileIcons";
 import { toast } from "@/lib/toast";
@@ -50,74 +54,8 @@ const SORT_FIELDS: HeaderSortField[] = [
   { id: "modified", label: "修改" },
 ];
 
-export interface SearchResultDto {
-  name: string;
-  path: string;
-  full_path: string;
-  size: number | null;
-  modified_ms: number | null;
-  is_folder: boolean;
-}
-
 export interface SearchStatusDto {
   running: boolean;
-}
-
-const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico", "avif", "tif", "tiff"];
-
-function isImagePath(path: string): boolean {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return IMAGE_EXTS.includes(ext);
-}
-
-function fmtSize(bytes: number | null): string {
-  if (bytes == null) return "";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let v = bytes as number;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return v.toFixed(i === 0 ? 0 : 1) + " " + units[i];
-}
-
-function fmtTime(ms: number | null): string {
-  if (ms == null) return "";
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-function extractKeywords(query: string): string[] {
-  return query
-    .replace(/\b(ext|folder|size|path|date|dupe|len|regex|ws|mult|nouni|noext|nopath|nocase|whole|pure|case|diacritics):\S*/gi, "")
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w.length >= 1);
-}
-
-function Highlight({ text, keywords }: { text: string; keywords: string[] }) {
-  if (!keywords.length) return <>{text}</>;
-  const lower = text.toLowerCase();
-  const parts: React.ReactNode[] = [];
-  let lastIdx = 0;
-  for (const kw of keywords) {
-    const lkw = kw.toLowerCase();
-    let idx = lower.indexOf(lkw, lastIdx);
-    while (idx !== -1) {
-      if (idx > lastIdx) parts.push(text.slice(lastIdx, idx));
-      parts.push(
-        <mark key={`${idx}-${kw}`} className="rounded bg-primary/20 text-foreground">
-          {text.slice(idx, idx + kw.length)}
-        </mark>,
-      );
-      lastIdx = idx + kw.length;
-      idx = lower.indexOf(lkw, lastIdx);
-    }
-  }
-  if (lastIdx < text.length) parts.push(text.slice(lastIdx));
-  return <>{parts.length ? parts : text}</>;
 }
 
 /// 「应用」Tab：已安装应用中心（非 Everything 过滤器）
@@ -962,74 +900,32 @@ export function SearchView() {
         <SearchSettings cfg={cfg} onUpdate={updateCfg} />
       </Drawer>
 
-      <ContextMenu
-        visible={!!menu}
-        x={menu?.x ?? 0}
-        y={menu?.y ?? 0}
+      <SearchResultMenu
+        menu={menu}
         onClose={() => setMenu(null)}
-      >
-        <ContextMenuItem
-          icon={<ExternalLink className="size-3.5" />}
-          label="打开"
-          onClick={() => {
-            if (menu) {
-              doOpen(menu.item);
-              setMenu(null);
-            }
-          }}
-        />
-        <ContextMenuItem
-          icon={<FolderOpen className="size-3.5" />}
-          label="打开所在位置"
-          onClick={() => {
-            if (menu) {
-              doOpenLocation(menu.item);
-              setMenu(null);
-            }
-          }}
-        />
-        <ContextMenuItem
-          icon={<Copy className="size-3.5" />}
-          label="复制路径"
-          onClick={() => menu && doCopyPath(menu.item)}
-        />
-        <ContextMenuItem
-          icon={<Copy className="size-3.5" />}
-          label="复制文件"
-          onClick={() => menu && doCopyFile(menu.item)}
-        />
-      </ContextMenu>
+        onOpen={(item) => {
+          doOpen(item);
+          setMenu(null);
+        }}
+        onOpenLocation={(item) => {
+          doOpenLocation(item);
+          setMenu(null);
+        }}
+        onCopyPath={doCopyPath}
+        onCopyFile={doCopyFile}
+      />
 
-      {/* 应用条目右键（「应用」Tab 与搜索结果置顶区） */}
-      <ContextMenu
-        visible={!!appMenu}
-        x={appMenu?.x ?? 0}
-        y={appMenu?.y ?? 0}
+      <AppsContextMenu
+        appMenu={appMenu}
+        pinnedSet={pinnedSet}
         onClose={() => setAppMenu(null)}
-      >
-        <ContextMenuItem
-          icon={<ExternalLink className="size-3.5" />}
-          label="打开"
-          onClick={() => {
-            if (appMenu) {
-              openApp(appMenu.app.path);
-              setAppMenu(null);
-            }
-          }}
-        />
-        <ContextMenuItem
-          icon={<FolderOpen className="size-3.5" />}
-          label="打开所在位置"
-          onClick={() => appMenu && openAppLocation(appMenu.app)}
-        />
-        {appMenu && (
-          <ContextMenuItem
-            icon={<Pin className="size-3.5" />}
-            label={pinnedSet.has(appMenu.app.path.toLowerCase()) ? "取消置顶" : "置顶"}
-            onClick={() => appMenu && togglePinApp(appMenu.app)}
-          />
-        )}
-      </ContextMenu>
+        onOpen={(path) => {
+          openApp(path);
+          setAppMenu(null);
+        }}
+        onOpenLocation={openAppLocation}
+        onTogglePin={togglePinApp}
+      />
     </div>
   );
 }

@@ -149,8 +149,8 @@ impl EverythingSdk {
     }
 
     /// 数据库是否已加载（Everything 启动初期可能尚未就绪）
-    /// 目前仅测试在用，运行时改用 search_get_status 的 running 探测
-    #[allow(dead_code)]
+    /// 运行时走 search_get_status 的 running 探测；此方法仅测试使用
+    #[cfg(test)]
     pub fn is_db_loaded(&self) -> bool {
         unsafe { (self.fns.is_db_loaded)() != 0 }
     }

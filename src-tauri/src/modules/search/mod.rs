@@ -180,11 +180,17 @@ pub fn ensure_everything_running() {
 mod tests {
     use super::*;
 
+    /// 注册表读取容错：不存在的键返回 None（不 panic、不返回脏值）
     #[test]
-    fn position_at_cursor_clamps_to_workarea() {
-        // 位置计算依赖真实 Win32 状态，仅验证函数存在与返回类型
-        let _: fn(windows::Win32::Foundation::HWND) -> (i32, i32) =
-            crate::position_at_cursor_physical;
+    fn reg_value_missing_key_returns_none() {
+        unsafe {
+            let v = reg_value(
+                windows::Win32::System::Registry::HKEY_CURRENT_USER,
+                "SOFTWARE\\EasyTool__definitely_missing__",
+                Some("value"),
+            );
+            assert!(v.is_none());
+        }
     }
 
     /// 真实环境探测：Everything 已安装时应能找到 exe（安装器写 Uninstall 键，非 App Paths）

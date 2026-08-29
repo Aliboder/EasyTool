@@ -8,6 +8,7 @@ import {
   gridVerticalTarget,
 } from "@/lib/grid";
 import { cn } from "@/lib/utils";
+import { fmtRecent } from "./parts";
 
 export interface ScannedApp {
   name: string;
@@ -15,16 +16,6 @@ export interface ScannedApp {
   usage_count: number;
   /** 最近一次启动时间戳（毫秒；0 = 未记录） */
   last_launched_ms: number;
-}
-
-/** 最近启动的相对时间（今天/昨天/N天前） */
-function fmtRecent(ms: number): string {
-  if (ms <= 0) return "";
-  const day = 24 * 3600 * 1000;
-  const diff = Date.now() - ms;
-  if (diff < day) return "今天";
-  if (diff < 2 * day) return "昨天";
-  return `${Math.floor(diff / day)}天前`;
 }
 
 /** 应用置顶区：匹配应用以网格图标卡片展示 */

@@ -216,22 +216,21 @@ pub fn search_reset_apps(app: AppHandle) -> CmdResult<u32> {
     Ok(removed)
 }
 
-/// 复制文件路径文本到系统剪贴板 + 联动写入剪贴板历史
+/// 复制文件路径文本到系统剪贴板（路径文本会在剪贴板监听下自动进入历史，一条文本记录）
 #[tauri::command]
-pub fn search_copy_path(app: AppHandle, path: String) -> CmdResult<()> {
+pub fn search_copy_path(path: String) -> CmdResult<()> {
     if !super::super::clipboard::clipboard::write_text_rich(&path, None) {
         return Err(CommandError::from("写入剪贴板失败".to_string()));
     }
-    super::super::clipboard::record_file_to_history(&app, &path);
     Ok(())
 }
 
-/// 复制文件本身到系统剪贴板（CF_HDROP，可粘贴/拖拽到文件管理器）+ 联动写入历史
+/// 复制文件本身到系统剪贴板（CF_HDROP，可粘贴/拖拽到文件管理器）
+/// 文件会经剪贴板监听进入历史（hash 去重，重复复制只刷新时间）
 #[tauri::command]
-pub fn search_copy_file(app: AppHandle, path: String) -> CmdResult<()> {
-    if !super::super::clipboard::clipboard::write_files(&[path.clone()]) {
+pub fn search_copy_file(path: String) -> CmdResult<()> {
+    if !super::super::clipboard::clipboard::write_files(&[path]) {
         return Err(CommandError::from("写入剪贴板失败".to_string()));
     }
-    super::super::clipboard::record_file_to_history(&app, &path);
     Ok(())
 }
