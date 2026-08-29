@@ -204,6 +204,23 @@ export function CalendarPage() {
     [tl],
   );
 
+  // 时间线当前已加载范围（供数据变动后刷新）
+  const tlRangeRef = useRef<{ start: number; end: number } | null>(null);
+  useEffect(() => {
+    tlRangeRef.current = tl ? { start: tl.start, end: tl.end } : null;
+  }, [tl]);
+
+  // 数据变动（增删改后 loadRange 触发 range 变化）或切到时间线 tab 时，重拉当前已加载范围，保持实时
+  useEffect(() => {
+    if (tab !== "timeline") return;
+    const rng = tlRangeRef.current;
+    if (!rng) return;
+    invoke<RangePayload>("calendar_get_range", { startMs: rng.start, endMs: rng.end })
+      .then((r) => setTl((p) => (p ? { ...p, events: dedupeTl(r.events) } : p)))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, range]);
+
   const loadSubs = useCallback(() => {
     invoke<{ id: number; color: string; name: string }[]>("calendar_list_subscriptions")
       .then((list) => {
