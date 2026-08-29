@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
   ListTodo,
   Pencil,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
@@ -130,6 +132,35 @@ export function CalendarPage() {
     setSelectedKey(todayKey());
   };
 
+  // ---------- ICS 导入 ----------
+
+  const importIcs = async () => {
+    const sel = await open({
+      title: "选择 ICS 日历文件",
+      filters: [{ name: "日历文件", extensions: ["ics"] }],
+      multiple: false,
+    });
+    if (!sel) return;
+    const path = Array.isArray(sel) ? sel[0] : sel;
+    try {
+      const r = await invoke<{
+        events: number;
+        instances: number;
+        repeated: number;
+        skipped: number;
+        unsupported: number;
+      }>("calendar_import_ics", { path });
+      const parts = [`新增 ${r.instances} 条`];
+      if (r.repeated > 0) parts.push(`含 ${r.repeated} 门重复课程（已展开成每次）`);
+      if (r.unsupported > 0) parts.push(`${r.unsupported} 条规则暂不支持，仅保留首次`);
+      if (r.skipped > 0) parts.push(`跳过 ${r.skipped} 条`);
+      toast(`导入完成：${parts.join("，")}`);
+      loadRange();
+    } catch (e) {
+      toast(`导入失败：${e}`);
+    }
+  };
+
   // ---------- 增删改 ----------
 
   const saveEvent = async (input: {
@@ -231,6 +262,10 @@ export function CalendarPage() {
             </HeaderButton>
             <HeaderButton title="下一月" onClick={() => moveMonth(1)}>
               <ChevronRight className="size-4" />
+            </HeaderButton>
+            <HeaderButton title="导入 ICS 日程文件（课程表/日历）" onClick={importIcs}>
+              <Upload className="size-4" />
+              <span className="text-xs">导入</span>
             </HeaderButton>
           </>
         }

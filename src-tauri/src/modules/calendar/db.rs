@@ -369,6 +369,36 @@ impl CalendarDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
+    /// 批量插入导入条目（单事务；ICS 物化结果）
+    pub fn insert_imported(&self, items: &[super::ics::ImportItem]) -> DbResult<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO events (title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms)
+                     VALUES (?1,?2,?3,?4,?5,?6,NULL,?7,?7)",
+                )
+                .map_err(|e| e.to_string())?;
+            let now = now_ms();
+            for it in items {
+                stmt.execute(params![
+                    it.title,
+                    it.location,
+                    it.notes,
+                    it.all_day as i32,
+                    it.start_ms,
+                    it.end_ms,
+                    now
+                ])
+                .map_err(|e| e.to_string())?;
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())
+    }
+
     // ---------- 提醒日志（批次 4 用） ----------
 
     #[allow(dead_code)] // 批次 4（提醒）上线时启用

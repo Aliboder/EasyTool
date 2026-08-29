@@ -2,6 +2,8 @@
 
 pub mod commands;
 pub mod db;
+pub mod expand;
+pub mod ics;
 
 use std::sync::Mutex;
 use tauri::Manager;

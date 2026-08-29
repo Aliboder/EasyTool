@@ -19,17 +19,19 @@
 | 决策 | 理由 |
 |------|------|
 | 方案 A：规则存储(RRULE) + 按需展开 | 见 task_plan「已做决策」 |
-| expand 为纯函数 + Rust/TS 双实现双测试 | 前端即时 + 后端一致性 |
-| RRULE 子集限 Daily/Weekly+BYDAY/Monthly(+第N个星期X)/UNTIL | YAGNI；ICS 不支持规则降级单次 |
+| ICS 解析用现成 `ical` crate（0.10） | 不重复造轮子；行折叠/分段/字段解析全交它 |
+| RRULE 展开用现成 `rrule` crate（0.14，RFC5545 实现） | 不手写日历算法；BYDAY/INTERVAL/UNTIL/第N个星期X 全支持；仅"每月同日钳制到月末"按设计在此补一层（RFC 为跳过） |
+| expand 为纯函数（Rust 侧基于 rrule；TS 侧批次 3 同步同批用例） | 前端即时 + 后端一致性 |
+| ICS 导入采用**物化展开**（用户需求，先于批次 3） | 课表导入后月视图全学期可见；改单节课不影响其它；规则编辑（批次 3）面向用户新建 |
 | overrides 表 edit/delete 变体 | 例外不污染主表 |
 | 提醒线程 30s 一跳 + 睡眠补扫 | quota 样板 |
-| ICS 解析 `ical` crate、生成手写 | 轻依赖 |
 | JSON 导入按 id 去重追加合并 | 简单安全 |
 
 ## 遇到的问题
 | 问题 | 解决方案 |
 |------|---------|
-| （实施中记录） | |
+| 自写展开曾用全角逗号夹具导致测试误判 | 字节级调试定位：代码转义完好，是测试期待错误，改半角 |
+| rrule crate 的 DateTime 是 chrono 类型、NWeekday 为枚举 | 读 crate 源码确认 API 后适配 |
 
 ## 资源
 - 设计文档：`docs/superpowers/specs/2026-08-29-calendar-design.md`

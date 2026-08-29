@@ -59,3 +59,5 @@ windows = { version = "0.61", features = [
     "Win32_System_SystemInformation",
 ] }
 tauri-plugin-updater = "2.10.1"
+ical = "0.10"
+rrule = "0.14"

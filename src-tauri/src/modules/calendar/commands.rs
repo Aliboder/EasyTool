@@ -219,3 +219,14 @@ pub fn calendar_delete_todo(db: State<'_, Mutex<CalendarDb>>, id: i64) -> Result
     let db = db.lock().map_err(|e| e.to_string())?;
     db.delete_todo(id)
 }
+
+/// 导入 ICS 日程文件：读取 → 解析 → 物化展开 → 写入；返回统计
+#[tauri::command]
+pub fn calendar_import_ics(
+    db: State<'_, Mutex<CalendarDb>>,
+    path: String,
+) -> Result<super::ics::ImportReport, String> {
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {e}"))?;
+    let db = db.lock().map_err(|e| e.to_string())?;
+    super::ics::import_ics_text(&db, &text)
+}
