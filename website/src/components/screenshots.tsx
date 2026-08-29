@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ClipboardList, Clock, Gauge, Monitor, Search, Smile } from "lucide-react";
+import { CalendarDays, ClipboardList, Clock, Gauge, Monitor, Search, Smile } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../lib/cn";
 import { Reveal } from "./reveal";
@@ -10,6 +10,7 @@ import { RealMainWindow } from "./real-main-window";
 import { RealQuotaSettings } from "./real-quota-settings";
 import { RealEmoji } from "./real-emoji";
 import { RealTimetracker } from "./real-timetracker";
+import { RealCalendar } from "./real-calendar";
 import { RealAppShell } from "./real-app-shell";
 
 const MODULES: { id: string; label: string; desc: string; icon: LucideIcon }[] = [
@@ -18,6 +19,7 @@ const MODULES: { id: string; label: string; desc: string; icon: LucideIcon }[] =
   { id: "quota", label: "额度监控", desc: "多账户余额 · 阈值系统通知", icon: Gauge },
   { id: "emoji", label: "表情面板", desc: "最近使用 · 分类检索 · 自定义导入", icon: Smile },
   { id: "timetracker", label: "时长统计", desc: "排行 + 甘特时间线 + 自动分类", icon: Clock },
+  { id: "calendar", label: "日程表", desc: "五视图 · 重复规则 · 到期提醒", icon: CalendarDays },
   { id: "shell", label: "App 外壳", desc: "单窗口 · 底部导航 · 托盘快捷入口", icon: Monitor },
 ];
 
@@ -46,6 +48,8 @@ export function Screenshots() {
         return <RealEmoji />;
       case "timetracker":
         return <RealTimetracker />;
+      case "calendar":
+        return <RealCalendar />;
       case "shell":
         return <RealAppShell />;
       default:
@@ -56,7 +60,7 @@ export function Screenshots() {
   return (
     <section id="screenshots" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal>
-        <SectionHead eyebrow="真实界面" title="所见即所得" sub="全部用代码按 v0.7.0 实际界面还原，可以点击、搜索、置顶、删除。" />
+        <SectionHead eyebrow="真实界面" title="所见即所得" sub="全部用代码按 v0.9.0 实际界面还原，可以点击、搜索、置顶、删除。" />
       </Reveal>
 
       <Reveal delay={0.08}>

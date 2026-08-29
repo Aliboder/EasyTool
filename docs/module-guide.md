@@ -2,7 +2,7 @@
 
 本指南供 AI Agent 阅读：如何为 EasyTool 快速新增一个功能模块并衔接现有架构。开发前请结合 `AGENTS.md` 阅读；文档与代码不一致时以代码为准。
 
-> 当前事实基线：后端 Rust 单元测试 **91 通过 / 2 ignored**；前端 vitest **33 通过**（纯函数单测，见第 7 节）；构建要求 `cargo build` 零警告。
+> 当前事实基线：后端 Rust 单元测试 **116 通过 / 3 ignored**（3 个需真实 Everything / 真实 .ics 文件，默认忽略）；前端 vitest **48 通过**（纯函数单测，见第 7 节）；构建要求 `cargo build` 零警告。
 
 ## 1. 模块是什么
 
@@ -60,7 +60,7 @@ src/modules/<id>/                      # React 前端（页面 + 配置三件套
 - `enabled`：默认启用；`default_config`：任意 JSON，首次启动并入 config（`modules/merge_manifests`，幂等，已存在的键不覆盖）
 - `description`：可选，设置页「功能模块」搜索用
 
-> `icon` 是**键名字符串**，须在 `src/components/layout/Sidebar.tsx` 的 `ICONS` 映射里加一项（现有键：`clipboard/clock/gauge/smile/search/bot`，lucide 图标），缺了会回退默认图标。**不要改 manifest 的 icon 为组件引用**。
+> `icon` 是**键名字符串**，须在 `src/components/layout/Sidebar.tsx` 的 `ICONS` 映射里加一项（现有键：`clipboard/clock/gauge/smile/search/bot/calendar`，lucide 图标），缺了会回退默认图标。**不要改 manifest 的 icon 为组件引用**。
 >
 > manifest 打包为 resources 嵌入 exe（dev 模式 fallback 到 `src-tauri/modules/`），新增模块无需改打包配置。
 
@@ -199,8 +199,8 @@ const PAGE_IMPORTS: Record<string, () => Promise<{ default: React.ComponentType<
 
 ### Step 6：测试
 
-- 后端纯逻辑 `#[cfg(test)]`（当前 91 通过 / 2 ignored，`cargo test` 为准）
-- **前端纯函数也可以有单测**（vitest，当前 33 通过）：
+- 后端纯逻辑 `#[cfg(test)]`（当前 116 通过 / 3 ignored，`cargo test` 为准）
+- **前端纯函数也可以有单测**（vitest，当前 48 通过）：
   - 纯函数必须放在**不含 `@/` 导入**的文件里（vitest 解析不了 `@` 别名）——参考 `modules/quota/pricing.ts`、`modules/clipboard/date-group.ts`
   - **内容含 JSX 的文件即使纯函数也要 `.tsx` 后缀**——参考 `modules/search/search-utils.tsx`
   - 校验：`npx vitest run`、`npx tsc --noEmit`、`npm run build`
@@ -343,4 +343,5 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 - **clipboard**：系统监听 + 文件存储 + 固定板块小条目拖拽 + 跟手粘贴（隐藏主窗口注入）；`date-group.ts` 是「无依赖纯函数被 vitest」的样例
 - **quota**：后台轮询线程 + **多账户 registry 驱动**（8+ 供应商，卡片形态注册表）+ 定时任务/告警 + SQLite 时间序列 + 卡片统一等高拖拽排序（坑 9 方案）+ 峰谷纯函数 `pricing.ts` 双端实现（Rust + TS 各一套单测）——**后台任务 / 数据可视化 / 多实例 / 统一等高卡片 类模块的首选参照**
 - **timetracker**：SetWinEventHook 事件采集 + 心跳线程 + 跨天会话分桶 + 分类规则——系统事件/会话类模块参照；`db_stats.rs` 是「大 db.rs 拆分」样例
+- **calendar**：RRULE 重复规则「存一条规则 + 按需展开」的纯函数（Rust + TS 双实现双单测同一批用例）、ICS 导入导出（现成 crate，不重复造轮子）、常驻提醒线程 + 外部订阅定时刷新、`event_overrides` 例外表——**规则存储 / 导入导出 / 提醒线程 类模块的首选参照**
 - **emoji**：`config.ts` + `useModuleConfig` + 受控 Settings 的配置标准参照

@@ -8,7 +8,7 @@ const FILES: Result[] = [
   { name: "交通流理论_第3章.pdf", path: "D:\\资料\\交通运输学" },
   { name: "开题报告_v3.docx", path: "D:\\SystemFiles\\Documents" },
   { name: "交叉口仿真数据.xlsx", path: "D:\\课程设计" },
-  { name: "EasyTool_0.7.0_x64-setup.exe", path: "D:\\Downloads" },
+  { name: "EasyTool_0.9.0_x64-setup.exe", path: "D:\\Downloads" },
   { name: "轨道交通行车组织.mp4", path: "E:\\网课录播" },
   { name: "毕业设计参考文献汇总.pdf", path: "D:\\资料\\文献" },
   { name: "实验数据采集.py", path: "D:\\Code\\sensor-lab" },

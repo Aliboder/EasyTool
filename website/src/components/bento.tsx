@@ -1,5 +1,6 @@
 import {
   ArrowUpRight,
+  Calendar,
   Clock,
   ClipboardList,
   Gauge,
@@ -17,6 +18,7 @@ import { MiniQuota } from "./minis/quota";
 import { MiniEmoji } from "./minis/emoji";
 import { MiniSearch } from "./minis/search";
 import { MiniTimetracker } from "./minis/timetracker";
+import { MiniCalendar } from "./minis/calendar";
 
 /**
  * 模块卡片：
@@ -113,7 +115,7 @@ export function Bento() {
       <Reveal>
         <SectionHead
           eyebrow="核心模块"
-          title="五个模块，各司其职"
+          title="六个模块，各司其职"
           sub="下面的演示都是真实交互，不是截图，动手试试。点「了解详情」直达下方模块深潜。"
         />
       </Reveal>
@@ -176,6 +178,18 @@ export function Bento() {
             link="#module-search"
           >
             <MiniSearch />
+          </Card>
+        </div>
+
+        <div className="lg:col-span-6">
+          <Card
+            icon={Calendar}
+            title="日程表"
+            desc="事件 + 待办合一的本地日历，月视图按课程自动配色，重复日程只需定义一次规则。"
+            variant="inset"
+            link="#module-calendar"
+          >
+            <MiniCalendar />
           </Card>
         </div>
       </div>

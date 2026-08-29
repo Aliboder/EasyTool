@@ -6,6 +6,26 @@ const RELEASES = "https://github.com/Aliboder/EasyTool/releases";
 
 const LOG = [
   {
+    version: "v0.9.0",
+    date: "2026-08-30",
+    highlight: true,
+    color: "text-emerald-400",
+    colorBg: "bg-emerald-500/15",
+    tag: "latest",
+    summary: "新增「日程表」模块：事件与待办合一，五视图 + 重复规则 + 到期提醒 + 导入导出。",
+    detail: "日 / 周 / 月 / 时间线 / 待办五个视图平滑切换；重复规则支持每天、每周多选、每月同日、每月第 N 个星期几，附截止日期与「仅此一次」例外；按课程名自动配色并可一键聚焦；事件提前与待办逾期系统通知（单个事件可单独覆盖）；.ics 导入导出保留重复规则与例外、JSON 全量备份、外部日历只读订阅定时刷新；设置集中在一体化抽屉统一管理。",
+  },
+  {
+    version: "v0.8.0",
+    date: "2026-08-29",
+    highlight: true,
+    color: "text-emerald-400",
+    colorBg: "bg-emerald-500/15",
+    tag: "latest",
+    summary: "额度监控全面升级 + 设置面板改版 + 剪贴板列表模式与按天分组。",
+    detail: "额度账户卡片取消厂商分组、可拖拽自由排序，保存后密钥回显（掩码 / 明文切换），卡片统一等高防拖拽变形；设置面板改版为外观 / 行为 / 数据管理三块，支持恢复上次模块、一键清理历史数据；剪贴板新增「列表模式」统一文本/图片/文件展示，历史按天分组（今日 / 昨天 / 日期头）；另有一批体验优化：剪贴板键盘流（Enter / 数字直达粘贴）、图片 JPEG 自适应、多显示器位置记忆、数据库异步整理等。",
+  },
+  {
     version: "v0.7.0",
     date: "2026-08-29",
     highlight: true,

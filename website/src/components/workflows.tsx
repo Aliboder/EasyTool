@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from "motion/react";
 import {
   AppWindow,
   ArrowRight,
+  CalendarDays,
   Check,
   ClipboardList,
   Clock,
@@ -63,6 +64,19 @@ const SCENARIOS: Scenario[] = [
     highlight: "1900+ 表情 + 自定义图片，聊天常客都停在「最近」",
     accent: "text-amber-400",
   },
+  {
+    name: "期末周",
+    tag: "备考冲刺",
+    desc: "DDL 与课程全部记进日程表，重复课表只记一条规则自动展开，到点系统提醒；复习摘录进剪贴板，课件秒搜即得。",
+    flow: [
+      { icon: CalendarDays, label: "日程表" },
+      { icon: ClipboardList, label: "剪贴板历史" },
+      { icon: Search, label: "文件秒搜" },
+      { icon: Clock, label: "时长统计" },
+    ],
+    highlight: "重复课程一次定义每天自动上墙，「仅此一次」例外随时改",
+    accent: "text-rose-400",
+  },
 ];
 
 export function Workflows() {
@@ -78,7 +92,7 @@ export function Workflows() {
         />
       </Reveal>
 
-      <div className="mt-12 grid gap-5 md:grid-cols-3">
+      <div className="mt-12 grid gap-5 md:grid-cols-2">
         {SCENARIOS.map((s, i) => (
           <Reveal key={s.name} delay={i * 0.08}>
             <article className="group flex h-full flex-col rounded-2xl border-2 border-white/10 bg-gradient-to-br from-white/[0.03] to-transparent p-6 transition-all hover:border-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/5">

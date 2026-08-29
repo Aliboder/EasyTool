@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 const STATS = [
   { value: 500, label: "条剪贴板历史", unit: "" },
   { value: 1900, label: "内置表情", unit: "+" },
-  { value: 100, label: "单次搜索返回", unit: "" },
-  { value: 66, label: "Rust 单元测试", unit: "+" },
-  { value: 5, label: "功能模块", unit: "" },
+  { value: 116, label: "Rust 单元测试", unit: "+" },
+  { value: 48, label: "前端单元测试", unit: "" },
+  { value: 6, label: "功能模块", unit: "" },
 ];
 
 function StepCount({ target }: { target: number }) {

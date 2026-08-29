@@ -14,6 +14,7 @@ const TREE: [string, string][] = [
   ["quota.db", "额度历史 / Go 用量周期"],
   ["apps.db", "已安装应用使用频率"],
   ["timetracker.db", "软件使用时长 · SQLite WAL"],
+  ["calendar.db", "日程事件 / 待办 / 重复例外"],
   ["images\\", "图片原文（最长边 ≤2048）"],
   ["thumbs\\", "256px 缩略图缓存"],
   ["easytool.log", "运行日志（自动轮转）"],

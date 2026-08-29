@@ -14,13 +14,13 @@ export function Footer() {
               EASYTOOL
             </p>
             <p className="mt-2 max-w-[280px] text-sm leading-relaxed text-zinc-500">
-              Windows 效率工具箱，剪贴板历史、AI 额度监控、表情面板、文件秒搜、时长统计。本地优先，开源免费。
+              Windows 效率工具箱，剪贴板历史、AI 额度监控、表情面板、文件秒搜、时长统计、日程表。本地优先，开源免费。
             </p>
             <div className="mt-4 flex items-center gap-3">
               <a href={REPO} target="_blank" rel="noreferrer" className="flex size-8 items-center justify-center rounded-lg border border-white/10 text-zinc-400 transition-colors hover:border-emerald-500/50 hover:text-white">
                 <Github className="size-4" />
               </a>
-              <span className="text-xs text-zinc-600">MIT License · v0.7.0</span>
+              <span className="text-xs text-zinc-600">MIT License · v0.9.0</span>
             </div>
           </div>
 
@@ -29,7 +29,7 @@ export function Footer() {
             <h4 className="font-display text-xs font-semibold uppercase tracking-wider text-zinc-400">产品</h4>
             <ul className="mt-3 space-y-2 text-sm text-zinc-500">
               <li><a href="#modules" className="transition-colors hover:text-white">功能模块</a></li>
-              <li><a href="#hotkeys" className="transition-colors hover:text-white">快捷键</a></li>
+              <li><a href="#workflows" className="transition-colors hover:text-white">使用场景</a></li>
               <li><a href="#screenshots" className="transition-colors hover:text-white">界面预览</a></li>
               <li><a href={`${REPO}/releases`} target="_blank" rel="noreferrer" className="transition-colors hover:text-white">下载安装</a></li>
             </ul>

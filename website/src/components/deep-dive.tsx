@@ -1,21 +1,25 @@
 import { motion, useReducedMotion } from "motion/react";
 import {
   BellRing,
+  CalendarDays,
   Clock,
   ClipboardList,
   Copy,
+  FileUp,
   FolderOpen,
   Gauge,
   History,
   ImageDown,
   Languages,
   Layers,
+  Move,
+  Palette,
+  Repeat,
   Search,
   SearchCode,
   SearchX,
   Send,
   ShieldAlert,
-  SlidersHorizontal,
   Smile,
   SortAsc,
   Sparkles,
@@ -46,11 +50,11 @@ const MODULES: ModuleInfo[] = [
     tagline: "复制过的一切，随时找回",
     desc: "监听系统剪贴板，文本、图片、文件自动入历史。固定、拖拽、搜索、备注，跟手粘贴不打断工作流。",
     features: [
-      { icon: Layers, text: "上限 500 条，内容指纹去重，重复复制只更新时间" },
+      { icon: Layers, text: "上限 500 条，内容指纹去重，按天分组（今日 / 昨天 / 日期头 + 计数）" },
       { icon: Copy, text: "「粘贴为纯文本」开关与右键复制纯文本，去格式一键完成" },
       { icon: SearchX, text: "空格分词搜索，多关键词全部命中并逐处高亮" },
       { icon: StickyNote, text: "条目备注、固定排序、使用过的记录自动置顶为最新" },
-      { icon: ImageDown, text: "图片降采样到最长边 2048 存储 + 256 缩略图懒加载，右键可调系统看图" },
+      { icon: ImageDown, text: "「列表模式」统一文本/图片/文件单行展示；图片降采样 2048 + 256 缩略图" },
     ],
     meta: ["跟手粘贴", "SQLite", "WM_CLIPBOARDUPDATE"],
     accent: "text-emerald-400",
@@ -62,10 +66,10 @@ const MODULES: ModuleInfo[] = [
     desc: "多账户额度与消费趋势，阈值告警直接弹 Windows 通知；消费突增自动提醒。",
     features: [
       { icon: Gauge, text: "DeepSeek / OpenCode Go 多账户，独立密钥与余额" },
+      { icon: Move, text: "账户卡片自由拖拽排序，保存后密钥回显（掩码 / 明文切换）" },
       { icon: BellRing, text: "预警 + 紧急双阈值，跌破即弹系统通知（Toast）" },
       { icon: ShieldAlert, text: "消费突增检测：单日消费超近 7 天日均 3 倍时提醒" },
       { icon: History, text: "每账户 5000 条余额历史 + Go 用量周期自动追踪" },
-      { icon: SlidersHorizontal, text: "轮询间隔可调（默认 30s，最低 5s），后台静默运行" },
     ],
     meta: ["后台轮询", "多账户", "凭据管理器", "reqwest"],
     accent: "text-cyan-400",
@@ -115,6 +119,21 @@ const MODULES: ModuleInfo[] = [
     meta: ["SQLite", "Win32 钩子", "WASAPI"],
     accent: "text-violet-400",
   },
+  {
+    id: "calendar",
+    name: "日程表",
+    tagline: "事件、待办，一个日历全装下",
+    desc: "日/周/月/时间线/待办五视图，重复规则与「仅此一次」例外，按课程自动配色，到点系统提醒；.ics 导入导出与外部订阅，数据全部本地。",
+    features: [
+      { icon: CalendarDays, text: "日 / 周 / 月 / 时间线 / 待办五视图，平滑切换动画，窗口随内容自适应" },
+      { icon: Repeat, text: "重复规则：每天 / 每周多选 / 每月同日 / 第 N 个星期几，可设截止与「仅此一次」例外" },
+      { icon: Palette, text: "按课程名自动分配稳定配色，课程一键聚焦，课表一眼扫清" },
+      { icon: BellRing, text: "事件提前提醒 + 待办逾期提醒，单个事件可单独覆盖" },
+      { icon: FileUp, text: ".ics 导入导出（保留重复规则与例外）+ JSON 全量备份 + 外部日历只读订阅" },
+    ],
+    meta: ["RRULE", "calendar.db", "系统通知"],
+    accent: "text-rose-400",
+  },
 ];
 
 export function DeepDive() {
@@ -126,7 +145,7 @@ export function DeepDive() {
         <SectionHead
           eyebrow="模块深潜"
           title="每个模块，都有真功夫"
-          sub="特性清单直接来自 v0.7.0 源码，没有营销话术。"
+          sub="特性清单直接来自 v0.9.0 源码，没有营销话术。"
         />
       </Reveal>
 
@@ -151,6 +170,7 @@ export function DeepDive() {
                         emoji: Smile,
                         search: Search,
                         timetracker: Clock,
+                        calendar: CalendarDays,
                       };
                       const Icon = icons[m.id];
                       return <Icon className="size-5" />;

@@ -39,8 +39,8 @@ const TECHS = [siRust, siTauri, siReact, siTypescript, siTailwindcss, siVite, si
 const HIGHLIGHTS = [
   {
     icon: FlaskConical,
-    title: "66+ 后端单元测试",
-    body: "去重、自写守卫、数据迁移、热键解析、时长聚合等核心逻辑全覆盖；另有 11 个前端单测。",
+    title: "116+ 后端单元测试",
+    body: "去重、自写守卫、数据迁移、热键解析、重复日程展开、时长聚合等核心逻辑全覆盖；另有 48 个前端单测（纯函数双实现、双套用例）。",
   },
   {
     icon: Cpu,

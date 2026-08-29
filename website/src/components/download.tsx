@@ -19,6 +19,7 @@ const WHAT_YOU_GET = [
   { icon: "😀", text: "1900+ 表情直输" },
   { icon: "🔍", text: "Everything 文件秒搜 + 应用中心" },
   { icon: "⏱️", text: "软件使用时长统计" },
+  { icon: "📅", text: "日程表：事件 + 待办 + 重复提醒" },
 ];
 
 export function Download() {
@@ -50,7 +51,7 @@ export function Download() {
               <DownloadIcon className="size-5" />
               下载 Windows 版
             </ShinyButton>
-            <p className="font-display text-xs text-zinc-500">v0.7.0 · 2026-08-29 发布 · NSIS 安装包 · 约 8 MB</p>
+            <p className="font-display text-xs text-zinc-500">v0.9.0 · 2026-08-30 发布 · NSIS 安装包 · 约 5 MB</p>
 
             <div className="flex items-start gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-4">
               <Info className="mt-0.5 size-4 shrink-0 text-amber-400" />
