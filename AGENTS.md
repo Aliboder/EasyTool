@@ -15,6 +15,7 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 - `emoji` 表情面板：1900+ 表情分类检索，中文/英文/shortcode 搜索，收藏置顶，SendInput 直输；支持导入/添加自定义表情与分组管理
 - `search` 文件搜索：Everything 全文搜索（**需用户安装 Everything**），Everything64.dll 随应用打包；第一个「应用」Tab = **已安装应用中心**（扫描开始菜单，点击即启动，前台频率排序），搜索时匹配应用置顶显示
 - `timetracker` 时长统计：自动记录前台软件使用时长，今日/本周/本月总览与对比、应用排行（总/活跃时长）、每日甘特时间线、自动分类 + 自定义正则规则、AFK 离开检测
+- `calendar` 日程表：事件/待办一体的本地日历，日/周/月/**时间线**/待办五视图 + 平滑切换动画；重复规则（每天/每周+间隔/每月同日/第 N 个/倒数第 N 个星期几）与「仅此一次」例外；按课程自动配色 + 课程聚焦；.ics 导入/导出(保留重复规则+EXDATE 例外)、JSON 备份、外部日历订阅（只读、定时刷新）；事件/全局两档提醒；设置在卡片式抽屉统一管理
 
 ## 技术栈
 
@@ -34,14 +35,14 @@ src-tauri/src/
 ├── lib.rs         # 壳：托盘、全局热键、窗口事件、模块 setup、日志
 ├── config.rs      # AppConfig + ConfigState(Mutex)、config 读写命令
 ├── migrate.rs     # 旧数据一次性迁移
-└── modules/       # 模块注册表 mod.rs + clipboard/ + quota/ + emoji/ + search/ + timetracker/
+└── modules/       # 模块注册表 mod.rs + clipboard/ + quota/ + emoji/ + search/ + timetracker/ + calendar/
 src-tauri/modules/  # 模块 manifest.json 目录
 src/
 ├── App.tsx        # 壳 UI：底部导航 + 模块页 + 设置页
 ├── lib/           # api(ipc封装)/theme/toast/utils/grid/use-horizontal-wheel/use-window-entrance
 ├── hooks/         # useModuleConfig(模块配置读写)/useFileIcons
 ├── components/    # ui(shadcn) + layout(Sidebar) + module-header/setting-row/settings-view + hotkey-recorder + LazyImage + ErrorBoundary + context-menu
-└── modules/       # clipboard/ + quota/ + emoji/ + search/ + timetracker/ 前端
+└── modules/       # clipboard/ + quota/ + emoji/ + search/ + timetracker/ + calendar/ 前端
 website/           # 官网（独立工程，详见 docs/website-guide.md）
 ```
 
@@ -107,7 +108,7 @@ npx tsc --noEmit       # 前端类型检查
 ```
 
 - 打包只支持 `msi/nsis`（**不支持 portable**）
-- 后端 91 个单元测试（另 2 个需真实 Everything 环境的探测测试默认 ignored）；前端有 vitest 纯函数单测（当前 33 个）
+- 后端 116 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 48 个）
 
 ## 发版流程（AI 代发版时必须按此执行）
 
