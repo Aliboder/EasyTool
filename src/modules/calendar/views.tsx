@@ -2,7 +2,7 @@
 // 时间轴布局复用 utils.layoutDay 纯函数（重叠分列、窗口钳制），全部数据来自父组件。
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarPlus, ChevronDown, ChevronRight, Clock, ListTodo, MapPin } from "lucide-react";
+import { CalendarPlus, ChevronDown, ChevronRight, ListTodo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs } from "./utils";
@@ -82,19 +82,17 @@ function EventBlock({
   onClick: EventClick;
   onMenu: EventMenu;
 }) {
-  const compact = height < 34;
+  const compact = height < 30;
   const tint = eventTint(event, subColors);
   return (
     <div
-      className="absolute overflow-hidden rounded-md border border-primary/15 border-l-2 border-l-primary bg-primary/10 px-1.5 py-1 shadow-sm ring-1 ring-primary/5 transition-colors hover:bg-primary/20 hover:ring-primary/25"
+      className="absolute overflow-hidden rounded-lg border border-border/60 border-l-[3px] border-l-primary bg-card px-1.5 py-1 shadow-sm transition-all hover:z-20 hover:border-foreground/15 hover:shadow-md"
       style={{
         top: top + 1,
         height: height - 2,
         left: `${left}%`,
         width: `${width}%`,
-        ...(tint
-          ? { borderLeftColor: tint, backgroundColor: `${tint}1f`, boxShadow: `inset 0 0 0 1px ${tint}1a` }
-          : {}),
+        ...(tint ? { borderLeftColor: tint } : {}),
       }}
       title={`${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)} ${event.title}${event.subscription_id != null ? " · 订阅" : ""}${event.location ? " · " + event.location : ""}`}
       onClick={(e) => {
@@ -108,23 +106,34 @@ function EventBlock({
         onMenu(event, e.clientX, e.clientY);
       }}
     >
-      <div className="truncate text-[11px] font-semibold leading-tight text-foreground">{event.title}</div>
+      {/* 标题（重点） */}
+      <div
+        className={cn(
+          "truncate leading-tight text-foreground",
+          compact ? "text-[11px] font-semibold" : "text-xs font-semibold",
+        )}
+      >
+        {event.title}
+      </div>
+      {/* 时间 + 地点 一行小字 */}
       {!compact && (
-        <div className="mt-0.5 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
-          <Clock className="size-2.5" />
-          <span className="truncate">
-            {fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}
-          </span>
+        <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
+          <span
+            className="size-1 flex-none rounded-full bg-muted-foreground/40"
+            style={tint ? { backgroundColor: tint } : undefined}
+          />
+          <span className="truncate tabular-nums">{fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}</span>
+          {event.location && (
+            <>
+              <span className="flex-none text-border">·</span>
+              <span className="truncate opacity-80">{event.location}</span>
+            </>
+          )}
         </div>
       )}
-      {!compact && event.location && (
-        <div className="mt-0.5 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
-          <MapPin className="size-2.5" />
-          <span className="truncate">{event.location}</span>
-        </div>
-      )}
-      {height > 8 && height < 34 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center text-[9px] text-muted-foreground/70">
+      {/* 很矮的卡片：底部补一行开始时间 */}
+      {height > 8 && height < 30 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center text-[9px] tabular-nums text-muted-foreground/70">
           {fmtHM(event.start_ms)}
         </div>
       )}
@@ -238,8 +247,8 @@ export function WeekView({
             return (
               <div
                 key={e.id}
-                className="truncate rounded bg-primary/25 px-1 text-[10px] text-primary"
-                style={tint ? { backgroundColor: `${tint}2e`, color: tint } : undefined}
+                className="flex min-w-0 items-center gap-1 truncate rounded-full border border-border/60 bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                style={tint ? { backgroundColor: `${tint}1a`, color: tint } : undefined}
                 title={e.title}
                 onClick={() => onEventClick(e)}
                 onContextMenu={(ev) => {
@@ -247,7 +256,8 @@ export function WeekView({
                   onEventMenu(e, ev.clientX, ev.clientY);
                 }}
               >
-                {e.title}
+                <span className="size-1 flex-none rounded-full bg-current opacity-70" />
+                <span className="truncate">{e.title}</span>
               </div>
             );
           })}
@@ -383,15 +393,15 @@ export function DayView({
               return (
                 <div
                   key={e.id}
-                  className="flex items-center gap-2 rounded-md bg-primary/15 px-2 py-1 text-xs text-primary"
-                  style={tint ? { backgroundColor: `${tint}1f`, color: tint } : undefined}
+                  className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-primary/15 px-2 py-1 text-xs font-medium text-primary"
+                  style={tint ? { backgroundColor: `${tint}1a`, color: tint } : undefined}
                   onClick={() => onEventClick(e)}
                   onContextMenu={(ev) => {
                     ev.preventDefault();
                     onEventMenu(e, ev.clientX, ev.clientY);
                   }}
                 >
-                  <span className="rounded bg-primary/25 px-1 text-[10px]" style={tint ? { backgroundColor: `${tint}2e` } : undefined}>全天</span>
+                  <span className="size-1.5 flex-none rounded-full bg-current opacity-70" />
                   <span className="truncate">{e.title}</span>
                   {e.location && <span className="ml-auto truncate text-[10px] opacity-70">📍 {e.location}</span>}
                 </div>
