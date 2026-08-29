@@ -1,13 +1,19 @@
 // 日程表设置抽屉（受控组件；配置走 Page 的 useModuleConfig；数据管理自取数据）
-// 布局：提醒 / 视图 / 日程账号 / 数据 四分区；日程账号 = 订阅源（自动同步、只读）+ 导入文件（一次导入、可编辑）
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+// 布局与其他模块统一：Card 分组 + 共享 SettingRow；日程账号走额度式「⋯ 菜单」管理
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { Bell, CalendarPlus, CalendarX2, Database, Download, Eye, Search, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingRow } from "@/components/setting-row";
+import { ContextMenu } from "@/components/ui/context-menu";
+import { ContextMenuItem } from "@/components/ui/context-menu-item";
+import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { fmtKeyLong, todayKey } from "./utils";
@@ -27,6 +33,15 @@ const REMIND_OPTIONS = [
   { value: 60, label: "提前 1 小时" },
 ];
 
+const SUB_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#64748b"];
+const REFRESH_OPTIONS = [
+  { value: 0, label: "仅手动刷新" },
+  { value: 30, label: "每 30 分钟" },
+  { value: 120, label: "每 2 小时" },
+  { value: 360, label: "每 6 小时" },
+  { value: 1440, label: "每天" },
+];
+
 interface IcsImportInfo {
   id: number;
   name: string;
@@ -44,20 +59,6 @@ interface SubscriptionInfo {
   last_sync_ms: number | null;
   event_count: number;
 }
-
-/// 日程账号 = 订阅源（sub）或导入文件（ics）的统一行
-type AccountRow =
-  | { kind: "sub"; name: string; sub: SubscriptionInfo }
-  | { kind: "ics"; name: string; imp: IcsImportInfo };
-
-const SUB_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#64748b"];
-const REFRESH_OPTIONS = [
-  { value: 0, label: "仅手动刷新" },
-  { value: 30, label: "每 30 分钟" },
-  { value: 120, label: "每 2 小时" },
-  { value: 360, label: "每 6 小时" },
-  { value: 1440, label: "每天" },
-];
 
 interface StatsPayload {
   events: number;
@@ -84,49 +85,12 @@ function threeMonthsAgo(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-/// 分区标题：图标 + 文字 + 右侧分隔线
-function SectionHeader({ icon, title, desc }: { icon: ReactNode; title: string; desc?: string }) {
-  return (
-    <div className="space-y-0.5">
-      <div className="flex items-center gap-1.5 text-sm font-medium">
-        <span className="text-muted-foreground">{icon}</span>
-        {title}
-        <div className="ml-1 h-px flex-1 bg-border" />
-      </div>
-      {desc && <p className="text-xs text-muted-foreground">{desc}</p>}
-    </div>
-  );
-}
-
-/// 设置行：左侧标题/说明，右侧控件（统一间距）
-function SettingRow({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <div className="text-sm font-medium">{title}</div>
-        {desc && <div className="text-xs text-muted-foreground">{desc}</div>}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
-
-/// 小分组标题（数据区内的「清理 / 备份导出 / 事件管理」）
-function MiniLabel({ icon, text }: { icon: ReactNode; text: string }) {
-  return (
-    <div className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
-      {icon}
-      {text}
-    </div>
-  );
-}
-
-/// 账号类型小标签：订阅=蓝，文件=灰
+/// 账号类型小标签：订阅=蓝，文件=灰（与其他模块的 chips 同款）
 function TypeBadge({ kind }: { kind: "sub" | "ics" }) {
   return (
     <span
       className={cn(
-        "shrink-0 rounded px-1 py-px text-[9px] font-medium leading-4",
+        "shrink-0 rounded px-1.5 py-0.5 text-[10px]",
         kind === "sub" ? "bg-blue-500/15 text-blue-600 dark:text-blue-400" : "bg-muted text-muted-foreground",
       )}
     >
@@ -154,6 +118,7 @@ export function CalendarSettings({
   const [newSub, setNewSub] = useState({ name: "", url: "", color: SUB_COLORS[0] });
   const [editingSub, setEditingSub] = useState<number | null>(null);
   const [subDrafts, setSubDrafts] = useState<Record<number, SubscriptionInfo>>({});
+  const [subMenu, setSubMenu] = useState<{ id: number; x: number; y: number } | null>(null);
 
   const loadStats = () => {
     invoke<StatsPayload>("calendar_stats").then(setStats).catch(() => {});
@@ -187,7 +152,7 @@ export function CalendarSettings({
   }, [events, keyword]);
 
   /// 合并后的日程账号列表（订阅 + 导入文件，按名称排序）
-  const accounts = useMemo<AccountRow[]>(() => {
+  const accounts = useMemo(() => {
     return [
       ...subs.map((s) => ({ kind: "sub" as const, name: s.name, sub: s })),
       ...imports.map((i) => ({ kind: "ics" as const, name: i.name, imp: i })),
@@ -392,260 +357,283 @@ export function CalendarSettings({
     }
   };
 
+  const openSubMenu = (s: SubscriptionInfo, e: MouseEvent) => {
+    setSubMenu({ id: s.id, x: e.clientX, y: e.clientY });
+  };
+
+  const menuSub = subMenu ? subs.find((s) => s.id === subMenu.id) : null;
+
   return (
     <div className="space-y-6 p-6">
       {/* 提醒 */}
-      <div className="space-y-2.5">
-        <SectionHeader icon={<Bell className="size-3.5" />} title="提醒" desc="事件和待办的系统通知" />
-        <SettingRow title="事件提醒" desc="事件开始前按提前量发系统通知（电脑开着才收得到）">
-          <Switch checked={cfg.reminderEnabled} onCheckedChange={(v) => onUpdate({ reminderEnabled: v })} />
-        </SettingRow>
-        {cfg.reminderEnabled && (
-          <SettingRow title="提前量" desc="像手机闹钟的「提前提醒」">
-            <Select
-              value={String(cfg.eventRemindMinutes)}
-              onValueChange={(v) => onUpdate({ eventRemindMinutes: Number(v) })}
-            >
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">提醒</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="事件提醒" hint="事件开始前按提前量发系统通知（电脑开着才收得到）">
+            <Switch checked={cfg.reminderEnabled} onCheckedChange={(v) => onUpdate({ reminderEnabled: v })} />
+          </SettingRow>
+          {cfg.reminderEnabled && (
+            <SettingRow title="提前量" hint="像手机闹钟的「提前提醒」">
+              <Select
+                value={String(cfg.eventRemindMinutes)}
+                onValueChange={(v) => onUpdate({ eventRemindMinutes: Number(v) })}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REMIND_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={String(o.value)}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingRow>
+          )}
+          <SettingRow title="待办过期提醒" hint="今天截止还没做的待办，当日提醒一次">
+            <Switch checked={cfg.todoOverdueRemind} onCheckedChange={(v) => onUpdate({ todoOverdueRemind: v })} />
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      {/* 视图 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">视图</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <SettingRow title="默认视图" hint="打开日程表先看到哪个视图">
+            <Select value={cfg.defaultView} onValueChange={(v) => onUpdate({ defaultView: v as CalendarConfig["defaultView"] })}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {REMIND_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={String(o.value)}>
+                {VIEW_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
                     {o.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </SettingRow>
-        )}
-        <SettingRow title="待办过期提醒" desc="今天截止还没做的待办，当日提醒一次">
-          <Switch checked={cfg.todoOverdueRemind} onCheckedChange={(v) => onUpdate({ todoOverdueRemind: v })} />
-        </SettingRow>
-      </div>
-
-      {/* 视图 */}
-      <div className="space-y-2.5">
-        <SectionHeader icon={<Eye className="size-3.5" />} title="视图" desc="日程表页面的显示方式" />
-        <SettingRow title="默认视图" desc="打开日程表先看到哪个视图">
-          <Select value={cfg.defaultView} onValueChange={(v) => onUpdate({ defaultView: v as CalendarConfig["defaultView"] })}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {VIEW_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingRow>
-        <SettingRow title="周视图显示周末" desc="关闭后只显示周一到周五">
-          <Switch checked={cfg.weekShowWeekend} onCheckedChange={(v) => onUpdate({ weekShowWeekend: v })} />
-        </SettingRow>
-      </div>
+          <SettingRow title="周视图显示周末" hint="关闭后只显示周一到周五">
+            <Switch checked={cfg.weekShowWeekend} onCheckedChange={(v) => onUpdate({ weekShowWeekend: v })} />
+          </SettingRow>
+        </CardContent>
+      </Card>
 
       {/* 日程账号 */}
-      <div className="space-y-2">
-        <SectionHeader
-          icon={<CalendarPlus className="size-3.5" />}
-          title="日程账号"
-          desc="订阅源（自动同步、只读）与导入的日历文件（可编辑）统一管理"
-        />
-        <div className="space-y-1.5 rounded-lg border border-dashed p-2">
-          <div className="grid grid-cols-2 gap-1.5">
-            <Input
-              value={newSub.name}
-              onChange={(e) => setNewSub((s) => ({ ...s, name: e.target.value }))}
-              placeholder="订阅名称，如：节假日"
-              className="h-7"
-            />
-            <Input
-              value={newSub.url}
-              onChange={(e) => setNewSub((s) => ({ ...s, url: e.target.value }))}
-              placeholder="https://…/日历.ics 或 webcal://…"
-              className="h-7"
-            />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">日程账号</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            订阅源（自动同步、只读）与导入的日历文件（一次导入、可编辑）统一管理
+          </p>
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-xs">订阅名称</Label>
+                <Input
+                  value={newSub.name}
+                  onChange={(e) => setNewSub((s) => ({ ...s, name: e.target.value }))}
+                  placeholder="如：节假日"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">订阅地址</Label>
+                <Input
+                  value={newSub.url}
+                  onChange={(e) => setNewSub((s) => ({ ...s, url: e.target.value }))}
+                  placeholder="https://…/日历.ics 或 webcal://…"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">颜色</Label>
+                <Select value={newSub.color} onValueChange={(v) => setNewSub((s) => ({ ...s, color: v }))}>
+                  <SelectTrigger className="w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUB_COLORS.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={addSub}>添加订阅</Button>
+              <span className="pb-1.5 text-[11px] text-muted-foreground">或</span>
+              <Button variant="outline" size="sm" onClick={pickImport}>
+                <Upload className="size-4" />
+                导入日历文件…
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={newSub.color} onValueChange={(v) => setNewSub((s) => ({ ...s, color: v }))}>
-              <SelectTrigger className="h-7 w-24">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SUB_COLORS.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button size="sm" onClick={addSub}>
-              添加订阅
-            </Button>
-            <span className="text-[10px] text-muted-foreground">或</span>
-            <Button size="sm" variant="outline" onClick={pickImport}>
-              导入日历文件…
-            </Button>
-          </div>
-        </div>
-        {accounts.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-            还没有日程账号。填上面信息添加订阅源，或导入 .ics / 备份文件。（早于本功能的导入数据无来源标记，不影响使用）
-          </div>
-        ) : (
-          accounts.map((a) => {
-            if (a.kind === "sub") {
-              const s = a.sub;
-              const draft = subDrafts[s.id] ?? s;
-              return (
-                <div key={`sub-${s.id}`} className="space-y-1.5 rounded-lg border p-2">
-                  <div className="flex items-center gap-2">
-                    <TypeBadge kind="sub" />
-                    <span className="size-3 shrink-0 rounded-full" style={{ background: s.color }} />
-                    <span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {s.event_count} 条
-                      {s.last_sync_ms != null
-                        ? ` · ${new Date(s.last_sync_ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`
-                        : " · 未同步"}
-                    </span>
-                    <Button size="sm" variant="outline" onClick={() => refreshSub(s)}>
-                      刷新
-                    </Button>
-                    <button
-                      onClick={() => {
-                        const open = editingSub !== s.id;
-                        setEditingSub(open ? s.id : null);
-                        if (open) setSubDrafts((d) => ({ ...d, [s.id]: s }));
-                      }}
-                      className="rounded p-1 text-muted-foreground hover:bg-accent"
-                      title="设置"
-                    >
-                      ⚙
-                    </button>
-                    <button
-                      onClick={() => deleteSub(s)}
-                      className="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-                      title="删除订阅"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </div>
-                  <div className="truncate text-[10px] text-muted-foreground">{s.url}</div>
-                  {editingSub === s.id && (
-                    <div className="space-y-1.5 rounded-md bg-muted/40 p-2">
-                      <Input
-                        value={draft.name}
-                        onChange={(e) =>
-                          setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, name: e.target.value } }))
-                        }
-                        className="h-7"
-                      />
-                      <div className="flex items-center gap-2">
-                        <Select
-                          value={draft.color}
-                          onValueChange={(v) => setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, color: v } }))}
-                        >
-                          <SelectTrigger className="h-7 w-24">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {SUB_COLORS.map((c) => (
-                              <SelectItem key={c} value={c}>
-                                {c}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Select
-                          value={String(draft.refresh_minutes)}
-                          onValueChange={(v) =>
-                            setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, refresh_minutes: Number(v) } }))
-                          }
-                        >
-                          <SelectTrigger className="h-7 w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {REFRESH_OPTIONS.map((o) => (
-                              <SelectItem key={o.value} value={String(o.value)}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="flex items-center gap-1.5">
-                          <Switch
-                            checked={draft.enabled}
-                            onCheckedChange={(v) => setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, enabled: v } }))}
-                          />
-                          <span className="text-[10px] text-muted-foreground">显示</span>
-                        </div>
-                        <div className="ml-auto flex gap-1.5">
-                          <Button size="sm" onClick={() => saveSub(s)}>
-                            保存
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => setEditingSub(null)}>
-                            取消
-                          </Button>
+          {accounts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              还没有日程账号。填上面信息添加订阅源，或导入 .ics / 备份文件（早于本功能的导入数据无来源标记，不影响使用）。
+            </p>
+          ) : (
+            accounts.map((a) => {
+              if (a.kind === "sub") {
+                const s = a.sub;
+                const draft = subDrafts[s.id] ?? s;
+                return (
+                  <div key={`sub-${s.id}`} className="space-y-2 rounded-lg border p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="size-3 shrink-0 rounded-full" style={{ background: s.color }} />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{s.name}</span>
+                      <TypeBadge kind="sub" />
+                      {!s.enabled && (
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          已隐藏
+                        </span>
+                      )}
+                      <button
+                        onClick={(e) => openSubMenu(s, e)}
+                        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        aria-label="更多操作"
+                        title="更多操作"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </button>
+                    </div>
+                    <div className="truncate text-[11px] text-muted-foreground">{s.url}</div>
+                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                      <span>{s.event_count} 条</span>
+                      <span className="text-border">·</span>
+                      <span>
+                        {s.last_sync_ms != null
+                          ? `上次同步 ${new Date(s.last_sync_ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`
+                          : "未同步"}
+                      </span>
+                    </div>
+                    {editingSub === s.id && (
+                      <div className="space-y-1.5 rounded-md bg-muted/40 p-2">
+                        <Input
+                          value={draft.name}
+                          onChange={(e) => setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, name: e.target.value } }))}
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Select
+                            value={draft.color}
+                            onValueChange={(v) => setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, color: v } }))}
+                          >
+                            <SelectTrigger className="h-8 w-24">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {SUB_COLORS.map((c) => (
+                                <SelectItem key={c} value={c}>
+                                  {c}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={String(draft.refresh_minutes)}
+                            onValueChange={(v) =>
+                              setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, refresh_minutes: Number(v) } }))
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {REFRESH_OPTIONS.map((o) => (
+                                <SelectItem key={o.value} value={String(o.value)}>
+                                  {o.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="flex items-center gap-1.5">
+                            <Switch
+                              checked={draft.enabled}
+                              onCheckedChange={(v) =>
+                                setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, enabled: v } }))
+                              }
+                            />
+                            <span className="text-[11px] text-muted-foreground">显示</span>
+                          </div>
+                          <div className="ml-auto flex gap-1.5">
+                            <Button size="sm" onClick={() => saveSub(s)}>
+                              保存
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingSub(null)}>
+                              取消
+                            </Button>
+                          </div>
                         </div>
                       </div>
+                    )}
+                  </div>
+                );
+              }
+              const it = a.imp;
+              return (
+                <div key={`ics-${it.id}`} className="flex items-center gap-2 rounded-lg border px-2 py-1.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm">{it.name}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {it.count} 条 · {new Date(it.imported_at).toLocaleString("zh-CN")}
                     </div>
-                  )}
+                  </div>
+                  <TypeBadge kind="ics" />
+                  <button
+                    onClick={() => removeImport(it)}
+                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+                    title="删除整份"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
                 </div>
               );
-            }
-            const it = a.imp;
-            return (
-              <div key={`ics-${it.id}`} className="flex items-center gap-2 rounded-lg border p-2">
-                <TypeBadge kind="ics" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{it.name}</div>
-                  <div className="text-[10px] text-muted-foreground">
-                    {it.count} 条 · {new Date(it.imported_at).toLocaleString("zh-CN")}
-                  </div>
-                </div>
-                <button
-                  onClick={() => removeImport(it)}
-                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
-                  title="删除整份"
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </div>
-            );
-          })
-        )}
-      </div>
+            })
+          )}
+        </CardContent>
+      </Card>
 
-      {/* 数据 */}
-      <div className="space-y-2.5">
-        <SectionHeader
-          icon={<Database className="size-3.5" />}
-          title="数据"
-          desc="统计、清理、备份与事件逐条管理，删除不可恢复"
-        />
-        {stats && (
-          <div className="grid grid-cols-4 gap-1.5 text-center">
-            {[
-              [stats.events, "事件"],
-              [stats.recurring, "重复规则"],
-              [stats.todos_pending, "未完成待办"],
-              [stats.imports + subs.length, "外部日程"],
-            ].map(([n, label]) => (
-              <div key={label as string} className="rounded-lg border p-1.5">
-                <div className="text-base font-bold tabular-nums">{n}</div>
-                <div className="text-[10px] text-muted-foreground">{label}</div>
-              </div>
-            ))}
+      {/* 数据统计 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">数据统计</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <div>
+            <div className="text-xs text-muted-foreground">事件</div>
+            <div className="text-lg font-semibold">{stats?.events ?? "-"}</div>
           </div>
-        )}
+          <div>
+            <div className="text-xs text-muted-foreground">重复规则</div>
+            <div className="text-lg font-semibold">{stats?.recurring ?? "-"}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">未完成待办</div>
+            <div className="text-lg font-semibold">{stats?.todos_pending ?? "-"}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">外部日程</div>
+            <div className="text-lg font-semibold">{stats ? stats.imports + subs.length : "-"}</div>
+          </div>
+        </CardContent>
+      </Card>
 
-        <div className="space-y-2">
-          <MiniLabel icon={<CalendarX2 className="size-3" />} text="清理" />
-          <div className="flex items-center gap-2">
+      {/* 数据维护 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">数据维护</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Input
               type="date"
               value={purgeDate}
@@ -664,20 +652,11 @@ export function CalendarSettings({
             <Button variant="outline" size="sm" onClick={() => clearTodos(false)}>
               清空全部待办
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-red-500/40 text-red-600 hover:bg-red-500/10 hover:text-red-600"
-              onClick={clearAll}
-            >
+            <Button variant="destructive" size="sm" onClick={clearAll}>
               清空全部数据
             </Button>
           </div>
-        </div>
-
-        <div className="space-y-2">
-          <MiniLabel icon={<Download className="size-3" />} text="备份导出" />
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 border-t pt-2">
             <Button variant="outline" size="sm" onClick={() => exportFile("ics")}>
               导出 ICS（可导入手机日历）
             </Button>
@@ -685,27 +664,35 @@ export function CalendarSettings({
               导出 JSON 备份（可完整恢复）
             </Button>
           </div>
-        </div>
+          <p className="text-xs text-muted-foreground">
+            删除不可恢复；导出用于备份与换机恢复。删除此日期前的旧事件只删单次事件，重复规则保留。
+          </p>
+        </CardContent>
+      </Card>
 
-        <div className="space-y-1.5">
-          <MiniLabel icon={<Search className="size-3" />} text="事件管理" />
-          <div className="flex items-center gap-2 border-b pb-1.5">
-            <Search className="size-3.5 text-muted-foreground" />
+      {/* 事件管理 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">事件管理</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <Input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="按标题/地点搜索事件…"
-              className="h-7 flex-1"
+              className="pl-7"
             />
           </div>
-          <div className="max-h-64 space-y-0.5 overflow-y-auto pr-1">
+          <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
             {filtered.length === 0 && (
               <div className="py-3 text-center text-xs text-muted-foreground">
                 {events.length === 0 ? "还没有事件" : "没有匹配的事件"}
               </div>
             )}
             {filtered.map((e) => (
-              <div key={e.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent">
+              <div key={e.id} className="flex items-center gap-2 rounded-md border px-2 py-1.5 hover:bg-accent">
                 <input
                   type="checkbox"
                   checked={selected.has(e.id)}
@@ -716,7 +703,7 @@ export function CalendarSettings({
                   {e.title}
                   {e.rrule && <span className="ml-1 rounded bg-primary/15 px-1 text-[9px] text-primary">重复</span>}
                 </span>
-                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                   {new Date(e.start_ms).toLocaleDateString("zh-CN", {
                     month: "numeric",
                     day: "numeric",
@@ -733,8 +720,49 @@ export function CalendarSettings({
               </Button>
             </div>
           )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
+
+      {/* 订阅 ⋯ 菜单 */}
+      <ContextMenu
+        visible={subMenu !== null && menuSub != null}
+        x={subMenu?.x ?? 0}
+        y={subMenu?.y ?? 0}
+        onClose={() => setSubMenu(null)}
+      >
+        {menuSub && (
+          <>
+            <ContextMenuItem
+              icon={<Pencil className="size-3.5" />}
+              label="设置"
+              onClick={() => {
+                const open = editingSub !== menuSub.id;
+                setEditingSub(open ? menuSub.id : null);
+                if (open) setSubDrafts((d) => ({ ...d, [menuSub.id]: menuSub }));
+                setSubMenu(null);
+              }}
+            />
+            <ContextMenuItem
+              icon={<RefreshCw className="size-3.5" />}
+              label="立即刷新"
+              onClick={() => {
+                setSubMenu(null);
+                refreshSub(menuSub);
+              }}
+            />
+            <ContextMenuDivider />
+            <ContextMenuItem
+              icon={<Trash2 className="size-3.5" />}
+              label="删除订阅"
+              className="text-destructive hover:bg-destructive/15 hover:text-destructive"
+              onClick={() => {
+                setSubMenu(null);
+                deleteSub(menuSub);
+              }}
+            />
+          </>
+        )}
+      </ContextMenu>
     </div>
   );
 }
