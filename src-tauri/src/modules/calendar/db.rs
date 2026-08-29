@@ -369,6 +369,22 @@ impl CalendarDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
+    /// 未完成且到期的待办（due_date <= 今天；提醒线程用）
+    pub fn todos_pending_due(&self, today: i64) -> DbResult<Vec<Todo>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, title, notes, due_date, done, done_at_ms, created_ms, updated_ms
+                 FROM todos WHERE done = 0 AND due_date IS NOT NULL AND due_date <= ?1
+                 ORDER BY due_date ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![today], row_to_todo)
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
     /// 批量插入导入条目（单事务；ICS 物化结果）
     pub fn insert_imported(&self, items: &[super::ics::ImportItem]) -> DbResult<()> {
         if items.is_empty() {
@@ -399,9 +415,8 @@ impl CalendarDb {
         tx.commit().map_err(|e| e.to_string())
     }
 
-    // ---------- 提醒日志（批次 4 用） ----------
+    // ---------- 提醒日志 ----------
 
-    #[allow(dead_code)] // 批次 4（提醒）上线时启用
     pub fn reminder_sent(&self, kind: &str, ref_id: i64, instance_date: Option<i64>) -> DbResult<bool> {
         let n: i64 = self
             .conn
@@ -414,7 +429,6 @@ impl CalendarDb {
         Ok(n > 0)
     }
 
-    #[allow(dead_code)] // 批次 4（提醒）上线时启用
     pub fn log_reminder(&self, kind: &str, ref_id: i64, instance_date: Option<i64>) -> DbResult<()> {
         self.conn
             .execute(

@@ -42,8 +42,14 @@
 - 创建/修改的文件：
   - `src/modules/calendar/{types.ts,views.tsx,Page.tsx,utils.ts,utils.test.ts}`
 
-### 阶段 3 · 批次 3：重复规则编辑 + 仅此一次例外 + 设置抽屉
+### 阶段 3 · 批次 4：提醒线程
 - **状态：** complete（待用户手动验收）
+- 执行的操作：
+  - 常驻提醒线程（30s 一跳，quota poll_loop 同模式）：事件提前 N 分钟系统通知、待办当日过期一次
+  - 睡眠补扫：醒来补查过去 1 小时错过的实例；同一条只提醒一次（reminder_logs 唯一键）
+  - 设置项（提前量/开关/周末/默认视图）批次 3 已做，此处线程读同一批配置
+- 创建/修改的文件：`src-tauri/src/modules/calendar/{mod.rs,db.rs}`
+- 验证：cargo 109 全绿、cargo check 零警告（dev 实例占用 exe 无法链接，属环境限制）
 - 执行的操作：
   - 后端：get_range 对重复事件**现场展开实例**并套用例外（delete 剔除 / edit 覆盖）；新增 calendar_override_event 命令；EventDto 增 instance_date
   - 前端：事件表单加「重复」区（每天/每周勾选星期/每月同日/每月第N个星期几 + 可选截止日），重复实例右键四项（编辑此一次/编辑规则/删此一次/删全部）
