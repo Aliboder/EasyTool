@@ -8,7 +8,7 @@
     "reminder_enabled": true,
     "event_remind_minutes": 10,
     "todo_overdue_remind": true,
-    "default_view": "month",
+    "default_view": "day",
     "week_show_weekend": true
   }
 }

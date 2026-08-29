@@ -130,9 +130,33 @@ impl CalendarDb {
                     instance_date INTEGER,
                     sent_ms INTEGER NOT NULL,
                     UNIQUE (kind, ref_id, instance_date)
+                );
+
+                CREATE TABLE IF NOT EXISTS ics_imports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    imported_at INTEGER NOT NULL,
+                    event_count INTEGER NOT NULL DEFAULT 0
                 );",
             )
             .map_err(|e| e.to_string())?;
+        // 增量迁移：老库补 events.ics_import_id 列（导入源标记）
+        let cols: Vec<String> = {
+            let mut stmt = self
+                .conn
+                .prepare("PRAGMA table_info(events)")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(1))
+                .map_err(|e| e.to_string())?;
+            let v: Vec<String> = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+            v
+        };
+        if !cols.iter().any(|c| c == "ics_import_id") {
+            self.conn
+                .execute("ALTER TABLE events ADD COLUMN ics_import_id INTEGER", [])
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
@@ -447,8 +471,8 @@ impl CalendarDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
-    /// 批量插入导入条目（单事务；ICS 物化结果）
-    pub fn insert_imported(&self, items: &[super::ics::ImportItem]) -> DbResult<()> {
+    /// 批量插入导入条目（单事务；ICS 物化结果；ics_import_id 关联导入源）
+    pub fn insert_imported(&self, items: &[super::ics::ImportItem], ics_import_id: Option<i64>) -> DbResult<()> {
         if items.is_empty() {
             return Ok(());
         }
@@ -456,8 +480,8 @@ impl CalendarDb {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO events (title, location, notes, all_day, start_ms, end_ms, rrule, created_ms, updated_ms)
-                     VALUES (?1,?2,?3,?4,?5,?6,NULL,?7,?7)",
+                    "INSERT INTO events (title, location, notes, all_day, start_ms, end_ms, rrule, ics_import_id, created_ms, updated_ms)
+                     VALUES (?1,?2,?3,?4,?5,?6,NULL,?7,?8,?8)",
                 )
                 .map_err(|e| e.to_string())?;
             let now = now_ms();
@@ -469,12 +493,84 @@ impl CalendarDb {
                     it.all_day as i32,
                     it.start_ms,
                     it.end_ms,
+                    ics_import_id,
                     now
                 ])
                 .map_err(|e| e.to_string())?;
             }
         }
         tx.commit().map_err(|e| e.to_string())
+    }
+
+    // ---------- ICS 导入源（批 4 需求：按文件管理） ----------
+
+    /// 按文件名取（或建）导入源记录，返回其 id（同名重复导入=覆盖更新）
+    pub fn replace_ics_import(&self, name: &str, count: usize) -> DbResult<i64> {
+        let import_id: i64 = match self
+            .conn
+            .query_row("SELECT id FROM ics_imports WHERE name = ?1", params![name], |r| r.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?
+        {
+            Some(id) => id,
+            None => {
+                self.conn
+                    .execute(
+                        "INSERT INTO ics_imports (name, imported_at, event_count) VALUES (?1, ?2, 0)",
+                        params![name, now_ms()],
+                    )
+                    .map_err(|e| e.to_string())?;
+                self.conn.last_insert_rowid()
+            }
+        };
+        // 覆盖语义：先清掉该来源旧数据，再插入新数据
+        self.delete_events_by_import(import_id)?;
+        self.set_ics_import_count(import_id, count as i64)
+            .map_err(|e| e.to_string())?;
+        Ok(import_id)
+    }
+
+    pub fn delete_events_by_import(&self, import_id: i64) -> DbResult<()> {
+        self.conn
+            .execute("DELETE FROM events WHERE ics_import_id = ?1", params![import_id])
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn set_ics_import_count(&self, import_id: i64, count: i64) -> DbResult<()> {
+        self.conn
+            .execute(
+                "UPDATE ics_imports SET event_count = ?1, imported_at = ?2 WHERE id = ?3",
+                params![count, now_ms(), import_id],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// 导入源清单（含实时事件数）
+    pub fn list_ics_imports(&self) -> DbResult<Vec<(i64, String, i64, i64)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT i.id, i.name, i.imported_at,
+                        (SELECT COUNT(*) FROM events e WHERE e.ics_import_id = i.id) AS n
+                 FROM ics_imports i ORDER BY i.imported_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// 删除整份导入源（连带其事件；例外随 FK 级联）
+    pub fn delete_ics_import(&self, import_id: i64) -> DbResult<u32> {
+        let deleted = self.delete_events_by_import(import_id)?;
+        let _ = deleted;
+        self.conn
+            .execute("DELETE FROM ics_imports WHERE id = ?1", params![import_id])
+            .map_err(|e| e.to_string())?;
+        Ok(0)
     }
 
     // ---------- 提醒日志 ----------
@@ -638,6 +734,52 @@ mod tests {
         db.upsert_override(id, 20260901, "delete", &None).unwrap();
         db.delete_event(id).unwrap();
         assert!(db.overrides_for(id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn ics_import_source_manage() {
+        use crate::modules::calendar::ics::ImportItem;
+        let db = mem();
+        db.insert_event(&ev("自己的", 100, 200)).unwrap();
+        let item = ImportItem {
+            title: "课程".into(),
+            location: String::new(),
+            notes: String::new(),
+            all_day: false,
+            start_ms: 300,
+            end_ms: 400,
+        };
+        // 同名第一次导入
+        let id1 = db.replace_ics_import("课表.ics", 1).unwrap();
+        db.insert_imported(&[item.clone()], Some(id1)).unwrap();
+        let list = db.list_ics_imports().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].3, 1);
+        // 同名再导入（覆盖）：旧数据清掉、条数更新
+        let id1 = db.replace_ics_import("课表.ics", 1).unwrap();
+        db.insert_imported(&[item], Some(id1)).unwrap();
+        assert_eq!(db.events_in_window(0, 9_000_000_000_000).unwrap().len(), 2);
+        // 删除整份：只有导入源的数据被清，手建事件保留
+        db.delete_ics_import(id1).unwrap();
+        assert_eq!(db.events_in_window(0, 9_000_000_000_000).unwrap().len(), 1);
+        assert!(db.list_ics_imports().unwrap().is_empty());
+    }
+
+    #[test]
+    fn migration_adds_ics_column_idempotent() {
+        let dir = std::env::temp_dir().join(format!("et-cal-mig-{}", now_ms()));
+        let p = dir.as_path();
+        {
+            let db = CalendarDb::open(p).unwrap();
+            let id = db.replace_ics_import("a.ics", 0).unwrap();
+            db.delete_ics_import(id).unwrap();
+        }
+        // 重开（老库升级路径）不应报错，导入源机制可用
+        let db = CalendarDb::open(p).unwrap();
+        let list = db.list_ics_imports().unwrap();
+        assert!(list.is_empty());
+        drop(db);
+        let _ = std::fs::remove_file(p);
     }
 
     #[test]

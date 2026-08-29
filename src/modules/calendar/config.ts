@@ -11,6 +11,6 @@ export const CALENDAR_DEFAULTS: CalendarConfig = {
   reminderEnabled: true,
   eventRemindMinutes: 10,
   todoOverdueRemind: true,
-  defaultView: "month",
+  defaultView: "day",
   weekShowWeekend: true,
 };

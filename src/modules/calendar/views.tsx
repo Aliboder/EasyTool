@@ -2,13 +2,13 @@
 // 时间轴布局复用 utils.layoutDay 纯函数（重叠分列、窗口钳制），全部数据来自父组件。
 
 import { useMemo, useState } from "react";
-import { CalendarPlus, ChevronDown, ChevronRight, ListTodo } from "lucide-react";
+import { CalendarPlus, ChevronDown, ChevronRight, Clock, ListTodo, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { fmtHM, fmtKeyLong, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey } from "./utils";
 import type { EventDto, TodoDto } from "./types";
 
-const START_HOUR = 6; // 时间轴起点
+const START_HOUR = 0; // 时间轴起点（0 点）
 const END_HOUR = 24;
 const HOUR_HEIGHT = 46;
 const HOURS = END_HOUR - START_HOUR;
@@ -53,10 +53,11 @@ function EventBlock({
   onClick: EventClick;
   onMenu: EventMenu;
 }) {
+  const compact = height < 34;
   return (
     <div
-      className="absolute overflow-hidden rounded-md border border-primary/20 bg-primary/15 px-1 py-0.5 text-[10px] leading-tight hover:bg-primary/25"
-      style={{ top, height, left: `${left}%`, width: `${width}%` }}
+      className="absolute overflow-hidden rounded-md border border-primary/15 border-l-2 border-l-primary bg-primary/10 px-1.5 py-1 shadow-sm ring-1 ring-primary/5 transition-colors hover:bg-primary/20 hover:ring-primary/25"
+      style={{ top: top + 1, height: height - 2, left: `${left}%`, width: `${width}%` }}
       title={`${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)} ${event.title}${event.location ? " · " + event.location : ""}`}
       onClick={(e) => {
         e.stopPropagation();
@@ -68,10 +69,44 @@ function EventBlock({
         onMenu(event, e.clientX, e.clientY);
       }}
     >
-      <div className="truncate font-medium text-foreground/90">{event.title}</div>
-      {height > 34 && event.location && (
-        <div className="truncate text-muted-foreground">📍 {event.location}</div>
+      <div className="truncate text-[11px] font-semibold leading-tight text-foreground">{event.title}</div>
+      {!compact && (
+        <div className="mt-0.5 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
+          <Clock className="size-2.5" />
+          <span className="truncate">
+            {fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}
+          </span>
+        </div>
       )}
+      {!compact && event.location && (
+        <div className="mt-0.5 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
+          <MapPin className="size-2.5" />
+          <span className="truncate">{event.location}</span>
+        </div>
+      )}
+      {height > 8 && height < 34 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center text-[9px] text-muted-foreground/70">
+          {fmtHM(event.start_ms)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 左侧 0–24 小时刻度列 */
+function HourAxis() {
+  return (
+    <div className="relative w-10 shrink-0" style={{ height: HOURS * HOUR_HEIGHT }}>
+      {Array.from({ length: HOURS + 1 }, (_, i) => i).map((i) => (
+        <span
+          key={i}
+          className="absolute -top-1.5 right-1.5 text-[10px] tabular-nums text-muted-foreground"
+          style={{ top: i * HOUR_HEIGHT }}
+        >
+          {i}:00
+        </span>
+      ))}
+      <div className="absolute inset-y-0 right-0 w-px bg-border" />
     </div>
   );
 }
@@ -110,7 +145,7 @@ export function WeekView({
     <div className="flex h-full flex-col overflow-hidden">
       {/* 列头 */}
       <div className="flex shrink-0 border-b">
-        <div className="w-7 shrink-0" />
+        <div className="w-10 shrink-0" />
         {days.map((k) => (
           <button
             key={k}
@@ -134,7 +169,7 @@ export function WeekView({
       </div>
       {/* 全天条带 */}
       <div className="flex shrink-0 border-b bg-muted/30">
-        <div className="flex w-7 shrink-0 items-center px-1 text-[9px] text-muted-foreground">全天</div>
+        <div className="flex w-10 shrink-0 items-center px-1 text-[9px] text-muted-foreground">全天</div>
         {days.map((k) => (
           <div key={k} className="flex flex-1 flex-col gap-px px-0.5 py-1">
             {allDayOfDay(events, k).map((e) => (
@@ -156,7 +191,7 @@ export function WeekView({
       </div>
       {/* 时间轴主体 */}
       <div className="relative flex flex-1 overflow-y-auto">
-        <div className="relative w-7 shrink-0" />
+        <HourAxis />
         {days.map((k) => {
           const blocks = layoutDay(
             timedOfDay(events, k).map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
@@ -279,13 +314,13 @@ export function DayView({
           </div>
         )}
         {/* 时间轴 */}
-        <div className="relative ml-9" style={{ height: HOURS * HOUR_HEIGHT }}>
-          <div className="absolute inset-y-0 -left-9 w-8 border-r" />
+        <div className="relative ml-10" style={{ height: HOURS * HOUR_HEIGHT }}>
+          <div className="absolute inset-y-0 -left-10 w-9 border-r" />
           <div className="absolute inset-x-0" style={{ height: HOURS * HOUR_HEIGHT }}>
             {Array.from({ length: HOURS + 1 }, (_, i) => i).map((i) => (
               <div key={i} className="absolute inset-x-0 border-t border-border/60" style={{ top: i * HOUR_HEIGHT }}>
-                <span className="absolute -top-2 -left-9 w-8 text-right text-[10px] text-muted-foreground">
-                  {String(START_HOUR + i).padStart(2, "0")}:00
+                <span className="absolute -top-2 -left-10 w-9 text-right text-[10px] text-muted-foreground">
+                  {String(i).padStart(2, "0")}:00
                 </span>
               </div>
             ))}

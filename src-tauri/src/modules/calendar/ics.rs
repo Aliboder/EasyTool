@@ -216,10 +216,11 @@ fn un_escape(s: &str) -> String {
     out
 }
 
-/// 入库入口：解析 → 逐条插入（事务内）；返回统计
+/// 入库入口（仅测试/无源导入用；正式导入走 command 的按源管理）
+#[cfg(test)]
 pub fn import_ics_text(db: &CalendarDb, text: &str) -> Result<ImportReport, String> {
     let parsed = parse_ics(text);
-    db.insert_imported(&parsed.items)?;
+    db.insert_imported(&parsed.items, None)?;
     Ok(ImportReport {
         events: parsed.events,
         instances: parsed.items.len(),

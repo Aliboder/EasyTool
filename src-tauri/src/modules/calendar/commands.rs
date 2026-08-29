@@ -320,15 +320,61 @@ pub fn calendar_delete_todo(db: State<'_, Mutex<CalendarDb>>, id: i64) -> Result
     db.delete_todo(id)
 }
 
-/// 导入 ICS 日程文件：读取 → 解析 → 物化展开 → 写入；返回统计
+/// 导入 ICS 日程文件：读取 → 解析 → 物化展开 → 写入；按文件名建立导入源（同名=覆盖更新）
 #[tauri::command]
 pub fn calendar_import_ics(
     db: State<'_, Mutex<CalendarDb>>,
     path: String,
 ) -> Result<super::ics::ImportReport, String> {
     let text = std::fs::read_to_string(&path).map_err(|e| format!("读取文件失败: {e}"))?;
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "导入文件".into());
     let db = db.lock().map_err(|e| e.to_string())?;
-    super::ics::import_ics_text(&db, &text)
+    let parsed = super::ics::parse_ics(&text);
+    let import_id = db.replace_ics_import(&name, parsed.items.len())?;
+    db.insert_imported(&parsed.items, Some(import_id))?;
+    Ok(super::ics::ImportReport {
+        events: parsed.events,
+        instances: parsed.items.len(),
+        repeated: parsed.repeated,
+        skipped: parsed.skipped,
+        unsupported: parsed.unsupported,
+    })
+}
+
+/// 导入源清单（设置页管理用）
+#[derive(Debug, serde::Serialize)]
+pub struct IcsImportInfo {
+    pub id: i64,
+    pub name: String,
+    pub imported_at: i64,
+    pub count: i64,
+}
+
+#[tauri::command]
+pub fn calendar_list_ics_imports(
+    db: State<'_, Mutex<CalendarDb>>,
+) -> Result<Vec<IcsImportInfo>, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    Ok(db
+        .list_ics_imports()?
+        .into_iter()
+        .map(|(id, name, imported_at, count)| IcsImportInfo {
+            id,
+            name,
+            imported_at,
+            count,
+        })
+        .collect())
+}
+
+/// 删除整份导入源：该 ICS 导入的全部事件一并清除（其它来源与手建数据不受影响）
+#[tauri::command]
+pub fn calendar_delete_ics_import(db: State<'_, Mutex<CalendarDb>>, id: i64) -> Result<(), String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.delete_ics_import(id).map(|_| ())
 }
 
 /// 导出 ICS 到指定路径

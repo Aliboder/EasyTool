@@ -67,9 +67,9 @@ interface MenuState {
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 const TABS: { id: ViewKey; label: string }[] = [
-  { id: "month", label: "月" },
-  { id: "week", label: "周" },
   { id: "day", label: "日" },
+  { id: "week", label: "周" },
+  { id: "month", label: "月" },
   { id: "todo", label: "待办" },
 ];
 
@@ -388,13 +388,13 @@ export function CalendarPage() {
           <>
             {tab !== "todo" && (
               <>
-                <HeaderButton title="上一段" onClick={() => moveStep(-1)}>
+                <HeaderButton title={tab === "month" ? "上一月" : tab === "week" ? "上一周" : "上一天"} onClick={() => moveStep(-1)}>
                   <ChevronLeft className="size-4" />
                 </HeaderButton>
                 <HeaderButton title="回到今天" onClick={goToday}>
                   <span className="text-xs">今天</span>
                 </HeaderButton>
-                <HeaderButton title="下一段" onClick={() => moveStep(1)}>
+                <HeaderButton title={tab === "month" ? "下一月" : tab === "week" ? "下一周" : "下一天"} onClick={() => moveStep(1)}>
                   <ChevronRight className="size-4" />
                 </HeaderButton>
               </>
@@ -615,7 +615,7 @@ export function CalendarPage() {
 
       {/* 设置抽屉 */}
       <Drawer open={showSettings} onClose={() => setShowSettings(false)} title="日程设置">
-        <CalendarSettings cfg={cfg} onUpdate={update} />
+        <CalendarSettings cfg={cfg} onUpdate={update} onImportsChanged={loadRange} />
       </Drawer>
 
       {/* 表单抽屉 */}
