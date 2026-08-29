@@ -98,7 +98,8 @@ function TierBadge() {
   );
 }
 
-/** 余额型内容体（DeepSeek / 自定义）：渐变余额头 + 三段进度条 + 近7天消费趋势 */
+/** 余额型内容体（DeepSeek / 自定义 / SiliconFlow）：紧凑排版，总高度与用量卡（Go）一致。
+ * 状态色通过顶部细条带 + 数字颜色 + 状态徽章三重表达；信息密度与 Go 卡的环形布局对齐 */
 function BalanceBody({ account, threshold, critical, balanceMax }: {
   account: AccountStatusPayload;
   threshold: number;
@@ -118,12 +119,12 @@ function BalanceBody({ account, threshold, critical, balanceMax }: {
 
   const alert = account.balance != null && account.balance < critical;
   const low = account.balance != null && account.balance >= critical && account.balance < threshold;
-  const accent = alert
-    ? "from-red-500/90 to-rose-600/70"
+  const numCls = alert ? "text-destructive" : low ? "text-orange-500" : "text-foreground";
+  const stripCls = alert
+    ? "bg-gradient-to-r from-red-500 to-rose-400"
     : low
-      ? "from-orange-500/90 to-amber-600/70"
-      : "from-primary to-primary/60";
-  const numCls = alert ? "text-red-50" : low ? "text-orange-50" : "text-primary-foreground";
+      ? "bg-gradient-to-r from-orange-500 to-amber-400"
+      : "bg-gradient-to-r from-primary to-primary/40";
   const days =
     stats && stats.avg_7d > 0 && account.balance != null ? Math.floor(account.balance / stats.avg_7d) : null;
 
@@ -136,53 +137,70 @@ function BalanceBody({ account, threshold, critical, balanceMax }: {
         : 0;
 
   return (
-    <div>
-      {/* 渐变余额头 */}
-      <div className={cn("rounded-xl bg-gradient-to-br px-4 pt-3 pb-3", accent)}>
-        <div className={cn("flex items-center justify-between text-[11px] opacity-90", numCls)}>
-          <span>余额</span>
+    <div className="flex h-full flex-col gap-2">
+      {/* 状态条带 */}
+      <div className={cn("h-1 w-full rounded-full", stripCls)} />
+      {/* 余额主数字 + 峰谷徽章 */}
+      <div className="flex items-end justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[11px] text-muted-foreground">余额</div>
+          <div className={cn("mt-0.5 truncate text-2xl font-bold tracking-tight tabular-nums", numCls)}>
+            {account.balance != null ? fmtMoney(account.balance) : "—"}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
           {account.kind === "deepseek" && <TierBadge />}
-        </div>
-        <div className={cn("mt-0.5 text-3xl font-bold tracking-tight tabular-nums", numCls)}>
-          {account.balance != null ? fmtMoney(account.balance) : "—"}
-        </div>
-        <div className={cn("mt-1 flex flex-wrap gap-3 text-[11px] opacity-90", numCls)}>
-          {account.granted > 0 && <span>赠送 {fmtMoney(account.granted)}</span>}
-          {account.topped_up > 0 && <span>充值 {fmtMoney(account.topped_up)}</span>}
-          {days != null && <span>约 {days} 天耗尽</span>}
+          {account.error && (
+            <span
+              className="max-w-[140px] truncate text-[10px] text-orange-600"
+              title={account.error}
+            >
+              {account.error}
+            </span>
+          )}
         </div>
       </div>
       {/* 三段进度条：蓝=余额，橙=今日消费，灰=已用 */}
       {account.balance != null && baseline > 0 && (
-        <div className="mt-3">
-          <SegmentBar
-            balance={account.balance}
-            today={stats?.today ?? 0}
-            used={Math.max(0, baseline - account.balance)}
-            max={baseline}
-          />
-        </div>
+        <SegmentBar
+          balance={account.balance}
+          today={stats?.today ?? 0}
+          used={Math.max(0, baseline - account.balance)}
+          max={baseline}
+          className="-mt-1"
+        />
       )}
-      {/* 近7天消费 */}
-      <div className="mt-3">
-        <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+      {/* 赠送/充值/耗尽预估 */}
+      <div className="flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
+        {account.granted > 0 && <span>赠送 {fmtMoney(account.granted)}</span>}
+        {account.topped_up > 0 && <span>充值 {fmtMoney(account.topped_up)}</span>}
+        {days != null && <span>约 {days} 天耗尽</span>}
+        {!account.available && account.balance != null && (
+          <span className="text-amber-500">账户不可用</span>
+        )}
+      </div>
+      {/* 近 7 天消费（贴底，撑满时与 Go 卡同高） */}
+      <div className="mt-auto pt-1">
+        <div className="mb-0.5 flex items-center justify-between text-[11px] text-muted-foreground">
           <span>近 7 天消费</span>
-          {stats && <span className="font-medium text-foreground">今日 {fmtMoney(stats.today)}</span>}
+          <span>
+            今日{" "}
+            <b className="font-medium text-foreground">{fmtMoney(stats?.today ?? 0)}</b>
+            {stats && stats.avg_7d > 0 && (
+              <>
+                {" "}
+                · 日均 {fmtMoney(stats.avg_7d)}
+              </>
+            )}
+          </span>
         </div>
         {stats && stats.daily.length > 0 ? (
-          <DailyBars data={stats.daily} days={7} className="h-12" />
+          <DailyBars data={stats.daily} days={7} className="h-8" />
         ) : (
-          <div className="flex h-12 items-center justify-center text-xs text-muted-foreground">
+          <div className="flex h-8 items-center justify-center text-xs text-muted-foreground">
             暂无历史
           </div>
         )}
-        <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>
-            {account.available ? "账户可用" : "账户不可用"}
-            {stats && stats.avg_7d > 0 && <span> · 日均 {fmtMoney(stats.avg_7d)}</span>}
-          </span>
-          {account.error && <span className="text-orange-600">{account.error}</span>}
-        </div>
       </div>
     </div>
   );
@@ -222,18 +240,18 @@ function GoWindowBlock({ win, ringRemaining }: {
   );
 }
 
-/** 用量型内容体（Go）：三窗口环形用量 */
+/** 用量型内容体（Go / Coding Plan）：三窗口环形用量，纵向居中填充 */
 function UsageBody({ account, ringRemaining }: { account: AccountStatusPayload; ringRemaining: boolean }) {
   if (!account.go_windows.length) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
         <RefreshCw className="size-4 opacity-60" />
         {account.error ? `暂无套餐数据（${account.error}）` : "未配置密钥或暂无套餐数据"}
       </div>
     );
   }
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex h-full items-center justify-center gap-3">
       {account.go_windows.map((w) => (
         <GoWindowBlock key={w.window} win={w} ringRemaining={ringRemaining} />
       ))}
@@ -302,7 +320,7 @@ export function AccountCard({
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-1 flex-col">
         {meta.shape === "balance" ? (
           <BalanceBody account={account} threshold={threshold} critical={critical} balanceMax={balanceMax} />
         ) : (
