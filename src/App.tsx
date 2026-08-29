@@ -283,8 +283,11 @@ function App() {
       const next = new Set([...prev].filter((id) => ids.has(id)));
       return next.size === prev.size ? prev : next;
     });
+    // active 与 visited 必须同一套「上次使用优先」回退规则：
+    // 若 active 回退到排序首位而 visited 只挂载了上次模块，会出现「上次模块已挂载但 hidden、
+    // 首位模块未挂载」的双空局面（首屏空白，点底部按钮才出来），故统一回退到 preferred
     setActive((cur) =>
-      cur !== "settings" && !ids.has(cur) ? (enabledModules[0]?.id ?? "clipboard") : cur,
+      cur !== "settings" && !ids.has(cur) ? preferred : cur,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabledModules]);
