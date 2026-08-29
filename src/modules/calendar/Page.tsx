@@ -34,6 +34,9 @@ import {
   dayEndMs,
   dayStartMs,
   fmtHM,
+  fmtKeyLong,
+  fmtMonth,
+  fmtWeekRange,
   fromDateTimeInput,
   fromDateInput,
   keyToDateInput,
@@ -394,7 +397,13 @@ export function CalendarPage() {
                   <ChevronLeft className="size-4" />
                 </HeaderButton>
                 <HeaderButton title="回到今天" onClick={goToday}>
-                  <span className="text-xs">今天</span>
+                  <span className="whitespace-nowrap text-xs font-medium">
+                    {tab === "month"
+                      ? fmtMonth(ym.y, ym.m)
+                      : tab === "week"
+                        ? fmtWeekRange(selectedKey, cfg.weekShowWeekend !== false ? 7 : 5)
+                        : fmtKeyLong(selectedKey)}
+                  </span>
                 </HeaderButton>
                 <HeaderButton title={tab === "month" ? "下一月" : tab === "week" ? "下一周" : "下一天"} onClick={() => moveStep(1)}>
                   <ChevronRight className="size-4" />

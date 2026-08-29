@@ -231,6 +231,27 @@ export function weekStartKey(key: number): number {
   return start.getFullYear() * 10000 + (start.getMonth() + 1) * 100 + start.getDate();
 }
 
+/** 周范围展示文字：days=7 整周、days=5 周一至周五（隐藏周末）。
+ * 同一月 "8月24日–30日"；跨月 "8月31日–9月6日"；跨年两端带年份 */
+export function fmtWeekRange(key: number, days: number): string {
+  const start = weekStartKey(key);
+  const end = addDaysKey(start, days - 1);
+  const sy = Math.floor(start / 10000);
+  const ey = Math.floor(end / 10000);
+  const sm = Math.floor((start % 10000) / 100);
+  const em = Math.floor((end % 10000) / 100);
+  const sd = start % 100;
+  const ed = end % 100;
+  if (sy === ey && sm === em) return `${sm}月${sd}日–${ed}日`;
+  if (sy === ey) return `${sm}月${sd}日–${em}月${ed}日`;
+  return `${sy}年${sm}月${sd}日–${ey}年${em}月${ed}日`;
+}
+
+/** 月标题展示文字：2026年8月 */
+export function fmtMonth(y: number, m0: number): string {
+  return `${y}年${m0 + 1}月`;
+}
+
 /** 日键加减 N 天（正确处理跨月/跨年，如 8月31 +1 → 9月1） */
 export function addDaysKey(key: number, n: number): number {
   const y = Math.floor(key / 10000);

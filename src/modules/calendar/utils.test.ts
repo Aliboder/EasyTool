@@ -13,6 +13,8 @@ import {
   buildRrule,
   keyToDateInput,
   addDaysKey,
+  fmtWeekRange,
+  fmtMonth,
   type TimedEventLike,
 } from "./utils";
 
@@ -107,6 +109,18 @@ describe("calendar utils", () => {
     expect(blocks.length).toBe(2);
     expect(blocks.some((b) => b.index === 0)).toBe(true);
     expect(blocks.some((b) => b.index === 2)).toBe(true);
+  });
+
+  it("fmtWeekRange / fmtMonth 时间段文字", () => {
+    // 2026-08-29 是周六 → 所在周 8/24(一)–8/30(日)
+    expect(fmtWeekRange(20260829, 7)).toBe("8月24日–30日");
+    // 隐藏周末 → 周一至周五
+    expect(fmtWeekRange(20260829, 5)).toBe("8月24日–28日");
+    // 跨月：8/31 周一起 → 8/31–9/6
+    expect(fmtWeekRange(20260831, 7)).toBe("8月31日–9月6日");
+    // 跨年：2026-12-31(周四) 所在周 12/28–2027-01-03
+    expect(fmtWeekRange(20261231, 7)).toBe("2026年12月28日–2027年1月3日");
+    expect(fmtMonth(2026, 7)).toBe("2026年8月");
   });
 
   it("parseRrule / buildRrule 往返", () => {
