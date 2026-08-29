@@ -289,8 +289,11 @@ export function AccountCard({
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-sm">
-          <Icon className="size-4 text-muted-foreground" />
+          <Icon className="size-4 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">{account.name}</span>
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {meta.name}
+          </span>
           <StatusBadge account={account} threshold={threshold} critical={critical} />
           {dragHandle && (
             <GripVertical className="size-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />

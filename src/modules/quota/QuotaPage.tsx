@@ -19,7 +19,7 @@ import { Drawer } from "@/components/ui/drawer";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { QuotaSettings } from "./QuotaSettings";
 import { AccountCard, SortableCard } from "./quota-cards";
-import { type AccountStatusPayload, getKindMeta, knownKinds, fmtMoney } from "./registry";
+import { type AccountStatusPayload, fmtMoney } from "./registry";
 import { tierAt, nextBoundary, fmtRemaining } from "./pricing";
 
 interface StatusPayload {
@@ -144,43 +144,29 @@ export function QuotaPage() {
     balanceMax: settings?.balance_max ?? 0,
   };
 
-  // 按 kind 分组账户（仅含注册表已知的 kind，按 order 排序），组标题带供应商图标
-  const groups = knownKinds()
-    .map((kind) => ({
-      kind,
-      meta: getKindMeta(kind),
-      accounts: status?.accounts.filter((a) => a.kind === kind) ?? [],
-    }))
-    .filter((g) => g.accounts.length > 0);
-
-  // 组内拖拽排序：重排该 kind 的账户 → 重建全局顺序 → 本地乐观更新 + 持久化
+  // 所有账户统一列表（不按厂商分组）：显示顺序 = config 账号数组顺序，拖拽可完全自由调整
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
-  const handleGroupDragEnd = (kind: string) => (e: DragEndEvent) => {
+  const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
-    const ids = (status?.accounts.filter((a) => a.kind === kind) ?? []).map((a) => a.id);
+    const ids = (status?.accounts ?? []).map((a) => a.id);
     const from = ids.indexOf(String(active.id));
     const to = ids.indexOf(String(over.id));
     if (from < 0 || to < 0) return;
     const moved = arrayMove(ids, from, to);
-    // 按当前展示的分组顺序重建完整 id 列表
-    const order: string[] = [];
-    for (const g of groups) {
-      order.push(...(g.kind === kind ? moved : g.accounts.map((a) => a.id)));
-    }
     setStatus((prev) => {
       if (!prev) return prev;
       const byId = new Map(prev.accounts.map((a) => [a.id, a]));
       return {
         ...prev,
-        accounts: order
+        accounts: moved
           .map((id) => byId.get(id))
           .filter((a): a is AccountStatusPayload => !!a),
       };
     });
-    invoke("save_account_order", { ids: order }).catch(console.error);
+    invoke("save_account_order", { ids: moved }).catch(console.error);
   };
 
   return (
@@ -223,45 +209,36 @@ export function QuotaPage() {
             <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
               加载中...
             </div>
-          ) : groups.length === 0 ? (
+          ) : status.accounts.length === 0 ? (
             <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
               暂无账户，点击右上角 ⚙ 添加
             </div>
           ) : (
-            groups.map((g) => (
-              <section key={g.kind}>
-                <div className="mb-3 flex items-center gap-2">
-                  <g.meta.icon className="size-4 text-muted-foreground" />
-                  <h3 className="text-sm font-semibold">{g.meta.name}</h3>
-                  <span className="text-xs text-muted-foreground">{g.accounts.length} 个账户</span>
-                </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={status.accounts.map((a) => a.id)}
+                strategy={rectSortingStrategy}
+              >
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleGroupDragEnd(g.kind)}
-                  >
-                    <SortableContext
-                      items={g.accounts.map((a) => a.id)}
-                      strategy={rectSortingStrategy}
-                    >
-                      {g.accounts.map((acc) => (
-                        <SortableCard key={acc.id} id={acc.id}>
-                          <AccountCard
-                            account={acc}
-                            threshold={thresholds.threshold}
-                            critical={thresholds.critical}
-                            ringRemaining={thresholds.ringRemaining}
-                            balanceMax={thresholds.balanceMax}
-                            dragHandle
-                          />
-                        </SortableCard>
-                      ))}
-                    </SortableContext>
-                  </DndContext>
+                  {status.accounts.map((acc) => (
+                    <SortableCard key={acc.id} id={acc.id}>
+                      <AccountCard
+                        account={acc}
+                        threshold={thresholds.threshold}
+                        critical={thresholds.critical}
+                        ringRemaining={thresholds.ringRemaining}
+                        balanceMax={thresholds.balanceMax}
+                        dragHandle
+                      />
+                    </SortableCard>
+                  ))}
                 </div>
-              </section>
-            ))
+              </SortableContext>
+            </DndContext>
           )}
         </div>
       </div>
