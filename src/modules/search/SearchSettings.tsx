@@ -21,7 +21,7 @@ export interface SearchSettingsData {
   showResultsCount: boolean;
   clickToOpen: boolean;
   /** 「应用」Tab 独立排序记忆 */
-  appSortBy: "name" | "usage";
+  appSortBy: "name" | "usage" | "recent";
   appSortDesc: boolean;
   /** 置顶应用（快捷方式路径小写），排序时恒定排最前 */
   pinnedApps: string[];

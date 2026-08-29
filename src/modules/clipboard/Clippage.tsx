@@ -21,12 +21,10 @@ import {
 } from "@dnd-kit/core";
 import {
   SortableContext,
-  useSortable,
   rectSortingStrategy,
   arrayMove,
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { useHorizontalWheel } from "@/lib/use-horizontal-wheel";
 import { toast } from "@/lib/toast";
 import { ClipSettings } from "./ClipSettings";
@@ -34,6 +32,15 @@ import { LazyImage } from "@/components/LazyImage";
 import { ContextMenu } from "@/components/ui/context-menu";
 import { ContextMenuItem } from "@/components/ui/context-menu-item";
 import { ContextMenuDivider } from "@/components/ui/context-menu-divider";
+import {
+  EmptyState,
+  PinnedSortable,
+  LINE_CLAMP,
+  fileBasename,
+  fmtTime,
+  highlight,
+  isImageItem,
+} from "./ui-shared";
 
 interface ItemDto {
   id: number;
@@ -61,91 +68,6 @@ function hideWindow() {
   getCurrentWindow().hide();
 }
 
-const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "ico", "avif", "tif", "tiff"];
-
-function isImageItem(item: ItemDto): boolean {
-  if (item.kind === "image") return true;
-  if (item.kind === "files") {
-    const ext = item.preview.split(".").pop()?.toLowerCase() ?? "";
-    return IMAGE_EXTS.includes(ext);
-  }
-  return false;
-}
-
-function fileBasename(path: string): string {
-  return path.split(/[\\/]/).pop() || path;
-}
-
-const LINE_CLAMP: Record<number, string> = {
-  1: "line-clamp-1",
-  2: "line-clamp-2",
-  3: "line-clamp-3",
-};
-
-function fmtTime(ts: number): string {
-  const d = new Date(ts);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-function highlight(text: string, kws: string[]): React.ReactNode {
-  const keys = kws.filter((k) => k.length > 0);
-  if (!keys.length) return text;
-  // 高亮全部命中（多关键词、多位置）；关键词可能含正则特殊字符，需转义
-  const pattern = keys
-    .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("|");
-  const re = new RegExp(`(${pattern})`, "gi");
-  const parts: React.ReactNode[] = [];
-  let lastIdx = 0;
-  for (const m of text.matchAll(re)) {
-    const idx = m.index ?? 0;
-    if (idx > lastIdx) parts.push(text.slice(lastIdx, idx));
-    parts.push(
-      <mark key={`${idx}-${m[0]}`} className="rounded-sm bg-emerald-500/25 px-0.5 text-inherit">
-        {m[0]}
-      </mark>,
-    );
-    lastIdx = idx + m[0].length;
-  }
-  if (lastIdx < text.length) parts.push(text.slice(lastIdx));
-  return parts.length ? parts : text;
-}
-
-function EmptyState({ icon: Icon, title, description }: { icon: React.ComponentType<{ className?: string }>; title: string; description?: string }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-      <Icon className="size-10 opacity-40" />
-      <div className="text-center">
-        <div className="text-sm">{title}</div>
-        {description && <div className="mt-1 text-xs opacity-60">{description}</div>}
-      </div>
-    </div>
-  );
-}
-
-// 固定板块内可拖拽排序的小条目包装（小尺寸元素，transform 不会触发大卡片渲染问题）
-function PinnedSortable({ id, children }: { id: string; children: React.ReactNode }) {
-  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
-    id,
-  });
-  return (
-    <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        willChange: "transform",
-      }}
-      className={cn(isDragging && "z-10 opacity-70")}
-    >
-      {children}
-    </div>
-  );
-}
-
 export function Clippage() {
   const [allItems, setAllItems] = useState<ItemDto[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
@@ -160,6 +82,8 @@ export function Clippage() {
   const { cfg: clipCfg, update: updateClipCfg } = useModuleConfig("clipboard", CLIPBOARD_DEFAULTS);
   const [preview, setPreview] = useState<{ src: string; name: string } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // 图片尺寸/体积角标（大图预览头部展示）
+  const [previewInfo, setPreviewInfo] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingNoteValue, setEditingNoteValue] = useState("");
 
@@ -323,6 +247,7 @@ export function Clippage() {
   const viewImage = async (item: ItemDto) => {
     setMenu(null);
     setPreviewLoading(true);
+    setPreviewInfo("");
     setPreview({ src: "", name: item.kind === "files" ? fileBasename(item.preview) : "剪贴板图片" });
     try {
       const b64 =
@@ -340,6 +265,23 @@ export function Clippage() {
       setPreview(null);
     } finally {
       setPreviewLoading(false);
+    }
+    // 图片条目附带尺寸与体积（异步取，失败静默）
+    if (item.kind === "image") {
+      try {
+        const info = await invoke<{ width: number; height: number; bytes: number } | null>(
+          "get_image_size",
+          { id: item.id },
+        );
+        if (info) {
+          const mb = info.bytes / 1024 / 1024;
+          setPreviewInfo(
+            `${info.width}×${info.height} · ${mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(info.bytes / 1024))} KB`}`,
+          );
+        }
+      } catch {
+        // 静默失败
+      }
     }
   };
 
@@ -665,6 +607,25 @@ export function Clippage() {
         setPreview(null);
         return;
       }
+    }
+    // 右键菜单/大图预览打开时，Enter/数字键不触发粘贴
+    if (menu || preview) return;
+    // Enter 粘贴选中项：键盘流闭合（触控笔/纯键盘用户）
+    if (e.key === "Enter" && selected != null) {
+      e.preventDefault();
+      doPaste(selected);
+      return;
+    }
+    // 数字键 1-9 直贴第 N 条（焦点在搜索框时正常输入数字）
+    if (e.key >= "1" && e.key <= "9") {
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const target = ordered[Number(e.key) - 1];
+      if (target) {
+        e.preventDefault();
+        doPaste(target.id);
+      }
+      return;
     }
     if (e.key === "Delete" && selected != null) {
       del(selected);
@@ -1024,6 +985,7 @@ export function Clippage() {
           <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-4 py-3">
             <span className="max-w-[70%] truncate text-xs text-white/90" title={preview.name}>
               {preview.name}
+              {previewInfo && <span className="ml-2 opacity-70">· {previewInfo}</span>}
             </span>
             <button
               onClick={() => setPreview(null)}

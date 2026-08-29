@@ -339,6 +339,68 @@ pub fn get_image_path(state: State<'_, AppState>, id: i64) -> CmdResult<Option<S
     Ok(item.image_path)
 }
 
+/// 图片尺寸与体积（大图预览角标展示用）
+#[derive(Debug, Serialize)]
+pub struct ImageSizeDto {
+    pub width: u32,
+    pub height: u32,
+    pub bytes: u64,
+}
+
+/// 拉取 GitHub 最新 Release 的发布说明（设置页「更新内容」用）
+#[tauri::command]
+pub async fn github_latest_release() -> CmdResult<serde_json::Value> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("https://api.github.com/repos/Aliboder/EasyTool/releases/latest")
+        .header("User-Agent", "EasyTool")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| CommandError::from(format!("获取发布信息失败: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(CommandError::from(format!(
+            "获取发布信息失败: HTTP {}",
+            resp.status()
+        )));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| CommandError::from(e.to_string()))?;
+    Ok(serde_json::json!({
+        "tag": json["tag_name"].as_str().unwrap_or(""),
+        "published": json["published_at"].as_str().unwrap_or(""),
+        "body": json["body"].as_str().unwrap_or(""),
+    }))
+}
+
+#[tauri::command]
+pub fn get_image_size(state: State<'_, AppState>, id: i64) -> CmdResult<Option<ImageSizeDto>> {
+    let path = {
+        let db = state.db.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(item) = db.get_item(id)? else {
+            return Ok(None);
+        };
+        item.image_path
+    };
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    let Ok(reader) = image::ImageReader::open(&path) else {
+        return Ok(None);
+    };
+    let Ok(reader) = reader.with_guessed_format() else {
+        return Ok(None);
+    };
+    let Ok(img) = reader.decode() else {
+        return Ok(None);
+    };
+    Ok(Some(ImageSizeDto {
+        width: img.width(),
+        height: img.height(),
+        bytes,
+    }))
+}
+
 /// 文件类型图标（Shell API，按文件路径；异步执行避免阻塞 IPC 串行线程）
 #[tauri::command]
 pub async fn get_file_icon(path: String) -> CmdResult<Option<String>> {

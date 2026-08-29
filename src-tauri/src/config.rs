@@ -231,20 +231,29 @@ pub fn set_main_hotkey(
     Ok(())
 }
 
-/// 保存主窗口尺寸（重启恢复）；忽略 0/极小尺寸（窗口隐藏/最小化时 WebView2 会报 0x0）
+/// 保存主窗口尺寸与位置（重启恢复）；忽略 0/极小尺寸（窗口隐藏/最小化时 WebView2 会报 0x0）
 #[tauri::command]
 pub fn save_main_size(
     app: AppHandle,
     state: State<ConfigState>,
     width: u32,
     height: u32,
+    x: Option<i32>,
+    y: Option<i32>,
 ) -> Result<(), String> {
     // 与 tauri.conf.json 的 minWidth/minHeight 一致
     if width < 400 || height < 300 {
         return Ok(());
     }
+    let mut saved = serde_json::json!({ "w": width, "h": height });
+    if let (Some(x), Some(y)) = (x, y) {
+        if x.abs() < 100_000 && y.abs() < 100_000 {
+            saved["x"] = serde_json::json!(x);
+            saved["y"] = serde_json::json!(y);
+        }
+    }
     let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    cfg.main_size = Some(serde_json::json!({ "w": width, "h": height }));
+    cfg.main_size = Some(saved);
     save_config(&app, &cfg)
 }
 

@@ -30,15 +30,21 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
         Err(e) => {
             log::error!("clipboard db init failed ({e}), quarantining broken db and recreating");
             crate::quarantine_broken_db(&db_path);
-            AppState::new(data_dir.clone(), db_path, MAX_ITEMS)
+            AppState::new(data_dir.clone(), db_path.clone(), MAX_ITEMS)
                 .map_err(|e| tauri::Error::Io(std::io::Error::other(e.to_string())))?
         }
     };
-    if let Ok(db) = state.db.lock() {
-        let _ = db.vacuum_if_large(8 * 1024 * 1024);
-    }
     log::info!("clipboard module ready, data dir: {}", data_dir.display());
     app.manage(state);
+    // 启动后异步收缩 DB 碎片（超过 8MB 才做；同步做会阻塞 setup，推迟首帧）。
+    // 直接重开库独立执行，避免与 AppState 的借用纠缠
+    let vacuum_dir = data_dir.clone();
+    std::thread::spawn(move || {
+        let path = vacuum_dir.join("clipboard.db");
+        if let Ok(db) = crate::modules::clipboard::db::Db::open(&path.to_string_lossy()) {
+            let _ = db.vacuum_if_large(8 * 1024 * 1024);
+        }
+    });
     monitor::start(app.clone());
     Ok(())
 }

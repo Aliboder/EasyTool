@@ -5,7 +5,8 @@
 
 use super::sdk::{self, SdkResult, SORT_DATE_MODIFIED_ASC, SORT_DATE_MODIFIED_DESC, SORT_NAME_ASC, SORT_NAME_DESC, SORT_PATH_ASC, SORT_PATH_DESC, SORT_SIZE_ASC, SORT_SIZE_DESC};
 use serde::Serialize;
-use tauri::AppHandle;
+use std::sync::Mutex;
+use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Serialize)]
 pub struct CommandError {
@@ -178,8 +179,14 @@ pub async fn search_scan_apps(app: AppHandle) -> CmdResult<Vec<super::apps::Scan
 }
 
 /// 直接打开任意路径（应用 Tab 点击启动用；.lnk 由 shell 解析目标）
+/// 同时记录「最近启动」时间（按解析目标落 app_usage 表）
 #[tauri::command]
-pub fn search_open_path(path: String) -> CmdResult<()> {
+pub fn search_open_path(app: AppHandle, path: String) -> CmdResult<()> {
+    if let Some(state) = app.try_state::<Mutex<super::apps::AppsState>>() {
+        let target = super::apps::resolve_target(&path);
+        let now = chrono::Local::now().timestamp_millis();
+        let _ = state.lock().unwrap().db.mark_launched(&target, now);
+    }
     std::process::Command::new("explorer")
         .arg(&path)
         .spawn()

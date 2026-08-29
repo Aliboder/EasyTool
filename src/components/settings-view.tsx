@@ -152,6 +152,15 @@ export function SettingsView({
   };
 
   const enabledCount = manifests.filter((m) => Boolean(config.modules[m.id]?.enabled)).length;
+  // 设置搜索：按模块名/描述/id 过滤模块卡片
+  const [modQuery, setModQuery] = useState("");
+  const filteredManifests = modQuery.trim()
+    ? manifests.filter((m) =>
+        `${m.name} ${m.description ?? ""} ${m.id}`
+          .toLowerCase()
+          .includes(modQuery.trim().toLowerCase()),
+      )
+    : manifests;
 
   return (
     <div className="mx-auto w-full max-w-xl space-y-6 p-6">
@@ -164,13 +173,26 @@ export function SettingsView({
 
       <Card>
         <CardHeader>
-          <CardTitle>功能模块</CardTitle>
-          <CardDescription>拖动手柄调整顺序，底部栏显示已启用的模块</CardDescription>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>功能模块</CardTitle>
+              <CardDescription>拖动手柄调整顺序，底部栏显示已启用的模块</CardDescription>
+            </div>
+            <div className="relative w-40 shrink-0">
+              <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={modQuery}
+                onChange={(e) => setModQuery(e.target.value)}
+                placeholder="搜索模块…"
+                className="h-8 w-full rounded-md border bg-muted pl-7 pr-2 text-xs outline-none focus:border-primary"
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={manifests.map((m) => m.id)} strategy={verticalListSortingStrategy}>
-              {manifests.map((m) => {
+            <SortableContext items={filteredManifests.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+              {filteredManifests.map((m) => {
                 const enabled = Boolean(config.modules[m.id]?.enabled);
                 const Icon = MODULE_ICONS[m.icon] ?? Clipboard;
                 return (

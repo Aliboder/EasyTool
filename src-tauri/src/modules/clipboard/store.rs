@@ -29,11 +29,16 @@ impl FileStore {
         &self.root
     }
 
-    /// 原图 PNG 写入 images/{id}.png
-    pub fn save_image(&self, id: i64, png_bytes: &[u8]) -> std::io::Result<PathBuf> {
-        let path = self.images_dir().join(format!("{id}.png"));
-        std::fs::write(&path, png_bytes)?;
+    /// 原图写入 images/{id}.{ext}（PNG 或 JPEG，按内容自适应）
+    pub fn save_media(&self, id: i64, ext: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
+        let path = self.images_dir().join(format!("{id}.{ext}"));
+        std::fs::write(&path, bytes)?;
         Ok(path)
+    }
+
+    /// 原图 PNG 写入 images/{id}.png（兼容保留）
+    pub fn save_image(&self, id: i64, png_bytes: &[u8]) -> std::io::Result<PathBuf> {
+        self.save_media(id, "png", png_bytes)
     }
 
     /// 缩略图 PNG 写入 thumbs/{id}.png

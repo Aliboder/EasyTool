@@ -13,6 +13,18 @@ export interface ScannedApp {
   name: string;
   path: string;
   usage_count: number;
+  /** 最近一次启动时间戳（毫秒；0 = 未记录） */
+  last_launched_ms: number;
+}
+
+/** 最近启动的相对时间（今天/昨天/N天前） */
+function fmtRecent(ms: number): string {
+  if (ms <= 0) return "";
+  const day = 24 * 3600 * 1000;
+  const diff = Date.now() - ms;
+  if (diff < day) return "今天";
+  if (diff < 2 * day) return "昨天";
+  return `${Math.floor(diff / day)}天前`;
 }
 
 /** 应用置顶区：匹配应用以网格图标卡片展示 */
@@ -73,7 +85,7 @@ export function AppsGrid({
   query: string;
   gridSize: number;
   viewMode: "grid" | "list";
-  sortBy: "name" | "usage";
+  sortBy: "name" | "usage" | "recent";
   sortDesc: boolean;
   icons: Record<string, string>;
   loadIcon: (path: string) => Promise<void>;
@@ -97,10 +109,16 @@ export function AppsGrid({
     const filtered = (apps ?? []).filter((a) =>
       a.name.toLowerCase().includes(q),
     );
-    // 频率降序为"最常用在前"，方向可翻转；名称按中文拼音
+    // 频率降序为"最常用在前"，方向可翻转；名称按中文拼音；最近按启动时间倒序
     if (sortBy === "usage") {
       filtered.sort((a, b) =>
         sortDesc ? a.usage_count - b.usage_count : b.usage_count - a.usage_count,
+      );
+    } else if (sortBy === "recent") {
+      filtered.sort((a, b) =>
+        sortDesc
+          ? a.last_launched_ms - b.last_launched_ms
+          : b.last_launched_ms - a.last_launched_ms,
       );
     } else {
       filtered.sort((a, b) => {
@@ -205,6 +223,11 @@ export function AppsGrid({
               <span className="max-w-[45%] shrink-0 truncate text-xs text-muted-foreground">
                 {a.path}
               </span>
+              {a.last_launched_ms > 0 && (
+                <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-400/90">
+                  {fmtRecent(a.last_launched_ms)}
+                </span>
+              )}
             </div>
           );
         })}

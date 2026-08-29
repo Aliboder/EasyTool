@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Settings2, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Drawer } from "@/components/ui/drawer";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { QuotaSettings } from "./QuotaSettings";
@@ -26,6 +27,7 @@ export function QuotaPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const refreshStatus = useCallback(() => {
     invoke<StatusPayload>("get_status").then(setStatus).catch(console.error);
@@ -33,9 +35,17 @@ export function QuotaPage() {
   }, []);
 
   const refreshAll = useCallback(() => {
-    refreshStatus();
-    invoke<Settings>("get_settings").then(setSettings).catch(console.error);
-  }, [refreshStatus]);
+    setRefreshing(true);
+    Promise.all([
+      invoke<StatusPayload>("get_status").then(setStatus),
+      invoke<Settings>("get_settings").then(setSettings),
+    ])
+      .catch(console.error)
+      .finally(() => {
+        setRefreshing(false);
+        setLastRefresh(Date.now());
+      });
+  }, []);
 
   useEffect(() => {
     refreshAll();
@@ -77,8 +87,8 @@ export function QuotaPage() {
         }
         actions={
           <>
-            <HeaderButton title="手动刷新" onClick={refreshAll}>
-              <RefreshCw className="size-4" />
+            <HeaderButton title={refreshing ? "刷新中…" : "手动刷新"} onClick={refreshAll}>
+              <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
             </HeaderButton>
             <HeaderButton
               title="额度设置"

@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { X } from "lucide-react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import {
   getBootstrap,
@@ -102,6 +103,9 @@ function App() {
   }, []);
   const [notice, setNotice] = useState<string | null>(null);
   const [updateBanner, setUpdateBanner] = useState<{ version: string; notes: string } | null>(null);
+  // 更新日志弹窗（横幅「更新内容」触发，拉取 GitHub Release body）
+  const [updateNotes, setUpdateNotes] = useState<{ tag: string; published: string; body: string } | null>(null);
+  const [notesLoading, setNotesLoading] = useState(false);
 
   useEffect(() => {
     invoke("log_frontend", { level: "info", msg: "[diag] app mounted" }).catch(
@@ -153,20 +157,38 @@ function App() {
     if (config) applyTheme(config.theme);
   }, [config]);
 
-  // 记住主窗口尺寸：调整后防抖保存，重启恢复
-  // 过滤 0/极小尺寸：窗口隐藏/最小化时 WebView2 会报 0x0，存进配置会导致下次启动窗口极小
+  // 记住主窗口尺寸与位置：调整/移动后防抖保存，重启恢复（多显示器回到原位置）
+  // 过滤 0/极小尺寸：窗口隐藏/最小化时 WebView2 会报 0x0/离屏坐标，存进配置会导致下次启动窗口异常
   useEffect(() => {
     const win = getCurrentWindow();
     let t: number | null = null;
-    const un = win.onResized(({ payload }) => {
+    let size = { width: 0, height: 0 };
+    const persist = () => {
       if (t) window.clearTimeout(t);
-      if (payload.width < 400 || payload.height < 300) return; // 与 tauri.conf.json 的 minWidth/minHeight 一致
+      if (size.width < 400 || size.height < 300) return; // 与 tauri.conf.json 的 minWidth/minHeight 一致
+      win
+        .outerPosition()
+        .then((pos) => {
+          if (pos.x < -32000 || pos.y < -32000) return; // 离屏坐标（隐藏/最小化）
+          saveMainSize(size.width, size.height, pos.x, pos.y).catch(console.error);
+        })
+        .catch(console.error);
+    };
+    const unResize = win.onResized(({ payload }) => {
+      size = { width: payload.width, height: payload.height };
+      t = window.setTimeout(persist, 400);
+    });
+    const unMove = win.onMoved(() => {
       t = window.setTimeout(() => {
-        saveMainSize(payload.width, payload.height).catch(console.error);
+        win.innerSize().then((s) => {
+          size = { width: s.width, height: s.height };
+          persist();
+        }).catch(console.error);
       }, 400);
     });
     return () => {
-      un.then((fn) => fn());
+      unResize.then((fn) => fn());
+      unMove.then((fn) => fn());
       if (t) window.clearTimeout(t);
     };
   }, []);
@@ -337,6 +359,26 @@ function App() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
+                    if (updateNotes) return;
+                    setNotesLoading(true);
+                    invoke<{ tag: string; published: string; body: string }>(
+                      "github_latest_release",
+                    )
+                      .then((r) => setUpdateNotes(r))
+                      .catch(() => {
+                        invoke("log_frontend", {
+                          level: "warn",
+                          msg: "fetch release notes failed",
+                        }).catch(() => {});
+                      })
+                      .finally(() => setNotesLoading(false));
+                  }}
+                  className="rounded bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400"
+                >
+                  {notesLoading ? "加载中…" : "更新内容"}
+                </button>
+                <button
+                  onClick={() => {
                     checkForUpdate().then((u) => u?.downloadAndInstall());
                     setUpdateBanner(null);
                   }}
@@ -378,6 +420,40 @@ function App() {
                 onMainHotkey={changeMainHotkey}
                 onMainFollowMouse={changeMainFollowMouse}
               />
+            )}
+
+            {updateNotes && (
+              <div
+                className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6"
+                onClick={() => setUpdateNotes(null)}
+              >
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex max-h-[80%] w-full max-w-lg flex-col overflow-hidden rounded-xl border bg-card text-card-foreground shadow-xl"
+                >
+                  <div className="flex items-center justify-between border-b px-5 py-3">
+                    <div>
+                      <div className="text-sm font-semibold">
+                        更新内容 · {updateNotes.tag}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {updateNotes.tag}
+                        {updateNotes.published ? ` · ${updateNotes.published.slice(0, 10)}` : ""}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setUpdateNotes(null)}
+                      aria-label="关闭"
+                      className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                  <div className="themed-scroll flex-1 overflow-y-auto whitespace-pre-wrap px-5 py-4 text-xs leading-relaxed text-muted-foreground">
+                    {updateNotes.body || "暂无更新说明"}
+                  </div>
+                </div>
+              </div>
             )}
         </main>
         <Sidebar modules={enabledModules} active={active} onSelect={selectModule} />

@@ -32,8 +32,8 @@ export const setModuleEnabled = (id: string, enabled: boolean) =>
 export const setModuleOrder = (ids: string[]) => invoke<void>("set_module_order", { ids });
 export const setTheme = (theme: string) => invoke<void>("set_theme", { theme });
 export const setMainHotkey = (hotkey: string) => invoke<void>("set_main_hotkey", { hotkey });
-export const saveMainSize = (width: number, height: number) =>
-  invoke<void>("save_main_size", { width, height });
+export const saveMainSize = (width: number, height: number, x?: number, y?: number) =>
+  invoke<void>("save_main_size", { width, height, x, y });
 export const setMainFollowMouse = (enabled: boolean) =>
   invoke<void>("set_main_follow_mouse", { enabled });
 

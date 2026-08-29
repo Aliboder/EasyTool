@@ -153,6 +153,35 @@ impl Db {
         Ok(())
     }
 
+    /// 最近的未固定条目 (id, created_at)；复制突发合并（防抖）用
+    pub fn latest_unpinned(&self) -> Result<Option<(i64, i64)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, created_at FROM items WHERE pinned = 0
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query([])?;
+        match rows.next()? {
+            Some(r) => Ok(Some((r.get(0)?, r.get(1)?))),
+            None => Ok(None),
+        }
+    }
+
+    /// 文本条目内容整体替换（防抖合并：短时内反复复制的文本收敛为一条，保留最新内容）
+    pub fn replace_text_content(
+        &self,
+        id: i64,
+        content: &str,
+        html: Option<&str>,
+        hash: &str,
+        created_at: i64,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE items SET content = ?1, html = ?2, hash = ?3, created_at = ?4 WHERE id = ?5",
+            params![content, html, hash, created_at, id],
+        )?;
+        Ok(())
+    }
+
     /// 按 hash 查找条目 id
     pub fn find_by_hash(&self, hash: &str) -> Result<Option<i64>, DbError> {
         let id = self

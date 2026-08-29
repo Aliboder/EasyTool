@@ -21,6 +21,18 @@ import { toast } from "@/lib/toast";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { EMOJI_DEFAULTS } from "./config";
+import { pinyin } from "pinyin-pro";
+
+// 拼音索引缓存：关键词串 → 无调全拼（懒构建，提升搜索命中中文拼音关键词）
+const pyCache = new Map<string, string>();
+function pyOf(text: string): string {
+  let v = pyCache.get(text);
+  if (v === undefined) {
+    v = pinyin(text, { toneType: "none", type: "array" }).join(" ");
+    pyCache.set(text, v);
+  }
+  return v;
+}
 
 const GROUP_TABS = [
   { id: "favorite", zh: "收藏" },
@@ -162,7 +174,8 @@ export function EmojiPage({ active = true }: { active?: boolean }) {
       list = list.filter(
         (e) =>
           e.name_en.toLowerCase().includes(ql) ||
-          e.keywords_zh.some((k) => k.includes(q.trim())),
+          e.keywords_zh.some((k) => k.includes(q.trim())) ||
+          pyOf(e.keywords_zh.join(" ")).includes(ql),
       );
     }
     return list;

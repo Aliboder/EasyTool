@@ -35,6 +35,8 @@ const THUMB_MAX_SIZE: u32 = 256;
 /// 原图保存最长边：超过则降采样（截图等大图编码慢、占盘大；预览/粘贴按需用原图，
 /// 2048 以内质量足够，磁盘与编码开销显著下降）
 const ORIGINAL_MAX_EDGE: u32 = 2048;
+/// 复制突发合并窗口（毫秒）：窗口内同类型文本连拷收敛为一条
+const BURST_MERGE_MS: i64 = 300;
 
 pub fn start(app: AppHandle) {
     let _ = APP_HANDLE.set(app);
@@ -275,6 +277,32 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
             return Ok(Some((item, false)));
         }
 
+        // 2.75 复制突发合并（防抖）：短窗口内文本连拷（如连续 Ctrl+C 微调选择），
+        //      直接更新最新一条而非新增，避免历史刷屏
+        if kind == ItemKind::Text {
+            if let Some((last_id, last_ts)) = db.latest_unpinned()? {
+                if now.saturating_sub(last_ts) <= BURST_MERGE_MS {
+                    if let Some(last_item) = db.get_item(last_id)? {
+                        if last_item.kind == ItemKind::Text && !last_item.pinned {
+                            db.replace_text_content(
+                                last_id,
+                                content.as_deref().unwrap_or_default(),
+                                html.as_deref(),
+                                &hash,
+                                now,
+                            )?;
+                            let item = db
+                                .get_item(last_id)?
+                                .ok_or_else(|| DbError::Sql(rusqlite::Error::QueryReturnedNoRows))?;
+                            log::debug!("burst merge: updated item {last_id}");
+                            drop(db);
+                            return Ok(Some((item, false)));
+                        }
+                    }
+                }
+            }
+        }
+
         // 3. 新增（仅入库拿 id；图片文件编码/落盘在锁外执行，避免阻塞前端 DB 查询）
         let item = Item {
             id: 0,
@@ -446,12 +474,12 @@ fn save_image_files(
         (w, h, rgba.to_vec())
     };
 
-    let png = clipboard::rgba_to_png(&out_rgba, out_w, out_h)?;
+    let (ext, encoded) = encode_image(&out_rgba, out_w, out_h)?;
     // 缩略图基于原始像素生成（避免先降采样再缩放的二次质量损失）
     let thumb_png = super::store::FileStore::make_thumb_png(rgba, w, h, THUMB_MAX_SIZE);
 
     let state = app.state::<AppState>();
-    let img_path = state.store.save_image(id, &png).map_err(|e| e.to_string())?;
+    let img_path = state.store.save_media(id, &ext, &encoded).map_err(|e| e.to_string())?;
     let thumb_path = match &thumb_png {
         Ok(tp) => state.store.save_thumb(id, tp).unwrap_or_default(),
         Err(_) => std::path::PathBuf::new(),
@@ -463,4 +491,37 @@ fn save_image_files(
         Some(thumb_path.to_string_lossy().into_owned()),
     );
     Ok(())
+}
+
+/// 图片编码自适应：有透明通道 → PNG 无损；无透明且颜色丰富（照片/渐变）→ JPEG q90，
+/// 体积可省数倍；纯色块/截图 → PNG（避免 JPEG 压缩噪点）。返回 (扩展名, 编码字节)
+fn encode_image(rgba: &[u8], w: u32, h: u32) -> Result<(String, Vec<u8>), String> {
+    let has_alpha = rgba.chunks_exact(4).step_by(509).any(|p| p[3] < 250);
+    if has_alpha {
+        return Ok(("png".into(), clipboard::rgba_to_png(rgba, w, h)?));
+    }
+    // 颜色丰富度采样：超过阈值判定为照片类，用 JPEG 省空间
+    let mut colors: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let mut n = 0u32;
+    for px in rgba.chunks_exact(4).step_by(509) {
+        colors.insert((px[0] as u32) << 16 | (px[1] as u32) << 8 | px[2] as u32);
+        n += 1;
+    }
+    let photo = n > 128 && (colors.len() as f64 / n as f64) > 0.45;
+    if !photo {
+        return Ok(("png".into(), clipboard::rgba_to_png(rgba, w, h)?));
+    }
+    let img =
+        image::RgbaImage::from_raw(w, h, rgba.to_vec()).ok_or("invalid rgba buffer")?;
+    let rgb = image::DynamicImage::ImageRgba8(img).to_rgb8();
+    let mut buf = Vec::new();
+    let mut enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 90);
+    enc.encode(
+        rgb.as_raw(),
+        rgb.width(),
+        rgb.height(),
+        image::ExtendedColorType::Rgb8,
+    )
+    .map_err(|e| format!("jpeg encode failed: {e}"))?;
+    Ok(("jpg".into(), buf))
 }

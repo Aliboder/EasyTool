@@ -479,6 +479,23 @@ export function SearchView() {
         else doOpen(item);
       }
     } else if (e.key === "Escape") {
+      // ESC：逐层关闭浮层，最后清空搜索词回到应用浏览态
+      if (menu) {
+        setMenu(null);
+        return;
+      }
+      if (appMenu) {
+        setAppMenu(null);
+        return;
+      }
+      if (optsPos) {
+        setOptsPos(null);
+        return;
+      }
+      if (query.trim()) {
+        setQuery("");
+        doSearch("", activeFilter.query, options);
+      }
     }
   };
 
@@ -771,10 +788,11 @@ export function SearchView() {
               fields={[
                 { id: "name", label: "名称" },
                 { id: "usage", label: "频率" },
+                { id: "recent", label: "最近" },
               ]}
               value={cfg.appSortBy}
               onChange={(id) =>
-                updateCfg({ appSortBy: id as "name" | "usage" })
+                updateCfg({ appSortBy: id as "name" | "usage" | "recent" })
               }
               desc={cfg.appSortDesc}
               onDescToggle={() => updateCfg({ appSortDesc: !cfg.appSortDesc })}

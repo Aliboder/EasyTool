@@ -18,6 +18,8 @@ pub struct ScannedApp {
     pub path: String,
     /// 全局前台使用次数（与文件搜索模块共用同一监测源）
     pub usage_count: i64,
+    /// 最近一次启动时间戳（毫秒；0 = 从未记录）
+    pub last_launched_ms: i64,
 }
 
 pub struct AppsState {
@@ -52,11 +54,26 @@ impl AppsDb {
             params![r"\\?"],
         )
         .map_err(|e| format!("清理失败: {e}"))?;
+        // v4：最近启动时间列（0.7.1 引入）；列探测保证幂等
+        let cols = conn
+            .prepare("PRAGMA table_info(app_usage)")
+            .map_err(|e| format!("读表结构失败: {e}"))?
+            .query_map([], |r| r.get::<_, String>(1))
+            .map_err(|e| format!("读表结构失败: {e}"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("读表结构失败: {e}"))?;
+        if !cols.iter().any(|c| c == "last_launched_ms") {
+            conn.execute(
+                "ALTER TABLE app_usage ADD COLUMN last_launched_ms INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|e| format!("加列失败: {e}"))?;
+        }
         Ok(Self { conn })
     }
 
-    /// 批量落库扫描到的目标（新目标从 0 起），返回 目标→当前次数
-    pub fn sync_targets(&self, targets: &[String]) -> Result<Vec<(String, i64)>, String> {
+    /// 批量落库扫描到的目标（新目标从 0 起），返回 目标→(当前次数, 最近启动)
+    pub fn sync_targets(&self, targets: &[String]) -> Result<Vec<(String, i64, i64)>, String> {
         for t in targets {
             self.conn
                 .execute(
@@ -69,13 +86,25 @@ impl AppsDb {
         }
         let mut stmt = self
             .conn
-            .prepare("SELECT target, count FROM app_usage")
+            .prepare("SELECT target, count, last_launched_ms FROM app_usage")
             .map_err(|e| format!("查询失败: {e}"))?;
         let rows = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .map_err(|e| format!("查询失败: {e}"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("读取失败: {e}"))
+    }
+
+    /// 记录一次启动（应用中心点击启动时调用；合计次数仍由前台钩子累计）
+    pub fn mark_launched(&self, target: &str, now_ms: i64) -> Result<(), String> {
+        self.conn
+            .execute(
+                "INSERT INTO app_usage(target, count, last_launched_ms) VALUES (?1, 1, ?2)
+                 ON CONFLICT(target) DO UPDATE SET last_launched_ms = ?2",
+                params![target, now_ms],
+            )
+            .map_err(|e| format!("记录启动失败: {e}"))?;
+        Ok(())
     }
 
     /// 目标命中前台 +1（不存在则建行）
@@ -280,7 +309,7 @@ pub fn scan_installed(app: &AppHandle) -> Result<Vec<ScannedApp>, String> {
         }
     }
 
-    let usage_map: std::collections::HashMap<String, i64> =
+    let usage_map: std::collections::HashMap<String, (i64, i64)> =
         match app.try_state::<Mutex<AppsState>>() {
             Some(state) => state
                 .lock()
@@ -294,6 +323,7 @@ pub fn scan_installed(app: &AppHandle) -> Result<Vec<ScannedApp>, String> {
                 )
                 .unwrap_or_default()
                 .into_iter()
+                .map(|(t, c, l)| (t, (c, l)))
                 .collect(),
             None => Default::default(),
         };
@@ -314,7 +344,8 @@ pub fn scan_installed(app: &AppHandle) -> Result<Vec<ScannedApp>, String> {
         out.push(ScannedApp {
             name,
             path,
-            usage_count: *usage_map.get(&target).unwrap_or(&0),
+            usage_count: usage_map.get(&target).map(|(c, _)| *c).unwrap_or(0),
+            last_launched_ms: usage_map.get(&target).map(|(_, l)| *l).unwrap_or(0),
         });
     }
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
