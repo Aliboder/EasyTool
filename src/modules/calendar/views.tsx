@@ -671,17 +671,46 @@ export function TimeLineView({
     () => buildTimeline(events, { startMs: loadedStart, endMs: loadedEnd, hourHeight, hideEmpty }),
     [events, loadedStart, loadedEnd, hourHeight, hideEmpty],
   );
+  // 跳过空闲时若「今天」没课被跳过，在其时间位置插入「今天 · 无课」标记，便于定位到当前时刻
+  const renderDays = useMemo(() => {
+    type Day = (typeof days)[number];
+    const hasToday = days.some((d) => d.dayKey === today);
+    if (!hideEmpty || hasToday || days.length === 0) {
+      return days.map((d) => ({ day: d, todayEmpty: false }));
+    }
+    const idx = days.findIndex((d) => d.dayKey > today);
+    const pos = idx === -1 ? days.length : idx;
+    const items: { day: Day; todayEmpty: boolean }[] = [];
+    for (let i = 0; i < days.length; i++) {
+      if (i === pos) items.push({ day: days[i], todayEmpty: true });
+      items.push({ day: days[i], todayEmpty: false });
+    }
+    if (pos === days.length) items.push({ day: days[days.length - 1], todayEmpty: true });
+    return items;
+  }, [days, hideEmpty, today]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const todayRef = useRef<HTMLDivElement | null>(null);
   const loadBusy = useRef(false);
+  const centeredRef = useRef(false);
 
-  // 初始 / 点「今天」：把今天那格滚到视口中央
+  // 数据就绪后首次定位到「今天」所在处（含「今天 · 无课」标记）
   useEffect(() => {
+    if (centeredRef.current) return;
     const c = scrollRef.current;
-    if (!c || days.length === 0) return;
-    todayRef.current?.scrollIntoView({ block: "center", behavior: "auto" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nowFocus]);
+    if (!c) return;
+    const el = c.querySelector<HTMLElement>(`[data-daykey="${today}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: "center" });
+    centeredRef.current = true;
+  }, [days, today]);
+
+  // 点「时间线/今天」按钮：重新定位到当前时刻
+  useEffect(() => {
+    if (nowFocus <= 0) return;
+    const c = scrollRef.current;
+    if (!c) return;
+    const el = c.querySelector<HTMLElement>(`[data-daykey="${today}"]`);
+    if (el) el.scrollIntoView({ block: "center" });
+  }, [nowFocus, today]);
 
   const onScroll = () => {
     const c = scrollRef.current;
@@ -721,11 +750,23 @@ export function TimeLineView({
         </div>
       </div>
       <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto bg-background">
-        {days.map((d) => {
+        {renderDays.map((item) => {
+          if (item.todayEmpty) {
+            return (
+              <div key="today-empty" data-daykey={today} className="border-b border-border/60">
+                <div className="flex items-center gap-2 border-b border-border/40 bg-primary/5 px-3 py-1 text-[11px]">
+                  <span className="font-medium text-primary">{fmtKeyLong(today)} · 今天</span>
+                  <span className="text-muted-foreground">无课</span>
+                </div>
+                <div className="py-4 text-center text-[11px] text-muted-foreground">今天没有安排课程/事件</div>
+              </div>
+            );
+          }
+          const d = item.day;
           const weekend = weekdayOfKey(d.dayKey) >= 5;
           const isToday = d.dayKey === today;
           return (
-            <div key={d.dayKey} ref={isToday ? todayRef : undefined} className="border-b border-border/60">
+            <div key={d.dayKey} data-daykey={d.dayKey} className="border-b border-border/60">
               {/* 日期头（流式 + sticky 吸附，随内容滚动不重叠） */}
               <div
                 className={cn(
