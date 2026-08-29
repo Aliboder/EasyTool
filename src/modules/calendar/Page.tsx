@@ -2,7 +2,7 @@
 // 月视图交互：点日期跳日视图；周/日视图复用 layoutDay 时间轴；待办分组清单。
 // 数据窗口按当前视图需求一次性拉取（并集），增删改后整窗刷新。
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
@@ -28,7 +28,7 @@ import { useModuleConfig } from "@/hooks/useModuleConfig";
 import { CALENDAR_DEFAULTS, type CalendarConfig } from "./config";
 import type { EventDto, TodoDto, ViewKey } from "./types";
 import { CalendarSettings } from "./Settings";
-import { DayView, TodoView, WeekView } from "./views";
+import { DayView, TimeLineView, TodoView, WeekView } from "./views";
 import {
   addDaysKey,
   buildRrule,
@@ -87,6 +87,7 @@ const TABS: { id: ViewKey; label: string }[] = [
   { id: "day", label: "日" },
   { id: "week", label: "周" },
   { id: "month", label: "月" },
+  { id: "timeline", label: "时间线" },
   { id: "todo", label: "待办" },
 ];
 
@@ -131,6 +132,78 @@ export function CalendarPage() {
   const [viewDir, setViewDir] = useState<1 | -1>(1);
   // 只看某门课聚焦（null=全部）
   const [focusTitle, setFocusTitle] = useState<string | null>(null);
+  // ---- 时间线视图：范围、加载、跳过空闲、缩放 ----
+  const TL_BACK = 90 * 86_400_000; // 前 3 个月
+  const TL_FWD = 180 * 86_400_000; // 后 6 个月
+  const TL_CHUNK = 30 * 86_400_000;
+  const [tl, setTl] = useState<{ start: number; end: number; events: EventDto[]; loading: boolean } | null>(null);
+  const [tlHideEmpty, setTlHideEmpty] = useState(true);
+  const [tlZoom, setTlZoom] = useState(48);
+  const tlBound = useRef({ back: 0, fwd: 0 });
+
+  const dedupeTl = (list: EventDto[]) => {
+    const seen = new Set<string>();
+    const out: EventDto[] = [];
+    for (const e of list) {
+      const key = `${e.id}:${e.instance_date ?? e.start_ms}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(e);
+      }
+    }
+    return out;
+  };
+
+  const ensureTl = useCallback(async () => {
+    const now = Date.now();
+    tlBound.current = { back: now - TL_BACK, fwd: now + TL_FWD };
+    const s = now - TL_CHUNK;
+    const e = now + TL_CHUNK;
+    try {
+      const r = await invoke<RangePayload>("calendar_get_range", { startMs: s, endMs: e });
+      setTl({ start: s, end: e, events: dedupeTl(r.events), loading: false });
+    } catch (err) {
+      console.error(err);
+      setTl({ start: s, end: e, events: [], loading: false });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "timeline" && !tl) ensureTl();
+  }, [tab, tl, ensureTl]);
+
+  const extendTl = useCallback(
+    async (dir: "up" | "down") => {
+      if (!tl) return;
+      const { back, fwd } = tlBound.current;
+      let ns = tl.start;
+      let ne = tl.end;
+      let fetchStart = 0;
+      let fetchEnd = 0;
+      if (dir === "up" && tl.start > back) {
+        ns = Math.max(back, tl.start - TL_CHUNK);
+        fetchStart = ns;
+        fetchEnd = tl.start;
+      } else if (dir === "down" && tl.end < fwd) {
+        ne = Math.min(fwd, tl.end + TL_CHUNK);
+        fetchStart = tl.end;
+        fetchEnd = ne;
+      } else {
+        return;
+      }
+      setTl((p) => (p ? { ...p, loading: true } : p));
+      try {
+        const r = await invoke<RangePayload>("calendar_get_range", { startMs: fetchStart, endMs: fetchEnd });
+        setTl((p) =>
+          p ? { start: ns, end: ne, events: dedupeTl([...r.events, ...p.events]), loading: false } : p,
+        );
+      } catch (err) {
+        console.error(err);
+        setTl((p) => (p ? { ...p, loading: false } : p));
+      }
+    },
+    [tl],
+  );
 
   const loadSubs = useCallback(() => {
     invoke<{ id: number; color: string; name: string }[]>("calendar_list_subscriptions")
@@ -615,6 +688,24 @@ export function CalendarPage() {
           />
         )}
 
+        {tab === "timeline" && (
+          <TimeLineView
+            events={tl?.events ?? []}
+            subColors={subColors}
+            loadedStart={tl?.start ?? 0}
+            loadedEnd={tl?.end ?? 0}
+            loading={tl?.loading ?? false}
+            hideEmpty={tlHideEmpty}
+            hourHeight={tlZoom}
+            nowFocus={nowFocus}
+            onHideEmptyChange={setTlHideEmpty}
+            onZoomChange={setTlZoom}
+            onLoadEdge={extendTl}
+            onEventClick={onEventTap}
+            onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
+            onCreateAt={createEventAt}
+          />
+        )}
         {tab === "todo" && (
           <TodoView
             todos={range?.todos ?? []}

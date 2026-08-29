@@ -18,6 +18,8 @@ import {
   fmtRruleSummary,
   COURSE_COLORS,
   courseColor,
+  buildTimeline,
+  TL_HEADER_H,
   type TimedEventLike,
 } from "./utils";
 
@@ -150,6 +152,29 @@ describe("calendar utils", () => {
     expect(a).not.toBe(b);
     // 空标题也有稳定色
     expect(courseColor("")).toBe(COURSE_COLORS[0]);
+  });
+
+  it("buildTimeline 跳过空闲与真实连续", () => {
+    const day = (y: number, m: number, d: number, h: number, mi = 0) => new Date(y, m - 1, d, h, mi, 0).getTime();
+    const ev = (start: number, end: number) => ({
+      id: 1, title: "课", location: "", notes: "", all_day: false, start_ms: start, end_ms: end, subscription_id: null, color: null,
+    });
+    const events = [
+      ev(day(2026, 9, 15, 10, 0), day(2026, 9, 15, 11, 0)),
+      ev(day(2026, 9, 15, 14, 0), day(2026, 9, 15, 15, 0)),
+      ev(day(2026, 9, 17, 9, 0), day(2026, 9, 17, 10, 0)),
+    ];
+    // 跳过空闲（hideEmpty=true）：15 日与 17 日有课，16 日被跳过
+    const r = buildTimeline(events, { startMs: day(2026, 9, 14, 0, 0), endMs: day(2026, 9, 17, 12, 0), hourHeight: 48, hideEmpty: true });
+    expect(r.days.length).toBe(2);
+    expect(r.days[0].dayKey).toBe(20260915);
+    expect(r.days[1].dayKey).toBe(20260917);
+    expect(r.days[0].windowStartHour).toBe(9.5); // 最早 10 点，前留半小时间隔
+    expect(r.days[0].height).toBe(TL_HEADER_H + 6 * 48); // 日期头 + 9.5~15.5
+    // 真实连续（hideEmpty=false）：14~17 每天 24h
+    const r2 = buildTimeline(events, { startMs: day(2026, 9, 14, 0, 0), endMs: day(2026, 9, 17, 12, 0), hourHeight: 48, hideEmpty: false });
+    expect(r2.days.length).toBe(4);
+    expect(r2.days[0].height).toBe(TL_HEADER_H + 24 * 48);
   });
 
   it("parseRrule / buildRrule 往返", () => {

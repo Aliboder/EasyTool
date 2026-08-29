@@ -295,6 +295,87 @@ export function courseColor(title: string): string {
   return COURSE_COLORS[hashStr(title) % COURSE_COLORS.length];
 }
 
+// ---------- 时间线视图（连续纵向时间轴，跨天/可缩放/可跳过空闲） ----------
+
+export interface TlEventLike {
+  id: number;
+  title: string;
+  location: string;
+  notes: string;
+  all_day: boolean;
+  start_ms: number;
+  end_ms: number;
+  subscription_id: number | null;
+  color: string | null;
+}
+
+/** 时间线每日的日期头高度（px） */
+export const TL_HEADER_H = 30;
+
+interface TlDay<T> {
+  dayKey: number;
+  top: number; // 相对时间轴顶部的像素偏移
+  height: number;
+  windowStartHour: number; // 该日可视窗口起点（小时，0-24）
+  events: T[]; // 分时事件
+  allDay: T[];
+  hasEvents: boolean;
+}
+
+/**
+ * 由事件数组和缩放/跳过空闲构建时间线布局（纯函数）。返回各日分段与总高度。
+ * 泛型保留完整事件类型，便于上层原样渲染。
+ */
+export function buildTimeline<T extends TlEventLike>(
+  events: T[],
+  opts: { startMs: number; endMs: number; hourHeight: number; hideEmpty: boolean },
+): { days: TlDay<T>[]; totalHeight: number } {
+  const { startMs, endMs, hourHeight, hideEmpty } = opts;
+  const byDay = new Map<number, { timed: T[]; allDay: T[] }>();
+  for (const e of events) {
+    const k = localDayKey(e.start_ms);
+    if (e.start_ms > endMs || e.end_ms < startMs) continue;
+    const bucket = byDay.get(k) ?? { timed: [], allDay: [] };
+    (e.all_day ? bucket.allDay : bucket.timed).push(e);
+    byDay.set(k, bucket);
+  }
+
+  const days: TlDay<T>[] = [];
+  let top = 0;
+  // startMs 为毫秒，先取其本地日键再取当日零点，逐日推进
+  let cursor = dayStartMs(localDayKey(startMs));
+  while (cursor <= endMs) {
+    const k = localDayKey(cursor);
+    const bucket = byDay.get(k);
+    const timed = bucket?.timed ?? [];
+    const allDay = bucket?.allDay ?? [];
+    const hasEvents = timed.length > 0 || allDay.length > 0;
+    if (hideEmpty && !hasEvents) {
+      cursor += 86_400_000;
+      continue;
+    }
+    let ws = 0;
+    let we = 24;
+    if (hideEmpty && timed.length > 0) {
+      let min = Infinity;
+      let max = -Infinity;
+      for (const e of timed) {
+        const h = (e.start_ms - dayStartMs(k)) / 3_600_000;
+        const he = (e.end_ms - dayStartMs(k)) / 3_600_000;
+        min = Math.min(min, h);
+        max = Math.max(max, he);
+      }
+      ws = Math.max(0, Math.floor(min) - 0.5);
+      we = Math.min(24, Math.ceil(max) + 0.5);
+    }
+    const height = TL_HEADER_H + (we - ws) * hourHeight;
+    days.push({ dayKey: k, top, height, windowStartHour: ws, events: timed, allDay, hasEvents });
+    top += height;
+    cursor += 86_400_000;
+  }
+  return { days, totalHeight: top };
+}
+
 /** 日键加减 N 天（正确处理跨月/跨年，如 8月31 +1 → 9月1） */
 export function addDaysKey(key: number, n: number): number {
   const y = Math.floor(key / 10000);

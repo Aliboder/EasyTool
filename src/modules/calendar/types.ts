@@ -29,4 +29,4 @@ export interface TodoDto {
   done_at_ms: number | null;
 }
 
-export type ViewKey = "month" | "week" | "day" | "todo";
+export type ViewKey = "month" | "week" | "day" | "timeline" | "todo";

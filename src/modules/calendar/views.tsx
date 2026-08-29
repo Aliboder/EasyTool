@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { CalendarPlus, ChevronDown, ChevronRight, ListTodo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs, courseColor } from "./utils";
+import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs, courseColor, buildTimeline, TL_HEADER_H } from "./utils";
 import type { EventDto, TodoDto } from "./types";
 
 const HOUR_HEIGHT = 46;
@@ -631,6 +631,218 @@ export function DayView({
             dayTodos.map((t) => <TodoRow key={t.id} todo={t} onToggle={onToggleTodo} onMenu={onTodoMenu} />)
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** 时间线视图：连续纵向时间轴（越往下越晚），跨天、可缩放、可跳过空闲，滚动边缘动态加载 */
+export function TimeLineView({
+  events,
+  subColors,
+  loadedStart,
+  loadedEnd,
+  loading,
+  hideEmpty,
+  hourHeight,
+  nowFocus,
+  onHideEmptyChange,
+  onZoomChange,
+  onLoadEdge,
+  onEventClick,
+  onEventMenu,
+  onCreateAt,
+}: {
+  events: EventDto[];
+  subColors: SubColors;
+  loadedStart: number;
+  loadedEnd: number;
+  loading: boolean;
+  hideEmpty: boolean;
+  hourHeight: number;
+  nowFocus: number;
+  onHideEmptyChange: (v: boolean) => void;
+  onZoomChange: (h: number) => void;
+  onLoadEdge: (dir: "up" | "down") => void;
+  onEventClick: EventClick;
+  onEventMenu: EventMenu;
+  onCreateAt?: (startMs: number) => void;
+}) {
+  const now = useNow();
+  const today = localDayKey(now);
+  const { days, totalHeight } = useMemo(
+    () => buildTimeline(events, { startMs: loadedStart, endMs: loadedEnd, hourHeight, hideEmpty }),
+    [events, loadedStart, loadedEnd, hourHeight, hideEmpty],
+  );
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const loadBusy = useRef(false);
+
+  // 初始 / 缩放变化 / 点「今天」：滚到「现在」附近
+  useEffect(() => {
+    const c = scrollRef.current;
+    if (!c || days.length === 0) return;
+    const d = days.find((x) => x.dayKey === today);
+    if (d) {
+      const nowH = (now - dayStartMs(today)) / 3_600_000;
+      const within = nowH >= d.windowStartHour && nowH <= d.windowStartHour + (d.height - TL_HEADER_H) / hourHeight;
+      const top = within ? d.top + TL_HEADER_H + (nowH - d.windowStartHour) * hourHeight : d.top;
+      c.scrollTo({ top: Math.max(0, top - c.clientHeight / 2) });
+    } else {
+      c.scrollTo({ top: Math.max(0, c.scrollHeight / 2 - c.clientHeight / 2) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hourHeight, nowFocus]);
+
+  const onScroll = () => {
+    const c = scrollRef.current;
+    if (!c) return;
+    setScrollTop(c.scrollTop);
+    if (loadBusy.current) return;
+    if (c.scrollTop < 240) {
+      loadBusy.current = true;
+      onLoadEdge("up");
+      window.setTimeout(() => (loadBusy.current = false), 500);
+    } else if (c.scrollTop + c.clientHeight > c.scrollHeight - 240) {
+      loadBusy.current = true;
+      onLoadEdge("down");
+      window.setTimeout(() => (loadBusy.current = false), 500);
+    }
+  };
+
+  // 内容不足一屏时自动向下填充，保证可继续滚动（历史/未来）
+  useEffect(() => {
+    const c = scrollRef.current;
+    if (c && c.scrollHeight <= c.clientHeight + 40 && !loading) onLoadEdge("down");
+  }, [totalHeight, loading, onLoadEdge]);
+
+  const viewH = scrollRef.current?.clientHeight ?? 700;
+  const visible = days.filter((d) => d.top + d.height >= scrollTop - 400 && d.top <= scrollTop + viewH + 400);
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
+        <span className="text-sm font-semibold">时间线</span>
+        <div className="ml-auto flex items-center gap-3">
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={hideEmpty}
+              onChange={(e) => onHideEmptyChange(e.target.checked)}
+              className="size-3.5 accent-primary"
+            />
+            跳过空闲
+          </label>
+          <select
+            value={hourHeight}
+            onChange={(e) => onZoomChange(Number(e.target.value))}
+            className="h-7 rounded border bg-transparent px-1 text-xs"
+          >
+            <option value={24}>紧凑</option>
+            <option value={36}>适中</option>
+            <option value={48}>标准</option>
+            <option value={72}>宽松</option>
+          </select>
+        </div>
+      </div>
+      <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto">
+        <div className="relative" style={{ height: totalHeight }}>
+          {visible.map((d) => {
+            const weekend = weekdayOfKey(d.dayKey) >= 5;
+            const isToday = d.dayKey === today;
+            const axisH = d.height - TL_HEADER_H;
+            return (
+              <div key={d.dayKey} className="absolute inset-x-0" style={{ top: d.top, height: d.height }}>
+                {/* 日期分隔头（吸顶） */}
+                <div
+                  className={cn(
+                    "sticky top-0 z-10 flex items-center gap-2 border-b px-3 py-1 text-[11px]",
+                    weekend ? "bg-background/90 text-muted-foreground" : "bg-background/90",
+                  )}
+                >
+                  <span className={cn("font-medium", isToday && "text-primary")}>
+                    {fmtKeyLong(d.dayKey)}
+                    {isToday && " · 今天"}
+                  </span>
+                  {d.allDay.map((e) => {
+                    const tint = eventTint(e, subColors);
+                    return (
+                      <span
+                        key={e.id}
+                        className="truncate rounded-full border border-black/10 bg-primary px-2 py-px text-[10px] font-medium text-primary-foreground"
+                        style={tint ? { backgroundColor: tint, color: "#fff" } : undefined}
+                        onClick={() => onEventClick(e)}
+                        onContextMenu={(ev) => {
+                          ev.preventDefault();
+                          onEventMenu(e, ev.clientX, ev.clientY);
+                        }}
+                      >
+                        {e.title}
+                      </span>
+                    );
+                  })}
+                </div>
+                {/* 分时事件轴 */}
+                <div
+                  className="absolute inset-x-0 top-2"
+                  style={{ top: TL_HEADER_H, height: Math.max(0, axisH) }}
+                  onDoubleClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const hh = (e.clientY - rect.top) / hourHeight + d.windowStartHour;
+                    const snapped = Math.max(d.windowStartHour, Math.min(24 - 0.5, Math.round(hh * 2) / 2));
+                    onCreateAt?.(dayStartMs(d.dayKey) + snapped * 3_600_000);
+                  }}
+                >
+                  {Array.from({ length: Math.floor(axisH / hourHeight) + 1 }, (_, i) => i).map((i) => (
+                    <div key={i} className="absolute inset-x-0 border-t border-border/40" style={{ top: i * hourHeight }}>
+                      <span className="absolute -top-1.5 left-1.5 text-[9px] tabular-nums text-muted-foreground">
+                        {String(Math.floor(d.windowStartHour + i)).padStart(2, "0")}:00
+                      </span>
+                    </div>
+                  ))}
+                  {layoutDay(
+                    d.events.map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
+                    { startHour: d.windowStartHour, endHour: d.windowStartHour + axisH / hourHeight, hourHeight },
+                  ).map((b) => {
+                    const ev = d.events[b.index];
+                    return (
+                      <EventBlock
+                        key={`${ev.id}-${d.dayKey}`}
+                        event={ev}
+                        top={b.top}
+                        height={b.height}
+                        left={b.left}
+                        width={b.width}
+                        subColors={subColors}
+                        onClick={onEventClick}
+                        onMenu={onEventMenu}
+                      />
+                    );
+                  })}
+                  {isToday &&
+                    (() => {
+                      const nowH = (now - dayStartMs(d.dayKey)) / 3_600_000;
+                      const y = (nowH - d.windowStartHour) * hourHeight;
+                      if (y < 0 || y > axisH) return null;
+                      return (
+                        <div className="absolute inset-x-0 z-10" style={{ top: y }}>
+                          <div className="h-px bg-red-500" />
+                          <span className="absolute -top-2 -right-0 rounded bg-red-500 px-1 text-[9px] text-white">
+                            {nowTime(now)}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {loading && (
+          <div className="pointer-events-none sticky bottom-2 z-20 flex justify-center">
+            <span className="rounded bg-popover px-2 py-0.5 text-[10px] text-muted-foreground shadow">加载中…</span>
+          </div>
+        )}
       </div>
     </div>
   );
