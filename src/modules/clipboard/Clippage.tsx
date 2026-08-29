@@ -84,15 +84,7 @@ const LINE_CLAMP: Record<number, string> = {
 
 function fmtTime(ts: number): string {
   const d = new Date(ts);
-  const now = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
-  // 今天内显示「刚刚 / X 分钟前 / HH:mm」，跨天回到 MM/DD HH:mm
-  if (d.toDateString() === now.toDateString()) {
-    const mins = Math.floor((now.getTime() - d.getTime()) / 60000);
-    if (mins < 1) return "刚刚";
-    if (mins < 60) return `${mins} 分钟前`;
-    return `${p(d.getHours())}:${p(d.getMinutes())}`;
-  }
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
@@ -581,9 +573,9 @@ export function Clippage() {
           </div>
         ) : null}
       </div>
-      <div className="flex shrink-0 flex-col items-center gap-0.5 border-l pl-2">
+      <div className="flex min-w-[72px] shrink-0 flex-col items-end gap-0.5 border-l pl-2.5">
           {showTimestamps && (
-            <div className="text-[10px] text-muted-foreground">
+            <div className="text-[10px] tabular-nums text-muted-foreground">
               {fmtTime(item.created_at)}
             </div>
           )}
