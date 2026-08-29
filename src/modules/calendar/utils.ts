@@ -133,6 +133,8 @@ export interface RruleForm {
   nthDay: number;
   /** 截止日期（本地日键；null=无限） */
   untilKey: number | null;
+  /** 每隔 N 个周期（默认 1；>1 时输出 INTERVAL） */
+  interval?: number;
 }
 
 const WEEK_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
@@ -152,7 +154,10 @@ export function parseRrule(rule: string): RruleForm | null {
     dayRaw?.split(",")
       .map((s) => WEEK_CODES.indexOf(s.toUpperCase()))
       .filter((i) => i >= 0) ?? [];
-  if (freq === "DAILY") return { freq: "daily", bydays: [], nth: 1, nthDay: 0, untilKey };
+  const iv = parts.get("INTERVAL");
+  const interval = iv ? Math.max(1, parseInt(iv, 10) || 1) : 1;
+  const base = { bydays, nth: 1 as number, nthDay: 0 as number, untilKey, interval };
+  if (freq === "DAILY") return { freq: "daily", ...base, bydays: [] };
   if (freq === "MONTHLY") {
     if (dayRaw) {
       // 第 N 个星期 X（如 3MO / -1FR 取 1..5）
@@ -165,32 +170,35 @@ export function parseRrule(rule: string): RruleForm | null {
           nth: n >= 1 && n <= 5 ? n : 1,
           nthDay: Math.max(0, WEEK_CODES.indexOf(m[2].toUpperCase())),
           untilKey,
+          interval,
         };
       }
-      return { freq: "monthly", bydays: [], nth: 1, nthDay: 0, untilKey };
+      return { freq: "monthly", bydays: [], nth: 1, nthDay: 0, untilKey, interval };
     }
-    return { freq: "monthly", bydays: [], nth: 1, nthDay: 0, untilKey };
+    return { freq: "monthly", bydays: [], nth: 1, nthDay: 0, untilKey, interval };
   }
   if (freq === "WEEKLY") {
-    return { freq: "weekly", bydays, nth: 1, nthDay: 0, untilKey };
+    return { freq: "weekly", bydays, nth: 1, nthDay: 0, untilKey, interval };
   }
   return null;
 }
 
-/** 表单模型 → rrule 字符串（null = 不重复） */
+/** 表单模型 → rrule 字符串（null = 不重复；interval>1 时写 INTERVAL） */
 export function buildRrule(f: RruleForm): string | null {
   if (f.freq === "none") return null;
+  const interval = f.interval && f.interval > 1 ? f.interval : 1;
+  const iv = interval > 1 ? `;INTERVAL=${interval}` : "";
   let rule: string;
-  if (f.freq === "daily") rule = "FREQ=DAILY";
+  if (f.freq === "daily") rule = `FREQ=DAILY${iv}`;
   else if (f.freq === "weekly") {
     const days = f.bydays.length > 0 ? f.bydays : [];
     if (days.length === 0) return null; // 每周至少要选一天
-    rule = `FREQ=WEEKLY;BYDAY=${days.map((d) => WEEK_CODES[d]).join(",")}`;
-  } else if (f.freq === "monthly") rule = "FREQ=MONTHLY";
+    rule = `FREQ=WEEKLY${iv};BYDAY=${days.map((d) => WEEK_CODES[d]).join(",")}`;
+  } else if (f.freq === "monthly") rule = `FREQ=MONTHLY${iv}`;
   else {
     // monthlyNth
     if (f.nthDay < 0 || f.nthDay > 6) return null;
-    rule = `FREQ=MONTHLY;BYDAY=${Math.max(1, f.nth)}${WEEK_CODES[f.nthDay]}`;
+    rule = `FREQ=MONTHLY${iv};BYDAY=${Math.max(1, f.nth)}${WEEK_CODES[f.nthDay]}`;
   }
   if (f.untilKey != null) {
     rule += `;UNTIL=${keyToUntil(f.untilKey)}`;

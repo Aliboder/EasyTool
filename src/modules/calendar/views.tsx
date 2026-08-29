@@ -590,7 +590,7 @@ export function DayView({
             ))}
             {timed.length === 0 && (
               <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">
-                这一天没有分时事件
+                点击时间轴任意处即可添加事件
               </div>
             )}
             {layoutDay(
@@ -812,7 +812,7 @@ export function TimeLineView({
                         {hourMarks.map((m) => (
                           <span
                             key={m}
-                            className="absolute right-1.5 -translate-y-1/2 text-[9px] tabular-nums text-muted-foreground"
+                            className="absolute right-1.5 -translate-y-1/2 text-[10px] tabular-nums text-muted-foreground"
                             style={{ top: (m - c.startHour) * hourHeight }}
                           >
                             {String(m).padStart(2, "0")}:00

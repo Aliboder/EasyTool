@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { invoke } from "@tauri-apps/api/core";
 import { ModuleHeader, HeaderButton } from "@/components/module-header";
 import { Drawer } from "@/components/ui/drawer";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -132,6 +132,10 @@ export function CalendarPage() {
   const [viewDir, setViewDir] = useState<1 | -1>(1);
   // 只看某门课聚焦（null=全部）
   const [focusTitle, setFocusTitle] = useState<string | null>(null);
+  // 视图筛选：全部 / 只看全天 / 只看待办
+  const [viewFilter, setViewFilter] = useState<"all" | "allDay" | "todo">("all");
+  // 顶部日期选择器
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   // ---- 时间线视图：范围、加载、跳过空闲、缩放 ----
   const TL_BACK = 90 * 86_400_000; // 前 3 个月
   const TL_FWD = 180 * 86_400_000; // 后 6 个月
@@ -277,13 +281,30 @@ export function CalendarPage() {
 
   // ---------- 数据视图 ----------
 
+  // 按筛选裁剪事件（全部 / 只看全天 / 只看待办）
+  const shownEvents = useMemo(() => {
+    const evs = range?.events ?? [];
+    if (viewFilter === "allDay") return evs.filter((e) => e.all_day);
+    if (viewFilter === "todo") return [];
+    return evs;
+  }, [range, viewFilter]);
+
   const eventsByDay = useMemo(() => {
     const map = new Map<number, EventDto[]>();
-    for (const e of range?.events ?? []) {
+    for (const e of shownEvents) {
       const key = localDayKey(e.start_ms);
       map.set(key, [...(map.get(key) ?? []), e]);
     }
     return map;
+  }, [shownEvents]);
+
+  // 今日概览（当天在已加载范围内时显示）
+  const todayOverview = useMemo(() => {
+    const k = todayKey();
+    const evs = (range?.events ?? []).filter((e) => localDayKey(e.start_ms) === k);
+    if (evs.length === 0) return null;
+    const next = evs.filter((e) => e.end_ms > Date.now()).sort((a, b) => a.start_ms - b.start_ms)[0];
+    return { count: evs.length, next };
   }, [range]);
 
   const monthTodoKeys = useMemo(() => {
@@ -543,11 +564,25 @@ export function CalendarPage() {
 
   const cells = monthGrid(ym.y, ym.m);
 
+  const metaStr = todayOverview
+    ? `今天 ${todayOverview.count} 节${todayOverview.next ? ` · 下一节 ${fmtHM(todayOverview.next.start_ms)}` : ""}`
+    : overdueCount > 0
+      ? `${overdueCount} 条待办已逾期`
+      : "本地日历 · 数据存于本机";
+
+  const pickDate = (dayKey: number) => {
+    setSelectedKey(dayKey);
+    if (tab === "month") {
+      const d = new Date(dayStartMs(dayKey));
+      setYm({ y: d.getFullYear(), m: d.getMonth() });
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       <ModuleHeader
         title="日程表"
-        meta={overdueCount > 0 ? `${overdueCount} 条待办已逾期` : "本地日历 · 数据存于本机"}
+        meta={metaStr}
         actions={
           <>
             {tab === "timeline" ? (
@@ -559,7 +594,7 @@ export function CalendarPage() {
                 <HeaderButton title={tab === "month" ? "上一月" : tab === "week" ? "上一周" : "上一天"} onClick={() => moveStep(-1)}>
                   <ChevronLeft className="size-4" />
                 </HeaderButton>
-                <HeaderButton title="回到今天" onClick={goToday}>
+                <HeaderButton title="跳到某天" onClick={() => setDatePickerOpen(true)}>
                   <span className="whitespace-nowrap text-xs font-medium">
                     {tab === "month"
                       ? fmtMonth(ym.y, ym.m)
@@ -581,6 +616,30 @@ export function CalendarPage() {
         tabs={TABS}
         activeTab={tab}
         onTabChange={(id) => switchTab(id as ViewKey)}
+        tabsTrailing={
+          tab !== "todo" ? (
+            <div className="flex items-center rounded-md border bg-muted p-0.5 text-[10px]">
+              {(
+                [
+                  ["all", "全部"],
+                  ["allDay", "全天"],
+                  ["todo", "待办"],
+                ] as const
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => setViewFilter(k)}
+                  className={cn(
+                    "rounded px-1.5 py-0.5 transition-colors",
+                    viewFilter === k ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : undefined
+        }
       />
 
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -676,7 +735,7 @@ export function CalendarPage() {
 
         {tab === "week" && (
           <WeekView
-            events={range?.events ?? []}
+            events={shownEvents}
             selectedKey={selectedKey}
             showWeekend={cfg.weekShowWeekend !== false}
             subColors={subColors}
@@ -692,7 +751,7 @@ export function CalendarPage() {
 
         {tab === "day" && (
           <DayView
-            events={range?.events ?? []}
+            events={shownEvents}
             todos={range?.todos ?? []}
             dayKey={selectedKey}
             subColors={subColors}
@@ -710,7 +769,13 @@ export function CalendarPage() {
 
         {tab === "timeline" && (
           <TimeLineView
-            events={tl?.events ?? []}
+            events={
+              viewFilter === "allDay"
+                ? (tl?.events ?? []).filter((e) => e.all_day)
+                : viewFilter === "todo"
+                  ? []
+                  : (tl?.events ?? [])
+            }
             subColors={subColors}
             loadedStart={tl?.start ?? 0}
             loadedEnd={tl?.end ?? 0}
@@ -895,6 +960,9 @@ export function CalendarPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* 日期选择器（跳转到某天） */}
+      <DatePickerDialog open={datePickerOpen} onClose={() => setDatePickerOpen(false)} onPick={pickDate} />
     </div>
   );
 }
@@ -1040,6 +1108,86 @@ function DetailRow({ icon, label, value }: { icon: ReactNode; label: string; val
   );
 }
 
+/** 顶部日期选择器：小月历，点某天跳到那天 */
+function DatePickerDialog({
+  open,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onPick: (dayKey: number) => void;
+}) {
+  const [ym, setYm] = useState(() => {
+    const d = new Date();
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
+  useEffect(() => {
+    if (open) {
+      const d = new Date();
+      setYm({ y: d.getFullYear(), m: d.getMonth() });
+    }
+  }, [open]);
+  const cells = monthGrid(ym.y, ym.m);
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-h-[85vh] sm:max-w-[19rem]">
+        <DialogHeader className="gap-1">
+          <DialogTitle className="flex items-center justify-between">
+            <span>{fmtMonth(ym.y, ym.m)}</span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setYm(({ y, m }) => { const d = new Date(y, m - 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; })} className="rounded p-1 hover:bg-accent" aria-label="上一月">
+                <ChevronLeft className="size-4" />
+              </button>
+              <button onClick={() => setYm(({ y, m }) => { const d = new Date(y, m + 1, 1); return { y: d.getFullYear(), m: d.getMonth() }; })} className="rounded p-1 hover:bg-accent" aria-label="下一月">
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+          </DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+          {["一", "二", "三", "四", "五", "六", "日"].map((w) => (
+            <span key={w}>{w}</span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {cells.map((c) => (
+            <button
+              key={c.key}
+              onClick={() => {
+                onPick(c.key);
+                onClose();
+              }}
+              className={cn(
+                "rounded p-1.5 text-xs tabular-nums hover:bg-accent",
+                !c.inMonth && "opacity-40",
+                c.key === todayKey() && "bg-primary font-semibold text-primary-foreground hover:bg-primary",
+              )}
+            >
+              {String(c.dayOfMonth).padStart(2, "0")}
+            </button>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              onPick(todayKey());
+              onClose();
+            }}
+          >
+            回到今天
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            关闭
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function EventForm({
   heading,
   editing,
@@ -1106,6 +1254,7 @@ function EventForm({
         nth: 1,
         nthDay: editing ? Math.max(0, (new Date(editing.start_ms).getDay() + 6) % 7) : 0,
         untilKey: null,
+        interval: 1,
       }
     );
   });
@@ -1358,6 +1507,32 @@ function EventForm({
               </SelectContent>
             </Select>
           </div>
+          {recur.freq !== "none" && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">每隔</span>
+              <Select
+                value={String(recur.interval ?? 1)}
+                onValueChange={(v) => setRecur((r) => ({ ...r, interval: Number(v) }))}
+              >
+                <SelectTrigger className="w-16">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5, 6].map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                {recur.freq === "daily" ? "天" : recur.freq === "weekly" ? "周" : "月"}
+              </span>
+              {recur.freq === "weekly" && (recur.interval ?? 1) === 2 && (
+                <span className="text-[10px] text-muted-foreground">= 每两周（单双周）</span>
+              )}
+            </div>
+          )}
           {recur.freq === "weekly" && (
             <div className="flex flex-wrap gap-1.5">
               {["一", "二", "三", "四", "五", "六", "日"].map((w, i) => (

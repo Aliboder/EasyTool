@@ -204,4 +204,15 @@ describe("calendar utils", () => {
     // 日期键 ↔ date input
     expect(keyToDateInput(20260829)).toBe("2026-08-29");
   });
+
+  it("parseRrule / buildRrule 间隔（每两周）", () => {
+    expect(buildRrule({ freq: "weekly", bydays: [0], nth: 1, nthDay: 0, untilKey: null, interval: 2 })).toBe(
+      "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO",
+    );
+    expect(buildRrule({ freq: "weekly", bydays: [0], nth: 1, nthDay: 0, untilKey: null })).toBe("FREQ=WEEKLY;BYDAY=MO");
+    const p = parseRrule("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO")!;
+    expect(p.interval).toBe(2);
+    const p1 = parseRrule("FREQ=WEEKLY;BYDAY=MO")!;
+    expect(p1.interval).toBe(1);
+  });
 });
