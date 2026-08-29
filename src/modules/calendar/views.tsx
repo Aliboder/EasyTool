@@ -288,6 +288,8 @@ export function WeekView({
 
   const now = useNow();
   const today = localDayKey(now);
+  // 图例默认收起；展开才显示课程色块
+  const [legendOpen, setLegendOpen] = useState(false);
   const { start: sH, end: eH } = useMemo(() => fitWindow(events), [events]);
   const spanH = eH - sH;
   const nowPos = ((new Date(now).getHours() * 60 + new Date(now).getMinutes() - sH * 60) / 60) * HOUR_HEIGHT;
@@ -302,31 +304,51 @@ export function WeekView({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* 课程图例：点击只看某一门课（再点一次清除） */}
+      {/* 课程图例：可收起，默认收起；点开可点击只看某一门课（再点一次清除） */}
       {legend.length > 0 && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-2 py-1">
-          <span className="text-[10px] text-muted-foreground">课程</span>
-          {legend.slice(0, 14).map(([title, color]) => {
-            const active = focusTitle === title;
-            return (
-              <button
-                key={title}
-                onClick={() => onFocusTitle(active ? null : title)}
-                className={cn(
-                  "flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] transition-colors",
-                  active ? "border-foreground/60 bg-accent text-foreground" : "border-border text-muted-foreground hover:bg-accent",
-                )}
-                title={`只看「${title}」`}
-              >
-                <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
-                <span className="max-w-16 truncate">{title}</span>
-              </button>
-            );
-          })}
-          {focusTitle && (
-            <button onClick={() => onFocusTitle(null)} className="text-[10px] text-muted-foreground hover:text-foreground">
-              清除
-            </button>
+        <div className="shrink-0 border-b">
+          <button
+            onClick={() => setLegendOpen((v) => !v)}
+            className="flex w-full items-center gap-1.5 px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-accent"
+            title="课程图例"
+          >
+            <span className="size-2 rounded-full bg-primary/50" />
+            <span>课程图例 · {legend.length}</span>
+            <ChevronDown className={cn("size-3 transition-transform", legendOpen && "rotate-180")} />
+            {focusTitle && (
+              <span className="ml-auto truncate text-primary">只看「{focusTitle}」</span>
+            )}
+          </button>
+          {legendOpen && (
+            <div className="flex flex-wrap items-center gap-1.5 px-2 pb-1.5 pt-0.5">
+              {legend.slice(0, 14).map(([title, color]) => {
+                const active = focusTitle === title;
+                return (
+                  <button
+                    key={title}
+                    onClick={() => onFocusTitle(active ? null : title)}
+                    className={cn(
+                      "flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] transition-colors",
+                      active
+                        ? "border-foreground/60 bg-accent text-foreground"
+                        : "border-border text-muted-foreground hover:bg-accent",
+                    )}
+                    title={`只看「${title}」`}
+                  >
+                    <span className="size-2 rounded-full" style={{ backgroundColor: color }} />
+                    <span className="max-w-16 truncate">{title}</span>
+                  </button>
+                );
+              })}
+              {focusTitle && (
+                <button
+                  onClick={() => onFocusTitle(null)}
+                  className="text-[10px] text-muted-foreground hover:text-foreground"
+                >
+                  清除
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
