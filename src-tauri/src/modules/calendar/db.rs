@@ -74,6 +74,19 @@ pub struct CalendarDb {
     pub conn: Connection,
 }
 
+/// 订阅事件（只读层，混排展示用）
+#[derive(Debug, Clone)]
+pub struct FeedEvent {
+    pub id: i64,
+    pub subscription_id: i64,
+    pub title: String,
+    pub location: String,
+    pub notes: String,
+    pub all_day: bool,
+    pub start_ms: i64,
+    pub end_ms: i64,
+}
+
 impl CalendarDb {
     pub fn open(path: &Path) -> DbResult<Self> {
         let conn = Connection::open(path).map_err(|e| e.to_string())?;
@@ -137,7 +150,29 @@ impl CalendarDb {
                     name TEXT NOT NULL UNIQUE,
                     imported_at INTEGER NOT NULL,
                     event_count INTEGER NOT NULL DEFAULT 0
-                );",
+                );
+
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    color TEXT NOT NULL DEFAULT '#3b82f6',
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    refresh_minutes INTEGER NOT NULL DEFAULT 360,
+                    last_sync_ms INTEGER,
+                    event_count INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS feed_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    subscription_id INTEGER NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+                    title TEXT NOT NULL,
+                    location TEXT NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT '',
+                    all_day INTEGER NOT NULL DEFAULT 0,
+                    start_ms INTEGER NOT NULL,
+                    end_ms INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_feed_time ON feed_events(start_ms);",
             )
             .map_err(|e| e.to_string())?;
         // 增量迁移：老库补 events.ics_import_id 列（导入源标记）
@@ -647,6 +682,150 @@ impl CalendarDb {
         Ok(n as u32)
     }
 
+    // ---------- 订阅日历（只读外部日历源） ----------
+
+    pub fn add_subscription(&self, name: &str, url: &str, color: &str) -> DbResult<i64> {
+        self.conn
+            .execute(
+                "INSERT INTO subscriptions (name, url, color) VALUES (?1, ?2, ?3)",
+                params![name, url, color],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_subscription(
+        &self,
+        id: i64,
+        name: &str,
+        color: &str,
+        enabled: bool,
+        refresh_minutes: i64,
+    ) -> DbResult<()> {
+        self.conn
+            .execute(
+                "UPDATE subscriptions SET name=?1, color=?2, enabled=?3, refresh_minutes=?4 WHERE id=?5",
+                params![name, color, enabled as i32, refresh_minutes, id],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn delete_subscription(&self, id: i64) -> DbResult<()> {
+        self.conn
+            .execute("DELETE FROM subscriptions WHERE id = ?1", params![id])
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    /// 订阅清单：(id, name, url, color, enabled, refresh_minutes, last_sync_ms, event_count)
+    pub fn list_subscriptions(&self) -> DbResult<Vec<(i64, String, String, String, bool, i64, Option<i64>, i64)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT s.id, s.name, s.url, s.color, s.enabled, s.refresh_minutes, s.last_sync_ms,
+                        (SELECT COUNT(*) FROM feed_events f WHERE f.subscription_id = s.id)
+                 FROM subscriptions s ORDER BY s.id",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get::<_, i32>(4)? != 0,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// 到期待刷新的订阅：(id, url) —— 启用且 refresh_minutes>0 且距上次同步超过间隔
+    pub fn due_subscriptions(&self, now_ms: i64) -> DbResult<Vec<(i64, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, url FROM subscriptions
+                 WHERE enabled = 1 AND refresh_minutes > 0
+                   AND (last_sync_ms IS NULL OR last_sync_ms + refresh_minutes * 60000 <= ?1)",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![now_ms], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// 整体替换某个订阅的事件数据（抓取成功后调用），并记录同步时间与条数
+    pub fn replace_feed(&self, subscription_id: i64, items: &[super::ics::ImportItem]) -> DbResult<()> {
+        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        {
+            tx.execute(
+                "DELETE FROM feed_events WHERE subscription_id = ?1",
+                params![subscription_id],
+            )
+            .map_err(|e| e.to_string())?;
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO feed_events (subscription_id, title, location, notes, all_day, start_ms, end_ms)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                )
+                .map_err(|e| e.to_string())?;
+            for it in items {
+                stmt.execute(params![
+                    subscription_id,
+                    it.title,
+                    it.location,
+                    it.notes,
+                    it.all_day as i32,
+                    it.start_ms,
+                    it.end_ms
+                ])
+                .map_err(|e| e.to_string())?;
+            }
+            tx.execute(
+                "UPDATE subscriptions SET event_count = ?1, last_sync_ms = ?2 WHERE id = ?3",
+                params![items.len() as i64, now_ms(), subscription_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())
+    }
+
+    /// 窗口内已启用订阅的事件（只读层，与本地事件混排展示）
+    pub fn feed_events_in_window(&self, start_ms: i64, end_ms: i64) -> DbResult<Vec<FeedEvent>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT f.id, f.subscription_id, f.title, f.location, f.notes, f.all_day, f.start_ms, f.end_ms
+                 FROM feed_events f JOIN subscriptions s ON s.id = f.subscription_id
+                 WHERE s.enabled = 1 AND f.start_ms <= ?2 AND f.end_ms >= ?1
+                 ORDER BY f.start_ms ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![start_ms, end_ms], |r| {
+                Ok(FeedEvent {
+                    id: r.get(0)?,
+                    subscription_id: r.get(1)?,
+                    title: r.get(2)?,
+                    location: r.get(3)?,
+                    notes: r.get(4)?,
+                    all_day: r.get::<_, i32>(5)? != 0,
+                    start_ms: r.get(6)?,
+                    end_ms: r.get(7)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
     // ---------- 提醒日志 ----------
 
     pub fn reminder_sent(&self, kind: &str, ref_id: i64, instance_date: Option<i64>) -> DbResult<bool> {
@@ -909,6 +1088,52 @@ mod tests {
         // 清空全部
         db.clear_all().unwrap();
         assert!(db.all_todos().unwrap().is_empty());
+    }
+
+    #[test]
+    fn subscription_lifecycle() {
+        use crate::modules::calendar::ics::ImportItem;
+        let db = mem();
+        let sid = db
+            .add_subscription("假日日历", "https://example.com/holidays.ics", "#ef4444")
+            .unwrap();
+        // 未同步过 → 到期待刷新
+        assert_eq!(db.due_subscriptions(now_ms()).unwrap().len(), 1);
+        // 抓取替换：整份替换 + 记录条数与同步时间
+        let item = ImportItem {
+            title: "国庆".into(),
+            location: String::new(),
+            notes: String::new(),
+            all_day: true,
+            start_ms: 1000,
+            end_ms: 2000,
+        };
+        db.replace_feed(sid, &[item]).unwrap();
+        let subs = db.list_subscriptions().unwrap();
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].7, 1);
+        assert!(subs[0].4);
+        assert_eq!(db.feed_events_in_window(0, 5000).unwrap().len(), 1);
+        // 同步后默认间隔(360min)内不再到期
+        assert!(db.due_subscriptions(now_ms()).unwrap().is_empty());
+        // 改为 1 分钟且上次同步在 2 分钟前 → 到期
+        db.update_subscription(sid, "假日日历", "#ef4444", true, 1).unwrap();
+        db.conn
+            .execute(
+                "UPDATE subscriptions SET last_sync_ms = ?1 WHERE id = ?2",
+                params![now_ms() - 120_000, sid],
+            )
+            .unwrap();
+        assert_eq!(db.due_subscriptions(now_ms()).unwrap().len(), 1);
+        // 停用后不再到期
+        db.update_subscription(sid, "假日日历", "#ef4444", false, 1).unwrap();
+        assert!(db.due_subscriptions(now_ms()).unwrap().is_empty());
+        // 窗口外不可见
+        assert!(db.feed_events_in_window(5000, 9999).unwrap().is_empty());
+        // 删除订阅 → 订阅事件级联清除
+        db.delete_subscription(sid).unwrap();
+        assert!(db.list_subscriptions().unwrap().is_empty());
+        assert!(db.feed_events_in_window(0, 9999).unwrap().is_empty());
     }
 
     #[test]

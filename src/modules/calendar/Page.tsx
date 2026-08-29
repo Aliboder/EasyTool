@@ -103,6 +103,23 @@ export function CalendarPage() {
   const [busy, setBusy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [exportMenu, setExportMenu] = useState<{ x: number; y: number } | null>(null);
+  // 订阅 id → 颜色（只读事件着色）
+  const [subColors, setSubColors] = useState<Record<number, string>>({});
+
+  const loadSubs = useCallback(() => {
+    invoke<{ id: number; color: string }[]>("calendar_list_subscriptions")
+      .then((list) => setSubColors(Object.fromEntries(list.map((s) => [s.id, s.color]))))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadSubs();
+  }, [loadSubs]);
+
+  // 关闭设置抽屉后刷新订阅色（新增/改色即时生效）
+  useEffect(() => {
+    if (!showSettings) loadSubs();
+  }, [showSettings, loadSubs]);
 
   // 启动后按配置的默认视图落地
   useEffect(() => {
@@ -342,8 +359,26 @@ export function CalendarPage() {
   };
 
   const openMenu = (kind: "event" | "todo", item: EventDto | TodoDto, x: number, y: number) => {
+    // 订阅事件只读：不给编辑/删除菜单
+    if (kind === "event" && (item as EventDto).subscription_id != null) return;
     if (kind === "event") setMenu({ kind, event: item as EventDto, x, y });
     else setMenu({ kind, todo: item as TodoDto, x, y });
+  };
+
+  /// 事件点击：订阅事件只读（弹详情），本地事件进编辑
+  const onEventTap = (e: EventDto) => {
+    if (e.subscription_id != null) {
+      toast(
+        `${e.title}（订阅）\n${new Date(e.start_ms).toLocaleString("zh-CN", {
+          month: "numeric",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}${e.location ? " · " + e.location : ""}`,
+      );
+      return;
+    }
+    openEventDrawer(e, localDayKey(e.start_ms));
   };
 
   const importFile = async () => {
@@ -510,8 +545,9 @@ export function CalendarPage() {
             events={range?.events ?? []}
             selectedKey={selectedKey}
             showWeekend={cfg.weekShowWeekend !== false}
+            subColors={subColors}
             onSelectDay={setSelectedKey}
-            onEventClick={(e) => openEventDrawer(e, localDayKey(e.start_ms))}
+            onEventClick={onEventTap}
             onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
           />
         )}
@@ -521,7 +557,8 @@ export function CalendarPage() {
             events={range?.events ?? []}
             todos={range?.todos ?? []}
             dayKey={selectedKey}
-            onEventClick={(e) => openEventDrawer(e, localDayKey(e.start_ms))}
+            subColors={subColors}
+            onEventClick={onEventTap}
             onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
             onToggleTodo={toggleTodo}
             onTodoMenu={(t, x, y) => openMenu("todo", t, x, y)}

@@ -17,6 +17,8 @@ type EventClick = (e: EventDto) => void;
 type EventMenu = (e: EventDto, x: number, y: number) => void;
 type TodoToggle = (t: TodoDto) => void;
 type TodoMenu = (t: TodoDto, x: number, y: number) => void;
+/** 订阅 id → 颜色（只读着色用） */
+export type SubColors = Record<number, string>;
 
 function allDayOfDay(events: EventDto[], dayKey: number): EventDto[] {
   return events.filter((e) => e.all_day && localDayKey(e.start_ms) === dayKey);
@@ -42,6 +44,7 @@ function EventBlock({
   height,
   left,
   width,
+  subColors,
   onClick,
   onMenu,
 }: {
@@ -50,15 +53,24 @@ function EventBlock({
   height: number;
   left: number;
   width: number;
+  subColors: SubColors;
   onClick: EventClick;
   onMenu: EventMenu;
 }) {
   const compact = height < 34;
+  const subColor =
+    event.subscription_id != null ? subColors[event.subscription_id] : undefined;
   return (
     <div
       className="absolute overflow-hidden rounded-md border border-primary/15 border-l-2 border-l-primary bg-primary/10 px-1.5 py-1 shadow-sm ring-1 ring-primary/5 transition-colors hover:bg-primary/20 hover:ring-primary/25"
-      style={{ top: top + 1, height: height - 2, left: `${left}%`, width: `${width}%` }}
-      title={`${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)} ${event.title}${event.location ? " · " + event.location : ""}`}
+      style={{
+        top: top + 1,
+        height: height - 2,
+        left: `${left}%`,
+        width: `${width}%`,
+        ...(subColor ? { borderLeftColor: subColor } : {}),
+      }}
+      title={`${fmtHM(event.start_ms)}–${fmtHM(event.end_ms)} ${event.title}${event.subscription_id != null ? " · 订阅" : ""}${event.location ? " · " + event.location : ""}`}
       onClick={(e) => {
         e.stopPropagation();
         onClick(event);
@@ -116,6 +128,7 @@ export function WeekView({
   events,
   selectedKey,
   showWeekend,
+  subColors,
   onSelectDay,
   onEventClick,
   onEventMenu,
@@ -123,6 +136,7 @@ export function WeekView({
   events: EventDto[];
   selectedKey: number;
   showWeekend: boolean;
+  subColors: SubColors;
   onSelectDay: (k: number) => void;
   onEventClick: EventClick;
   onEventMenu: EventMenu;
@@ -215,6 +229,7 @@ export function WeekView({
                     height={b.height}
                     left={b.left}
                     width={b.width}
+                    subColors={subColors}
                     onClick={onEventClick}
                     onMenu={onEventMenu}
                   />
@@ -246,6 +261,7 @@ export function DayView({
   events,
   todos,
   dayKey,
+  subColors,
   onEventClick,
   onEventMenu,
   onToggleTodo,
@@ -256,6 +272,7 @@ export function DayView({
   events: EventDto[];
   todos: TodoDto[];
   dayKey: number;
+  subColors: SubColors;
   onEventClick: EventClick;
   onEventMenu: EventMenu;
   onToggleTodo: TodoToggle;
@@ -342,6 +359,7 @@ export function DayView({
                   height={b.height}
                   left={b.left}
                   width={b.width}
+                  subColors={subColors}
                   onClick={onEventClick}
                   onMenu={onEventMenu}
                 />

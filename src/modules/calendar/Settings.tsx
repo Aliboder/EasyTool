@@ -32,6 +32,26 @@ interface IcsImportInfo {
   count: number;
 }
 
+interface SubscriptionInfo {
+  id: number;
+  name: string;
+  url: string;
+  color: string;
+  enabled: boolean;
+  refresh_minutes: number;
+  last_sync_ms: number | null;
+  event_count: number;
+}
+
+const SUB_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#64748b"];
+const REFRESH_OPTIONS = [
+  { value: 0, label: "仅手动刷新" },
+  { value: 30, label: "每 30 分钟" },
+  { value: 120, label: "每 2 小时" },
+  { value: 360, label: "每 6 小时" },
+  { value: 1440, label: "每天" },
+];
+
 interface StatsPayload {
   events: number;
   recurring: number;
@@ -72,6 +92,10 @@ export function CalendarSettings({
   const [keyword, setKeyword] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [purgeDate, setPurgeDate] = useState(threeMonthsAgo);
+  const [subs, setSubs] = useState<SubscriptionInfo[]>([]);
+  const [newSub, setNewSub] = useState({ name: "", url: "", color: SUB_COLORS[0] });
+  const [editingSub, setEditingSub] = useState<number | null>(null);
+  const [subDrafts, setSubDrafts] = useState<Record<number, SubscriptionInfo>>({});
 
   const loadStats = () => {
     invoke<StatsPayload>("calendar_stats").then(setStats).catch(() => {});
@@ -82,10 +106,14 @@ export function CalendarSettings({
   const loadImports = () => {
     invoke<IcsImportInfo[]>("calendar_list_ics_imports").then(setImports).catch(() => {});
   };
+  const loadSubs = () => {
+    invoke<SubscriptionInfo[]>("calendar_list_subscriptions").then(setSubs).catch(() => {});
+  };
   const refreshAll = () => {
     loadStats();
     loadEvents();
     loadImports();
+    loadSubs();
     onImportsChanged?.();
   };
   useEffect(() => {
@@ -158,13 +186,73 @@ export function CalendarSettings({
   };
 
   const clearAll = async () => {
-    if (!confirmTwice("清空全部数据（事件/待办/导入文件）？")) return;
+    if (!confirmTwice("清空全部数据（事件/待办/导入文件/订阅）？")) return;
     try {
       await invoke("calendar_clear_all");
       toast("已清空全部数据");
       refreshAll();
     } catch (e) {
       toast(`操作失败：${e}`);
+    }
+  };
+
+  // ---------- 订阅日历 ----------
+
+  const addSub = async () => {
+    const name = newSub.name.trim();
+    const url = newSub.url.trim();
+    if (!name || !url) {
+      toast("订阅名称和地址不能为空");
+      return;
+    }
+    try {
+      const id = await invoke<number>("calendar_add_subscription", { name, url, color: newSub.color });
+      setNewSub({ name: "", url: "", color: SUB_COLORS[0] });
+      toast("已添加订阅，正在获取…");
+      await invoke<number>("calendar_refresh_subscription", { id });
+      refreshAll();
+      toast("订阅获取完成");
+    } catch (e) {
+      toast(`添加订阅失败：${e}`);
+    }
+  };
+
+  const refreshSub = async (s: SubscriptionInfo) => {
+    try {
+      const n = await invoke<number>("calendar_refresh_subscription", { id: s.id });
+      toast(`「${s.name}」已刷新：${n} 条`);
+      refreshAll();
+    } catch (e) {
+      toast(`刷新失败：${e}`);
+    }
+  };
+
+  const saveSub = async (s: SubscriptionInfo) => {
+    const draft = subDrafts[s.id] ?? s;
+    try {
+      await invoke("calendar_update_subscription", {
+        id: s.id,
+        name: draft.name,
+        color: draft.color,
+        enabled: draft.enabled,
+        refresh_minutes: draft.refresh_minutes,
+      });
+      setEditingSub(null);
+      toast("已保存订阅设置");
+      refreshAll();
+    } catch (e) {
+      toast(`保存失败：${e}`);
+    }
+  };
+
+  const deleteSub = async (s: SubscriptionInfo) => {
+    if (!confirmTwice(`删除订阅「${s.name}」？它的事件将从日历中移除（本地数据不受影响）。`)) return;
+    try {
+      await invoke("calendar_delete_subscription", { id: s.id });
+      toast("已删除订阅");
+      refreshAll();
+    } catch (e) {
+      toast(`删除失败：${e}`);
     }
   };
 
@@ -244,6 +332,154 @@ export function CalendarSettings({
           <div className="text-xs text-muted-foreground">关闭后只显示周一到周五</div>
         </div>
         <Switch checked={cfg.weekShowWeekend} onCheckedChange={(v) => onUpdate({ weekShowWeekend: v })} />
+      </div>
+
+      {/* 订阅的日历 */}
+      <div className="space-y-2">
+        <div>
+          <div className="text-sm font-medium">订阅的日历</div>
+          <div className="text-xs text-muted-foreground">
+            把外部 .ics 订阅源（节假日/课表/赛事等）显示到日历上，只读、自动刷新
+          </div>
+        </div>
+        <div className="space-y-1.5 rounded-lg border border-dashed p-2">
+          <div className="grid grid-cols-2 gap-1.5">
+            <Input
+              value={newSub.name}
+              onChange={(e) => setNewSub((s) => ({ ...s, name: e.target.value }))}
+              placeholder="名称，如：节假日"
+              className="h-7"
+            />
+            <Input
+              value={newSub.url}
+              onChange={(e) => setNewSub((s) => ({ ...s, url: e.target.value }))}
+              placeholder="https://…/日历.ics 或 webcal://…"
+              className="h-7"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={newSub.color} onValueChange={(v) => setNewSub((s) => ({ ...s, color: v }))}>
+              <SelectTrigger className="h-7 w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUB_COLORS.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="sm" onClick={addSub}>
+              添加订阅
+            </Button>
+          </div>
+        </div>
+        {subs.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+            还没有订阅。填上面地址添加，首次会自动抓取。
+          </div>
+        ) : (
+          subs.map((s) => {
+            const draft = subDrafts[s.id] ?? s;
+            return (
+              <div key={s.id} className="space-y-1.5 rounded-lg border p-2">
+                <div className="flex items-center gap-2">
+                  <span className="size-3 shrink-0 rounded-full" style={{ background: s.color }} />
+                  <span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {s.event_count} 条
+                    {s.last_sync_ms != null
+                      ? ` · ${new Date(s.last_sync_ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`
+                      : " · 未同步"}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={() => refreshSub(s)}>
+                    刷新
+                  </Button>
+                  <button
+                    onClick={() => {
+                      const open = editingSub !== s.id;
+                      setEditingSub(open ? s.id : null);
+                      if (open) setSubDrafts((d) => ({ ...d, [s.id]: s }));
+                    }}
+                    className="rounded p-1 text-muted-foreground hover:bg-accent"
+                    title="设置"
+                  >
+                    ⚙
+                  </button>
+                  <button
+                    onClick={() => deleteSub(s)}
+                    className="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                    title="删除订阅"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+                <div className="truncate text-[10px] text-muted-foreground">{s.url}</div>
+                {editingSub === s.id && (
+                  <div className="space-y-1.5 rounded-md bg-muted/40 p-2">
+                    <Input
+                      value={draft.name}
+                      onChange={(e) =>
+                        setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, name: e.target.value } }))
+                      }
+                      className="h-7"
+                    />
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={draft.color}
+                        onValueChange={(v) => setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, color: v } }))}
+                      >
+                        <SelectTrigger className="h-7 w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SUB_COLORS.map((c) => (
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={String(draft.refresh_minutes)}
+                        onValueChange={(v) =>
+                          setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, refresh_minutes: Number(v) } }))
+                        }
+                      >
+                        <SelectTrigger className="h-7 w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REFRESH_OPTIONS.map((o) => (
+                            <SelectItem key={o.value} value={String(o.value)}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center gap-1.5">
+                        <Switch
+                          checked={draft.enabled}
+                          onCheckedChange={(v) => setSubDrafts((d) => ({ ...d, [s.id]: { ...draft, enabled: v } }))}
+                        />
+                        <span className="text-[10px] text-muted-foreground">显示</span>
+                      </div>
+                      <div className="ml-auto flex gap-1.5">
+                        <Button size="sm" onClick={() => saveSub(s)}>
+                          保存
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingSub(null)}>
+                          取消
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
 
       <div className="space-y-2">

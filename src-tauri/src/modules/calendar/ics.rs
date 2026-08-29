@@ -216,6 +216,37 @@ fn un_escape(s: &str) -> String {
     out
 }
 
+/// 订阅源抓取：支持 https / webcal:// 的 .ics 订阅（只读，物化进 feed 层）
+pub fn fetch_feed(url: &str) -> Result<ParseResult, String> {
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    let client = CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .unwrap_or_default()
+    });
+    // webcal:// 是 https 的别名
+    let http_url = if let Some(rest) = url.trim().strip_prefix("webcal://") {
+        format!("https://{rest}")
+    } else {
+        url.trim().to_string()
+    };
+    if !http_url.starts_with("http://") && !http_url.starts_with("https://") {
+        return Err("订阅地址需要以 http(s):// 或 webcal:// 开头".into());
+    }
+    let resp = client
+        .get(&http_url)
+        .header("User-Agent", "EasyTool/0.9 (calendar subscription)")
+        .header("Accept", "text/calendar")
+        .send()
+        .map_err(|e| format!("请求失败：{e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("订阅地址返回 HTTP {}", resp.status().as_u16()));
+    }
+    let body = resp.text().map_err(|e| format!("读取响应失败：{e}"))?;
+    Ok(parse_ics(&body))
+}
+
 /// 入库入口（仅测试/无源导入用；正式导入走 command 的按源管理）
 #[cfg(test)]
 pub fn import_ics_text(db: &CalendarDb, text: &str) -> Result<ImportReport, String> {

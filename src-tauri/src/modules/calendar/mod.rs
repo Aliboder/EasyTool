@@ -24,8 +24,44 @@ pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
     // 常驻提醒线程（事件提前提醒 + 待办过期提醒；30 秒一跳，含睡眠补扫）
     let handle = app.clone();
     std::thread::spawn(move || reminder_loop(handle));
+    // 订阅日历刷新线程（每 5 分钟检查一次到期订阅）
+    let handle2 = app.clone();
+    std::thread::spawn(move || subscription_loop(handle2));
     log::info!("calendar module ready");
     Ok(())
+}
+
+/// 订阅日历刷新循环：按期（每 5 分钟）检查各订阅是否到期，到期则抓取并整份替换。
+/// 失败保留旧数据（只记日志）；webcal:// 由 fetch_feed 归一化为 https。
+fn subscription_loop(app: AppHandle) {
+    loop {
+        let cfg = crate::config::module_cfg(&app, "calendar");
+        let module_enabled = cfg.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !module_enabled {
+            std::thread::sleep(Duration::from_secs(5));
+            continue;
+        }
+        let now = db::now_ms();
+        let due = {
+            let db_guard = app.state::<Mutex<CalendarDb>>();
+            let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            db.due_subscriptions(now).unwrap_or_default()
+        };
+        for (id, url) in due {
+            match ics::fetch_feed(&url) {
+                Ok(parsed) => {
+                    let db_guard = app.state::<Mutex<CalendarDb>>();
+                    let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    match db.replace_feed(id, &parsed.items) {
+                        Ok(()) => log::info!("subscription {id} refreshed: {} items", parsed.items.len()),
+                        Err(e) => log::warn!("subscription {id} store failed: {e}"),
+                    }
+                }
+                Err(e) => log::warn!("subscription {id} fetch failed: {e}"),
+            }
+        }
+        std::thread::sleep(Duration::from_secs(300));
+    }
 }
 
 /// 发送系统通知（复用壳层通知插件）

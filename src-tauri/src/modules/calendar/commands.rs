@@ -21,6 +21,8 @@ pub struct EventDto {
     pub rrule: Option<String>,
     /// 该条数据是哪一天的实例（重复事件展开后为实例日期；单次事件为 None）
     pub instance_date: Option<i64>,
+    /// 订阅来源（订阅日历事件为 Some(订阅 id)，只读；本地事件为 None）
+    pub subscription_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -132,6 +134,7 @@ pub fn calendar_get_range(
                     end_ms: i_end,
                     rrule: Some(rule.clone()),
                     instance_date: Some(day_key),
+                    subscription_id: None,
                 });
             }
         } else if e.end_ms >= start_ms && e.start_ms <= end_ms {
@@ -145,8 +148,24 @@ pub fn calendar_get_range(
                 end_ms: e.end_ms,
                 rrule: None,
                 instance_date: None,
+                subscription_id: None,
             });
         }
+    }
+    // 订阅日历（只读层）混排：id 用独立命名空间避免与本地事件冲突
+    for f in db.feed_events_in_window(start_ms, end_ms)? {
+        out.push(EventDto {
+            id: 1_000_000_000 + f.id,
+            title: f.title,
+            location: f.location,
+            notes: f.notes,
+            all_day: f.all_day,
+            start_ms: f.start_ms,
+            end_ms: f.end_ms,
+            rrule: None,
+            instance_date: None,
+            subscription_id: Some(f.subscription_id),
+        });
     }
     out.sort_by_key(|d| d.start_ms);
     let todos = db.all_todos()?.iter().map(to_todo_dto).collect();
@@ -439,6 +458,7 @@ pub fn calendar_list_all_events(db: State<'_, Mutex<CalendarDb>>) -> Result<Vec<
             end_ms: e.end_ms,
             rrule: e.rrule,
             instance_date: None,
+            subscription_id: None,
         })
         .collect())
 }
@@ -448,6 +468,113 @@ pub fn calendar_list_all_events(db: State<'_, Mutex<CalendarDb>>) -> Result<Vec<
 pub fn calendar_delete_events(db: State<'_, Mutex<CalendarDb>>, ids: Vec<i64>) -> Result<u32, String> {
     let db = db.lock().map_err(|e| e.to_string())?;
     db.delete_events_batch(&ids)
+}
+
+// ---------- 订阅日历（只读外部日历源） ----------
+
+#[derive(Debug, Serialize)]
+pub struct SubscriptionInfo {
+    pub id: i64,
+    pub name: String,
+    pub url: String,
+    pub color: String,
+    pub enabled: bool,
+    pub refresh_minutes: i64,
+    pub last_sync_ms: Option<i64>,
+    pub event_count: i64,
+}
+
+#[tauri::command]
+pub fn calendar_add_subscription(
+    db: State<'_, Mutex<CalendarDb>>,
+    name: String,
+    url: String,
+    color: String,
+) -> Result<i64, String> {
+    let name = name.trim();
+    let url = url.trim();
+    if name.is_empty() || name.len() > 60 {
+        return Err("订阅名称需 1-60 字".into());
+    }
+    if url.is_empty()
+        || !(url.starts_with("http://")
+            || url.starts_with("https://")
+            || url.starts_with("webcal://"))
+    {
+        return Err("订阅地址需要以 http(s):// 或 webcal:// 开头".into());
+    }
+    let color = if color.is_empty() { "#3b82f6" } else { &color };
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.add_subscription(name, url, color)
+}
+
+#[tauri::command]
+pub fn calendar_update_subscription(
+    db: State<'_, Mutex<CalendarDb>>,
+    id: i64,
+    name: String,
+    color: String,
+    enabled: bool,
+    refresh_minutes: i64,
+) -> Result<(), String> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 60 {
+        return Err("订阅名称需 1-60 字".into());
+    }
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.update_subscription(id, name, &color, enabled, refresh_minutes.clamp(0, 10080))
+}
+
+#[tauri::command]
+pub fn calendar_delete_subscription(db: State<'_, Mutex<CalendarDb>>, id: i64) -> Result<(), String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    db.delete_subscription(id)
+}
+
+#[tauri::command]
+pub fn calendar_list_subscriptions(
+    db: State<'_, Mutex<CalendarDb>>,
+) -> Result<Vec<SubscriptionInfo>, String> {
+    let db = db.lock().map_err(|e| e.to_string())?;
+    Ok(db
+        .list_subscriptions()?
+        .into_iter()
+        .map(
+            |(id, name, url, color, enabled, refresh_minutes, last_sync_ms, event_count)| {
+                SubscriptionInfo {
+                    id,
+                    name,
+                    url,
+                    color,
+                    enabled,
+                    refresh_minutes,
+                    last_sync_ms,
+                    event_count,
+                }
+            },
+        )
+        .collect())
+}
+
+/// 立即刷新某个订阅（后台线程抓取，不阻塞界面）
+#[tauri::command]
+pub async fn calendar_refresh_subscription(app: tauri::AppHandle, id: i64) -> Result<i64, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use tauri::Manager;
+        let db_guard = app.state::<Mutex<CalendarDb>>();
+        let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let url = db
+            .list_subscriptions()?
+            .into_iter()
+            .find(|s| s.0 == id)
+            .map(|s| s.2)
+            .ok_or("订阅不存在")?;
+        let parsed = super::ics::fetch_feed(&url)?;
+        db.replace_feed(id, &parsed.items)?;
+        Ok(parsed.items.len() as i64)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {e}"))?
 }
 
 /// 导出 ICS 到指定路径

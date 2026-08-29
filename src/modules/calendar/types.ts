@@ -10,6 +10,8 @@ export interface EventDto {
   rrule: string | null;
   /** 重复事件展开后的实例日期（本地日键）；单次事件为 null */
   instance_date: number | null;
+  /** 订阅来源 id（订阅日历事件，只读）；本地事件为 null */
+  subscription_id: number | null;
 }
 
 export interface TodoDto {
