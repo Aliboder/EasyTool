@@ -26,6 +26,31 @@ pub fn is_spike(today_spend: f64, avg_7d: f64) -> bool {
     avg_7d > 0.0 && today_spend > 0.0 && today_spend > avg_7d * 3.0
 }
 
+// ---------- 每日预算（借鉴 dsh-cost-meter 的预算图框口径） ----------
+
+/// 预算消耗档位：未达预警 / 达预警 / 超支
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum BudgetStage {
+    None = 0,
+    Warn = 1,
+    Critical = 2,
+}
+
+/// 按今日消费额与预算/阈值百分比计算当前档位
+pub fn budget_stage(today_spend: f64, budget: f64, warn_pct: f64, critical_pct: f64) -> BudgetStage {
+    if budget <= 0.0 || today_spend < 0.0 {
+        return BudgetStage::None;
+    }
+    let pct = if budget > 0.0 { today_spend / budget * 100.0 } else { 0.0 };
+    if critical_pct > 0.0 && pct >= critical_pct {
+        BudgetStage::Critical
+    } else if warn_pct > 0.0 && pct >= warn_pct {
+        BudgetStage::Warn
+    } else {
+        BudgetStage::None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,5 +80,20 @@ mod tests {
         assert!(!should_recover(Some(12.0), 8.0, 10.0)); // 从上方跌落，不算恢复
         assert!(!should_recover(Some(5.0), 8.0, 10.0)); // 仍低于阈值，不重复
         assert!(!should_recover(None, 12.0, 10.0)); // 首次不提醒
+    }
+
+    #[test]
+    fn budget_stage_levels() {
+        // 未达预警
+        assert_eq!(budget_stage(5.0, 100.0, 80.0, 100.0), BudgetStage::None);
+        // 临界处（>=）：80% 整
+        assert_eq!(budget_stage(80.0, 100.0, 80.0, 100.0), BudgetStage::Warn);
+        // 超支：100% 与 120%
+        assert_eq!(budget_stage(100.0, 100.0, 80.0, 100.0), BudgetStage::Critical);
+        assert_eq!(budget_stage(120.0, 100.0, 80.0, 100.0), BudgetStage::Critical);
+        // 预算未设置（0）恒为 None
+        assert_eq!(budget_stage(50.0, 0.0, 80.0, 100.0), BudgetStage::None);
+        // 无消费
+        assert_eq!(budget_stage(0.0, 100.0, 80.0, 100.0), BudgetStage::None);
     }
 }

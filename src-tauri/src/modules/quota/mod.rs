@@ -3,6 +3,7 @@ pub mod api;
 pub mod commands;
 pub mod db;
 pub mod history;
+pub mod pricing;
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -13,6 +14,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use api::GoQuota;
 use db::{now_ms, GoSnapshot, QuotaDb};
+use pricing::PricingTier;
 
 /// 账户类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +22,17 @@ use db::{now_ms, GoSnapshot, QuotaDb};
 pub enum AccountKind {
     Deepseek,
     Go,
+    /// 自定义 Provider（任意 HTTP 端点 + 取值路径）
+    Custom,
+    /// Coding Plan 订阅额度（借鉴 dsh-cost-meter 的适配矩阵）
+    Anthropic,
+    Zai,
+    Minimax,
+    Kimi,
+    Openrouter,
+    Siliconflow,
+    Command,
+    Volc,
 }
 
 impl Default for AccountKind {
@@ -33,8 +46,56 @@ impl AccountKind {
         match self {
             AccountKind::Deepseek => "deepseek",
             AccountKind::Go => "go",
+            AccountKind::Custom => "custom",
+            AccountKind::Anthropic => "anthropic",
+            AccountKind::Zai => "zai",
+            AccountKind::Minimax => "minimax",
+            AccountKind::Kimi => "kimi",
+            AccountKind::Openrouter => "openrouter",
+            AccountKind::Siliconflow => "siliconflow",
+            AccountKind::Command => "command",
+            AccountKind::Volc => "volc",
         }
     }
+
+    /// 从字符串解析（add_account 用）
+    pub fn from_str(s: &str) -> Option<AccountKind> {
+        Some(match s {
+            "deepseek" => AccountKind::Deepseek,
+            "go" => AccountKind::Go,
+            "custom" => AccountKind::Custom,
+            "anthropic" => AccountKind::Anthropic,
+            "zai" => AccountKind::Zai,
+            "minimax" => AccountKind::Minimax,
+            "kimi" => AccountKind::Kimi,
+            "openrouter" => AccountKind::Openrouter,
+            "siliconflow" => AccountKind::Siliconflow,
+            "command" => AccountKind::Command,
+            "volc" => AccountKind::Volc,
+            _ => return None,
+        })
+    }
+}
+
+/// 自定义 Provider 的查询配置（仅 kind=Custom 使用）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomQuery {
+    /// 请求 URL（GET）
+    pub url: String,
+    /// 请求头 JSON 文本；`{{KEY}}` 占位符在请求前替换为账户密钥
+    pub headers: String,
+    /// 余额/剩余量取值路径（点号分隔，如 data.total_available）
+    pub path: String,
+    /// 可选：总量取值路径（同格式）；提供后卡片可展示「已用/总量」
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_path: Option<String>,
+    /// 可选：数值缩放（适配 NewApi/one-api 以整数 quota 计量的端点，如 1/500000）
+    #[serde(default = "default_scale")]
+    pub scale: f64,
+}
+
+fn default_scale() -> f64 {
+    1.0
 }
 
 /// 账户配置（存 config.json 的 quota 模块）
@@ -46,6 +107,9 @@ pub struct AccountConfig {
     /// keyring 槽位名（密钥存储位置）；为空时按 kind 推导旧槽位名
     #[serde(default)]
     pub key_ref: String,
+    /// 自定义 Provider 查询配置（仅 custom 账户）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<CustomQuery>,
 }
 
 /// 单个账户的运行时状态
@@ -61,6 +125,8 @@ pub struct AccountStatus {
     pub error: Option<String>,
     pub go_windows: Vec<GoQuota>,
     pub last_balance: Option<f64>,
+    /// 今日消费（apply_deepseek 时随统计一起写入，供预算汇总）
+    pub today_spend: f64,
     /// 是否处于告警状态（首次不算，避免误报）
     pub initialized: bool,
     /// 最近一次消费突增提醒的日期（每天最多一次）
@@ -72,6 +138,15 @@ pub struct AccountStatus {
 pub struct QuotaState {
     pub accounts: Vec<AccountStatus>,
     pub last_fetch: Option<Instant>,
+    /// 今日消费总额（DeepSeek 余额型账户合计；预算展示用）
+    pub today_spend_total: f64,
+    /// today_spend_total 归属的本地日期
+    pub budget_period: Option<chrono::NaiveDate>,
+    /// 预算告警进步状态：上次提醒所用的档位与日期（跨日自动复位）
+    pub budget_alert_day: Option<chrono::NaiveDate>,
+    pub budget_alert_level: Option<alerts::BudgetStage>,
+    /// 峰谷切换提醒：已提醒过的下一个边界时刻（unix 秒），同一边界只提醒一次
+    pub peak_alert_boundary_ts: Option<i64>,
 }
 
 /// 读取账户列表配置
@@ -110,6 +185,7 @@ fn keyring_user(account: &AccountConfig) -> String {
         match account.kind {
             AccountKind::Deepseek => "deepseek".into(),
             AccountKind::Go => "opencode-go".into(),
+            other => other.as_str().into(),
         }
     }
 }
@@ -216,6 +292,10 @@ pub fn fetch_once(app: &AppHandle) {
     let critical = cfg_f64(&cfg, "critical_threshold", threshold / 2.0);
     let notify_low = cfg_bool(&cfg, "notify_low", true);
     let notify_surge = cfg_bool(&cfg, "notify_surge", true);
+    let budget = cfg_f64(&cfg, "daily_budget", 0.0);
+    let budget_warn_pct = cfg_f64(&cfg, "budget_warn_pct", 80.0);
+    let budget_critical_pct = cfg_f64(&cfg, "budget_critical_pct", 100.0);
+    let notify_budget = cfg_bool(&cfg, "notify_budget", true);
 
     let accounts = account_configs(app);
 
@@ -235,8 +315,17 @@ pub fn fetch_once(app: &AppHandle) {
                                 Ok(b) => FetchOutcome::Deepseek(b),
                                 Err(e) => FetchOutcome::Failed(e.to_string()),
                             },
+                            AccountKind::Custom => match api::fetch_custom(&key, &acc.custom) {
+                                Ok(b) => FetchOutcome::Deepseek(b),
+                                Err(e) => FetchOutcome::Failed(e.to_string()),
+                            },
                             AccountKind::Go => match api::fetch_go_quota(&key) {
                                 Ok(w) => FetchOutcome::Go(w),
+                                Err(e) => FetchOutcome::Failed(e.to_string()),
+                            },
+                            // Coding Plan 厂商：统一返回窗口列表（仅展示，不做快照持久化）
+                            kind => match api::fetch_coding_windows(kind, &key) {
+                                Ok(w) => FetchOutcome::PlanWindows(w),
                                 Err(e) => FetchOutcome::Failed(e.to_string()),
                             },
                         }
@@ -261,6 +350,7 @@ pub fn fetch_once(app: &AppHandle) {
                 app, &mut st, &acc, b, threshold, critical, notify_low, notify_surge,
             ),
             FetchOutcome::Go(windows) => apply_go(app, &mut st, &acc, &windows),
+            FetchOutcome::PlanWindows(windows) => apply_plan(&mut st, &acc, &windows),
             FetchOutcome::Failed(msg) => {
                 log::warn!("{} query failed: {msg}", acc.name);
                 if let Some(status) = st.accounts.iter_mut().find(|s| s.id == acc.id) {
@@ -270,6 +360,47 @@ pub fn fetch_once(app: &AppHandle) {
                 }
             }
         }
+    }
+
+    // 每日预算汇总 + 跨界告警（余额型账户合计：DeepSeek + 自定义 Provider；订阅套餐不计入）
+    let today = Local::now().date_naive();
+    let total: f64 = st
+        .accounts
+        .iter()
+        .filter(|a| {
+            a.kind == AccountKind::Deepseek || a.kind == AccountKind::Custom
+        })
+        .map(|a| a.today_spend)
+        .sum();
+    st.today_spend_total = total;
+    st.budget_period = Some(today);
+    if notify_budget && budget > 0.0 {
+        let stage = alerts::budget_stage(total, budget, budget_warn_pct, budget_critical_pct);
+        if st.budget_alert_day != Some(today) {
+            st.budget_alert_day = Some(today);
+            st.budget_alert_level = None;
+        }
+        let prev = st.budget_alert_level.unwrap_or(alerts::BudgetStage::None);
+        if stage > prev {
+            match stage {
+                alerts::BudgetStage::Critical => {
+                    notify(app, "🚫 今日预算已超支", &format!(
+                        "今日消费 {:.2}，已超过预算 {:.2}（{:.0}%）。",
+                        total, budget, budget_critical_pct
+                    ));
+                    log::warn!("alert: budget critical, today={total}, budget={budget}");
+                }
+                alerts::BudgetStage::Warn => {
+                    notify(app, "⚠️ 今日消费达预算 80%", &format!(
+                        "今日消费 {:.2}，已达预算 {:.2} 的 {:.0}%。",
+                        total, budget, budget_warn_pct
+                    ));
+                    log::warn!("alert: budget warn, today={total}, budget={budget}");
+                }
+                alerts::BudgetStage::None => {}
+            }
+        }
+        st.budget_alert_level = Some(stage);
     }
 
     let _ = app.emit("quota://updated", serde_json::json!({}));
@@ -286,6 +417,8 @@ pub fn fetch_once(app: &AppHandle) {
 enum FetchOutcome {
     Deepseek(api::Balance),
     Go(Vec<GoQuota>),
+    /// Coding Plan 厂商窗口（只展示，不写快照/周期）
+    PlanWindows(Vec<GoQuota>),
     Failed(String),
 }
 
@@ -342,6 +475,7 @@ fn apply_deepseek(
     let db = db_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     // 消费统计走 SQL 聚合，避免每账户每轮全量 load+遍历（轮询热路径，多账户时省 DB/内存开销）
     let (today_spend, avg7) = db.spend_stats(&acc.id, today).unwrap_or((0.0, 0.0));
+    status.today_spend = today_spend;
     if status.last_surge_day != Some(today)
         && notify_surge
         && alerts::is_spike(today_spend, avg7)
@@ -366,6 +500,14 @@ fn apply_go(app: &AppHandle, st: &mut QuotaState, acc: &AccountConfig, windows: 
     status.go_windows = windows.to_vec();
     status.error = None;
     persist_go(app, &acc.id, windows);
+}
+
+/// 应用 Coding Plan 窗口结果：只更新内存状态（各厂商窗口无历史持久化需求）
+fn apply_plan(st: &mut QuotaState, acc: &AccountConfig, windows: &[GoQuota]) {
+    if let Some(status) = st.accounts.iter_mut().find(|s| s.id == acc.id) {
+        status.go_windows = windows.to_vec();
+        status.error = None;
+    }
 }
 
 /// 写入 Go 快照 + 重置周期检测
@@ -431,6 +573,67 @@ fn track_go_cycle(db: &QuotaDb, account_id: &str, window: &str, snap: &GoSnapsho
     }
 }
 
+/// 峰/谷切换提醒：距下一个档位边界不足提前量时发一条系统通知（同一边界只提醒一次）。
+/// 纯本地时间计算，不走网络；由 poll_loop 每轮调用（≤5s 一跳）。
+pub fn check_peak_alert(app: &AppHandle) {
+    let cfg = crate::config::module_cfg(app, "quota");
+    let enabled = cfg_bool(&cfg, "peak_alert_enabled", true);
+    if !enabled || !crate::quota_enabled(app) {
+        return;
+    }
+    let minutes = cfg_f64(&cfg, "peak_alert_minutes", 2.0).clamp(1.0, 30.0) as i64;
+    let mode = cfg
+        .get("peak_alert_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("both");
+
+    let now = chrono::Utc::now();
+    let (next_dt, next_tier) = pricing::next_boundary(now);
+    let next_ts = next_dt.timestamp();
+    let remaining = next_ts - now.timestamp();
+    if remaining <= 0 || remaining > minutes * 60 {
+        return;
+    }
+    let relevant = mode == "both"
+        || (mode == "peak" && next_tier == PricingTier::Peak)
+        || (mode == "valley" && next_tier == PricingTier::Valley);
+    if !relevant {
+        return;
+    }
+
+    let st_guard = app.state::<Mutex<QuotaState>>();
+    let mut st = st_guard.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if st.peak_alert_boundary_ts == Some(next_ts) {
+        return; // 同一边界已提醒过
+    }
+    st.peak_alert_boundary_ts = Some(next_ts);
+    drop(st);
+
+    let (title, body) = match next_tier {
+        PricingTier::Peak => (
+            "⏫ 即将进入峰价时段",
+            format!(
+                "{} 分钟后计费档位切换为峰时价（工作日 09:00–12:00 / 14:00–18:00，周末全天谷价）。谷价约为峰价一半。",
+                remaining.div_euclid(60).max(1)
+            ),
+        ),
+        PricingTier::Valley => (
+            "⏬ 即将进入谷价时段",
+            format!(
+                "{} 分钟后切换为谷时价，期间调用费用约减半，适合安排高成本任务。",
+                remaining.div_euclid(60).max(1)
+            ),
+        ),
+    };
+    notify(app, title, &body);
+    log::info!(
+        "peak alert: {} (ts={}, now_tier={})",
+        title,
+        next_ts,
+        pricing::tier_at(now).as_str()
+    );
+}
+
 fn poll_loop(app: AppHandle) {
     let mut cached_interval: u64 = 30;
     let mut last_cfg: Instant = Instant::now() - std::time::Duration::from_secs(6);
@@ -440,6 +643,9 @@ fn poll_loop(app: AppHandle) {
             std::thread::sleep(std::time::Duration::from_secs(5));
             continue;
         }
+
+        // 峰谷切换提醒与轮询解耦：不依赖刷新间隔，靠近边界时按 ≤5s 一跳触发
+        check_peak_alert(&app);
 
         // 每 5 秒重读一次配置（替代固定 1s tick，减少无谓的 JSON clone/查找）
         if last_cfg.elapsed().as_secs() >= 5 {
@@ -559,6 +765,7 @@ fn restore_from_db(app: &AppHandle) {
                         window: sn.window,
                         used_percent: sn.used_percent,
                         resets_at: sn.resets_at,
+                        text: None,
                     })
                     .collect();
             }

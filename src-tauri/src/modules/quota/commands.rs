@@ -13,6 +13,8 @@ pub struct GoQuotaPayload {
     pub window: String,
     pub used_percent: i32,
     pub resets_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 impl From<&GoQuota> for GoQuotaPayload {
@@ -21,6 +23,7 @@ impl From<&GoQuota> for GoQuotaPayload {
             window: q.window.clone(),
             used_percent: q.used_percent,
             resets_at: q.resets_at,
+            text: q.text.clone(),
         }
     }
 }
@@ -41,13 +44,25 @@ pub struct AccountPayload {
 #[derive(Debug, Serialize)]
 pub struct StatusPayload {
     pub accounts: Vec<AccountPayload>,
+    /// 今日消费总额（DeepSeek 账户合计；预算条用）
+    pub today_spend: f64,
+    /// 每日预算（0 = 未设置）
+    pub budget: f64,
+    pub budget_warn_pct: f64,
+    pub budget_critical_pct: f64,
 }
 
 /// 当前监控状态（前端轮询刷新）
 #[tauri::command]
-pub fn get_status(state: State<'_, Mutex<QuotaState>>) -> StatusPayload {
+pub fn get_status(state: State<'_, Mutex<QuotaState>>, app: AppHandle) -> StatusPayload {
+    let cfg = crate::config::module_cfg(&app, "quota");
+    let get = |key: &str, default: f64| cfg.get(key).and_then(|v| v.as_f64()).unwrap_or(default);
     let st = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     StatusPayload {
+        today_spend: st.today_spend_total,
+        budget: get("daily_budget", 0.0),
+        budget_warn_pct: get("budget_warn_pct", 80.0),
+        budget_critical_pct: get("budget_critical_pct", 100.0),
         accounts: st
             .accounts
             .iter()
@@ -72,6 +87,9 @@ pub struct AccountInfo {
     pub kind: String,
     pub name: String,
     pub configured: bool,
+    /// 自定义 Provider 查询参数（仅 custom 账户有值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom: Option<super::CustomQuery>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -82,6 +100,17 @@ pub struct QuotaSettings {
     pub notify_low: bool,
     pub notify_surge: bool,
     pub go_ring_remaining: bool,
+    /// 每日预算（0 = 关闭）
+    pub daily_budget: f64,
+    pub budget_warn_pct: f64,
+    pub budget_critical_pct: f64,
+    pub notify_budget: bool,
+    /// 余额三段进度条基准（0 = 自动：充值+赠送）
+    pub balance_max: f64,
+    /// 峰谷切换提醒
+    pub peak_alert_enabled: bool,
+    pub peak_alert_minutes: i64,
+    pub peak_alert_mode: String,
     pub accounts: Vec<AccountInfo>,
 }
 
@@ -101,6 +130,7 @@ pub fn get_settings(app: AppHandle) -> QuotaSettings {
             kind: a.kind.as_str().into(),
             name: a.name.clone(),
             configured: !super::get_account_key(&a).is_empty(),
+            custom: a.custom.clone(),
         })
         .collect();
     QuotaSettings {
@@ -110,6 +140,18 @@ pub fn get_settings(app: AppHandle) -> QuotaSettings {
         notify_low: getb("notify_low", true),
         notify_surge: getb("notify_surge", true),
         go_ring_remaining: getb("go_ring_remaining", false),
+        daily_budget: get("daily_budget", 0.0),
+        budget_warn_pct: get("budget_warn_pct", 80.0),
+        budget_critical_pct: get("budget_critical_pct", 100.0),
+        notify_budget: getb("notify_budget", true),
+        balance_max: get("balance_max", 0.0),
+        peak_alert_enabled: getb("peak_alert_enabled", true),
+        peak_alert_minutes: get("peak_alert_minutes", 2.0) as i64,
+        peak_alert_mode: cfg
+            .get("peak_alert_mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("both")
+            .into(),
         accounts,
     }
 }
@@ -124,6 +166,14 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
         v["notify_low"] = serde_json::json!(settings.notify_low);
         v["notify_surge"] = serde_json::json!(settings.notify_surge);
         v["go_ring_remaining"] = serde_json::json!(settings.go_ring_remaining);
+        v["daily_budget"] = serde_json::json!(settings.daily_budget);
+        v["budget_warn_pct"] = serde_json::json!(settings.budget_warn_pct);
+        v["budget_critical_pct"] = serde_json::json!(settings.budget_critical_pct);
+        v["notify_budget"] = serde_json::json!(settings.notify_budget);
+        v["balance_max"] = serde_json::json!(settings.balance_max);
+        v["peak_alert_enabled"] = serde_json::json!(settings.peak_alert_enabled);
+        v["peak_alert_minutes"] = serde_json::json!(settings.peak_alert_minutes);
+        v["peak_alert_mode"] = serde_json::json!(settings.peak_alert_mode);
         Ok(())
     })?;
 
@@ -145,13 +195,12 @@ pub fn save_settings(app: AppHandle, settings: QuotaSettings) -> Result<(), Stri
     Ok(())
 }
 
-/// 新增账户（kind: deepseek / go）
+/// 新增账户（kind: deepseek / go / custom / anthropic / zai / minimax / kimi / openrouter / siliconflow / command / volc）
 #[tauri::command]
 pub fn add_account(app: AppHandle, kind: String, name: String) -> Result<AccountConfig, String> {
-    let kind = match kind.as_str() {
-        "deepseek" => AccountKind::Deepseek,
-        "go" => AccountKind::Go,
-        _ => return Err("未知账户类型".into()),
+    let kind = match AccountKind::from_str(&kind) {
+        Some(k) => k,
+        None => return Err("未知账户类型".into()),
     };
     // 用纳秒后 5 位作盐值防同一毫秒并发添加撞 id
     let nanos = std::time::SystemTime::now()
@@ -164,14 +213,11 @@ pub fn add_account(app: AppHandle, kind: String, name: String) -> Result<Account
         chrono::Utc::now().timestamp_millis(),
         nanos % 100000
     );
-    // 名称留空时自动编号（如 OpenCode Go 2）；用户自定义名直接使用
+    // 名称留空时自动编号；用户自定义名直接使用
     let existing = account_configs(&app);
     let count = existing.iter().filter(|a| a.kind == kind).count() + 1;
     let name = if name.trim().is_empty() {
-        match kind {
-            AccountKind::Deepseek => format!("DeepSeek {count}"),
-            AccountKind::Go => format!("OpenCode Go {count}"),
-        }
+        default_account_name(kind, count)
     } else {
         name.trim().into()
     };
@@ -182,6 +228,7 @@ pub fn add_account(app: AppHandle, kind: String, name: String) -> Result<Account
         kind,
         name,
         key_ref,
+        custom: None,
     };
 
     crate::config::update_module(&app, "quota", |v| {
@@ -298,22 +345,85 @@ pub fn set_account_key(app: AppHandle, id: String, key: String) -> Result<(), St
     Ok(())
 }
 
-/// 测试密钥有效性（kind: deepseek / go）
+/// 测试密钥有效性（kind 任意账户类型）
 #[tauri::command]
 pub async fn test_key(kind: String, key: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || match kind.as_str() {
-        "deepseek" => match super::api::fetch_balance(&key) {
-            Ok(b) => Ok(format!("有效，当前余额 ¥{:.2}", b.amount)),
-            Err(e) => Err(e.to_string()),
-        },
-        "go" => match super::api::fetch_go_quota(&key) {
-            Ok(w) => Ok(format!("有效，{} 个套餐窗口可查询", w.len())),
-            Err(e) => Err(e.to_string()),
-        },
-        _ => Err("未知密钥类型".into()),
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(kind) = AccountKind::from_str(&kind) else {
+            return Err("未知密钥类型".into());
+        };
+        match kind {
+            AccountKind::Deepseek => match super::api::fetch_balance(&key) {
+                Ok(b) => Ok(format!("有效，当前余额 ¥{:.2}", b.amount)),
+                Err(e) => Err(e.to_string()),
+            },
+            AccountKind::Custom => Err(
+                "自定义 Provider 密钥随「保存查询配置」一起测试（此处仅校验网络层，请直接保存后看卡片状态）".into(),
+            ),
+            AccountKind::Go => match super::api::fetch_go_quota(&key) {
+                Ok(w) => Ok(format!("有效，{} 个套餐窗口可查询", w.len())),
+                Err(e) => Err(e.to_string()),
+            },
+            vendor => match super::api::fetch_coding_windows(vendor, &key) {
+                Ok(w) => {
+                    let text_count = w.iter().filter(|q| q.text.is_some()).count();
+                    let win_count = w.len() - text_count;
+                    Ok(format!(
+                        "有效，{} 个用量窗口 + {} 个余额数据",
+                        win_count, text_count
+                    ))
+                }
+                Err(e) => Err(e.to_string()),
+            },
+        }
     })
     .await
     .map_err(|e| format!("任务执行失败: {e}"))?
+}
+
+/// 保存自定义 Provider 查询配置（仅 custom 账户）
+#[tauri::command]
+pub fn set_account_custom(
+    app: AppHandle,
+    id: String,
+    custom: super::CustomQuery,
+) -> Result<(), String> {
+    crate::config::update_module(&app, "quota", |v| {
+        if let Some(accounts) = v.get_mut("accounts").and_then(|a| a.as_array_mut()) {
+            if let Some(acc) = accounts
+                .iter_mut()
+                .find(|a| a.get("id").and_then(|i| i.as_str()) == Some(id.as_str()))
+            {
+                acc["custom"] = serde_json::to_value(&custom).map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    })?;
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || super::fetch_once(&app2));
+    Ok(())
+}
+
+/// 各账户类型的默认展示名
+pub fn default_account_name(kind: AccountKind, count: usize) -> String {
+    let base = match kind {
+        AccountKind::Deepseek => "DeepSeek",
+        AccountKind::Go => "OpenCode Go",
+        AccountKind::Custom => "自定义 Provider",
+        AccountKind::Anthropic => "Anthropic",
+        AccountKind::Zai => "Z.ai 智谱",
+        AccountKind::Minimax => "MiniMax",
+        AccountKind::Kimi => "Kimi",
+        AccountKind::Openrouter => "OpenRouter",
+        AccountKind::Siliconflow => "SiliconFlow",
+        AccountKind::Command => "CommandCode",
+        AccountKind::Volc => "火山方舟",
+    };
+    if count <= 1 {
+        base.into()
+    } else {
+        format!("{base} {count}")
+    }
 }
 
 #[derive(Debug, Serialize)]
