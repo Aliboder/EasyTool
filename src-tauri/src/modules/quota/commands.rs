@@ -345,6 +345,16 @@ pub fn set_account_key(app: AppHandle, id: String, key: String) -> Result<(), St
     Ok(())
 }
 
+/// 读取账户密钥明文（设置页回显用：默认掩码展示、点「显示」切明文）。
+/// 密钥仍只存 keyring，不落盘 config；仅本机 IPC 返回给设置页。
+#[tauri::command]
+pub fn get_account_key(app: AppHandle, id: String) -> String {
+    let Some(account) = find_account(&app, &id) else {
+        return String::new();
+    };
+    super::get_account_key(&account)
+}
+
 /// 测试密钥有效性（kind 任意账户类型）
 #[tauri::command]
 pub async fn test_key(kind: String, key: String) -> Result<String, String> {

@@ -796,6 +796,7 @@ pub fn run() {
             modules::quota::commands::remove_account,
             modules::quota::commands::rename_account,
             modules::quota::commands::set_account_key,
+            modules::quota::commands::get_account_key,
             modules::quota::commands::test_key,
             modules::quota::commands::set_account_custom,
             modules::quota::commands::get_stats_data,

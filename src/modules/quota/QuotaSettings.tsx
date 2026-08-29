@@ -209,6 +209,17 @@ function AccountField({
   const [name, setName] = useState(account.name);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
+  // 回显已保存的密钥（默认掩码；点「显示」切明文）。密钥仍只存 keyring，此处按需读取
+  useEffect(() => {
+    let alive = true;
+    invoke<string>("get_account_key", { id: account.id })
+      .then((k) => alive && setValue(k))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [account.id]);
+
   const closeMenu = () => setMenu(null);
 
   const applyKey = async () => {
@@ -216,8 +227,7 @@ function AccountField({
     setResult(null);
     try {
       await invoke("set_account_key", { id: account.id, key: value });
-      setResult({ ok: true, msg: "已保存到系统密钥库" });
-      setValue("");
+      setResult({ ok: true, msg: "已保存到系统密钥库（密钥已回显，可点「显示」核对）" });
       onChange();
     } catch (e) {
       setResult({ ok: false, msg: String(e) });
