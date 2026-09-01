@@ -42,6 +42,12 @@ const REFRESH_OPTIONS = [
   { value: 360, label: "每 6 小时" },
   { value: 1440, label: "每天" },
 ];
+const DEFAULT_REFRESH_MINUTES = 360;
+
+/// 把刷新分钟数转成可读文案（预设选项里的用选项标签，其它兜底）
+function refreshLabel(minutes: number): string {
+  return REFRESH_OPTIONS.find((o) => o.value === minutes)?.label ?? `每 ${minutes} 分钟`;
+}
 
 interface IcsImportInfo {
   id: number;
@@ -116,7 +122,12 @@ export function CalendarSettings({
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [purgeDate, setPurgeDate] = useState(threeMonthsAgo);
   const [subs, setSubs] = useState<SubscriptionInfo[]>([]);
-  const [newSub, setNewSub] = useState({ name: "", url: "", color: SUB_COLORS[0] });
+  const [newSub, setNewSub] = useState({
+    name: "",
+    url: "",
+    color: SUB_COLORS[0],
+    refresh_minutes: DEFAULT_REFRESH_MINUTES,
+  });
   const [editingSub, setEditingSub] = useState<number | null>(null);
   const [subDrafts, setSubDrafts] = useState<Record<number, SubscriptionInfo>>({});
   const [subMenu, setSubMenu] = useState<{ id: number; x: number; y: number } | null>(null);
@@ -238,8 +249,13 @@ export function CalendarSettings({
       return;
     }
     try {
-      const id = await invoke<number>("calendar_add_subscription", { name, url, color: newSub.color });
-      setNewSub({ name: "", url: "", color: SUB_COLORS[0] });
+      const id = await invoke<number>("calendar_add_subscription", {
+        name,
+        url,
+        color: newSub.color,
+        refreshMinutes: newSub.refresh_minutes,
+      });
+      setNewSub({ name: "", url: "", color: SUB_COLORS[0], refresh_minutes: DEFAULT_REFRESH_MINUTES });
       toast("已添加订阅，正在获取…");
       await invoke<number>("calendar_refresh_subscription", { id });
       refreshAll();
@@ -267,7 +283,7 @@ export function CalendarSettings({
         name: draft.name,
         color: draft.color,
         enabled: draft.enabled,
-        refresh_minutes: draft.refresh_minutes,
+        refreshMinutes: draft.refresh_minutes,
       });
       setEditingSub(null);
       toast("已保存订阅设置");
@@ -436,7 +452,7 @@ export function CalendarSettings({
           <p className="text-xs text-muted-foreground">
             订阅源（自动同步、只读）与导入的日历文件（一次导入、可编辑）统一管理
           </p>
-          <div className="space-y-2 rounded-lg border border-dashed p-3">
+          <div className="space-y-2.5 rounded-lg border border-dashed p-3">
             <div className="grid gap-2 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label className="text-xs">订阅名称</Label>
@@ -455,11 +471,11 @@ export function CalendarSettings({
                 />
               </div>
             </div>
-            <div className="flex flex-wrap items-end gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs">颜色</Label>
                 <Select value={newSub.color} onValueChange={(v) => setNewSub((s) => ({ ...s, color: v }))}>
-                  <SelectTrigger className="w-24">
+                  <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -471,12 +487,36 @@ export function CalendarSettings({
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={addSub}>添加订阅</Button>
-              <span className="pb-1.5 text-[11px] text-muted-foreground">或</span>
-              <Button variant="outline" size="sm" onClick={pickImport}>
-                <Upload className="size-4" />
-                导入日历文件…
+              <div className="space-y-1">
+                <Label className="text-xs">刷新频率</Label>
+                <Select
+                  value={String(newSub.refresh_minutes)}
+                  onValueChange={(v) => setNewSub((s) => ({ ...s, refresh_minutes: Number(v) }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REFRESH_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={String(o.value)}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Button onClick={addSub} className="w-full">
+                添加订阅
               </Button>
+              <button
+                onClick={pickImport}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Upload className="size-3.5" />
+                或 导入本地日历文件（.ics / 备份）
+              </button>
             </div>
           </div>
           {accounts.length === 0 ? (
@@ -509,7 +549,7 @@ export function CalendarSettings({
                       </button>
                     </div>
                     <div className="truncate text-[11px] text-muted-foreground">{s.url}</div>
-                    <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
                       <span>{s.event_count} 条</span>
                       <span className="text-border">·</span>
                       <span>
@@ -517,6 +557,8 @@ export function CalendarSettings({
                           ? `上次同步 ${new Date(s.last_sync_ms).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`
                           : "未同步"}
                       </span>
+                      <span className="text-border">·</span>
+                      <span>刷新：{refreshLabel(s.refresh_minutes)}</span>
                     </div>
                     {editingSub === s.id && (
                       <div className="space-y-1.5 rounded-md bg-muted/40 p-2">
@@ -582,21 +624,21 @@ export function CalendarSettings({
               }
               const it = a.imp;
               return (
-                <div key={`ics-${it.id}`} className="flex items-center gap-2 rounded-lg border px-2 py-1.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm">{it.name}</div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {it.count} 条 · {new Date(it.imported_at).toLocaleString("zh-CN")}
-                    </div>
+                <div key={`ics-${it.id}`} className="space-y-2 rounded-lg border p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1 truncate text-sm font-medium">{it.name}</div>
+                    <TypeBadge kind="ics" />
+                    <button
+                      onClick={() => removeImport(it)}
+                      className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+                      title="删除整份"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
                   </div>
-                  <TypeBadge kind="ics" />
-                  <button
-                    onClick={() => removeImport(it)}
-                    className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
-                    title="删除整份"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
+                  <div className="text-[11px] text-muted-foreground">
+                    {it.count} 条 · 导入于 {new Date(it.imported_at).toLocaleString("zh-CN")}
+                  </div>
                 </div>
               );
             })

@@ -540,6 +540,7 @@ pub fn calendar_add_subscription(
     name: String,
     url: String,
     color: String,
+    refresh_minutes: i64,
 ) -> Result<i64, String> {
     let name = name.trim();
     let url = url.trim();
@@ -555,7 +556,7 @@ pub fn calendar_add_subscription(
     }
     let color = if color.is_empty() { "#3b82f6" } else { &color };
     let db = db.lock().map_err(|e| e.to_string())?;
-    db.add_subscription(name, url, color)
+    db.add_subscription(name, url, color, refresh_minutes.clamp(0, 10080))
 }
 
 #[tauri::command]

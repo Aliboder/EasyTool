@@ -739,11 +739,17 @@ impl CalendarDb {
 
     // ---------- 订阅日历（只读外部日历源） ----------
 
-    pub fn add_subscription(&self, name: &str, url: &str, color: &str) -> DbResult<i64> {
+    pub fn add_subscription(
+        &self,
+        name: &str,
+        url: &str,
+        color: &str,
+        refresh_minutes: i64,
+    ) -> DbResult<i64> {
         self.conn
             .execute(
-                "INSERT INTO subscriptions (name, url, color) VALUES (?1, ?2, ?3)",
-                params![name, url, color],
+                "INSERT INTO subscriptions (name, url, color, refresh_minutes) VALUES (?1, ?2, ?3, ?4)",
+                params![name, url, color, refresh_minutes],
             )
             .map_err(|e| e.to_string())?;
         Ok(self.conn.last_insert_rowid())
@@ -1170,7 +1176,7 @@ mod tests {
         use crate::modules::calendar::ics::ImportItem;
         let db = mem();
         let sid = db
-            .add_subscription("假日日历", "https://example.com/holidays.ics", "#ef4444")
+            .add_subscription("假日日历", "https://example.com/holidays.ics", "#ef4444", 360)
             .unwrap();
         // 未同步过 → 到期待刷新
         assert_eq!(db.due_subscriptions(now_ms()).unwrap().len(), 1);
