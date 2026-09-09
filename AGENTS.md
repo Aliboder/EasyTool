@@ -108,7 +108,7 @@ npx tsc --noEmit       # 前端类型检查
 ```
 
 - 打包只支持 `msi/nsis`（**不支持 portable**）
-- 后端 116 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 48 个）
+- 后端 116 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 55 个）
 
 ## 发版流程（AI 代发版时必须按此执行）
 

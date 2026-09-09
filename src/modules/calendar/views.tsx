@@ -1,12 +1,12 @@
 // 周 / 日 / 待办 三个视图（月视图留在 Page）。
 // 时间轴布局复用 utils.layoutDay 纯函数（重叠分列、窗口钳制），全部数据来自父组件。
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { CalendarPlus, ChevronDown, ChevronRight, ListTodo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs, courseColor, buildTimeline, TL_CLUSTER_GAP } from "./utils";
+import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs, courseColor, buildTimeline, TL_CLUSTER_GAP, blockTier, eventStatusOf, pickNextEvent, type BlockTier, type EventStatus } from "./utils";
 import type { EventDto, TodoDto } from "./types";
 
 const HOUR_HEIGHT = 46;
@@ -29,6 +29,24 @@ function useNow(): number {
     return () => clearInterval(t);
   }, []);
   return now;
+}
+
+/** 容器实测宽度（供事件块按宽度分档：窄列缩字号） */
+function useElementWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
+  const ref = useRef<T | null>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setW(el.getBoundingClientRect().width);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      for (const en of entries) setW(en.contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w];
 }
 
 /** 双击时间轴空白处 → 由视口位置换算为 30 分钟对齐的开始小时 */
@@ -93,6 +111,12 @@ function EventBlock({
   width,
   subColors,
   dimmed,
+  status,
+  pct = 0,
+  isNext = false,
+  tier,
+  noteDot = false,
+  badge = true,
   onClick,
   onMenu,
 }: {
@@ -103,17 +127,33 @@ function EventBlock({
   width: number;
   subColors: SubColors;
   dimmed?: boolean;
+  /** 视觉状态；不传 = 保持原有静态色块（向后兼容） */
+  status?: EventStatus;
+  /** 进行中进度 0-100（仅 status="ongoing" 时有意义） */
+  pct?: number;
+  /** 今天「下一节课」高亮 */
+  isNext?: boolean;
+  /** 文字分档；不传 = 按高度推算（等价于旧行为） */
+  tier?: BlockTier;
+  /** 右下角备注圆点 */
+  noteDot?: boolean;
+  /** 是否显示「进行中 / 已结束」状态标（周视图卡片太小，关掉只留填色） */
+  badge?: boolean;
   onClick: EventClick;
   onMenu: EventMenu;
 }) {
-  const compact = height < 34;
-  const tint = eventTint(event, subColors);
+  const t = tier ?? blockTier(Number.POSITIVE_INFINITY, height);
+  const isPast = status === "past";
+  const isOngoing = status === "ongoing";
+  const tint = isPast ? null : eventTint(event, subColors);
   const [hover, setHover] = useState(false);
   const [rect, setRect] = useState<{ x: number; y: number } | null>(null);
   // 空间分配：标题永远优先完整显示（不截断）；时间/地点只在卡片够高时出现；高卡片补备注填充
-  const showMeta = height >= 54;
-  const notesLines = height >= 110 ? 3 : height >= 80 ? 2 : 0;
+  const showMeta = t.showMeta;
+  const notesLines = t.notesLines;
   const showNotes = notesLines > 0 && !!event.notes;
+  // 状态标：卡片够高才显示（太矮只留进度填色，避免挤掉标题）；周视图可整体关掉
+  const showBadge = badge && (isOngoing || isPast) && height >= 34;
   const enter = (e: ReactMouseEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     setRect({ x: r.left, y: r.bottom });
@@ -130,25 +170,35 @@ function EventBlock({
         left: Math.max(8, Math.min(rect.x - 4, window.innerWidth - 236)),
       }
     : undefined;
+  // 底色：已结束 → 灰底灰字（丢掉课程色）；进行中 → 按进度从左往右填色；其余 → 课程色渐变
+  const blockStyle: CSSProperties = isPast
+    ? { background: "var(--muted)", color: "var(--muted-foreground)" }
+    : tint
+      ? isOngoing
+        ? {
+            background: `linear-gradient(90deg, ${tint} 0%, ${tint} ${pct}%, color-mix(in srgb, ${tint} 65%, #000) ${pct}%, color-mix(in srgb, ${tint} 65%, #000) 100%)`,
+            color: "#ffffff",
+          }
+        : {
+            background: `linear-gradient(180deg, ${tint} 0%, color-mix(in srgb, ${tint} 85%, #000) 100%)`,
+            color: "#ffffff",
+          }
+      : {};
   return (
     <div
       className={cn(
         "absolute overflow-hidden rounded-xl border border-black/15 bg-primary px-2 py-1.5 text-primary-foreground shadow-sm transition-all hover:z-20 hover:shadow-md",
         dimmed && "opacity-40 saturate-[0.6]",
-        !tint && "hover:bg-primary/95",
+        !isPast && !tint && "hover:bg-primary/95",
+        isNext && "ring-2 ring-white/80",
       )}
       style={{
         top: top + 1,
         height: height - 2,
         left: `${left}%`,
         width: `${width}%`,
-        ...(tint
-          ? {
-              background: `linear-gradient(180deg, ${tint} 0%, color-mix(in srgb, ${tint} 85%, #000) 100%)`,
-              color: "#ffffff",
-            }
-          : {}),
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)",
+        ...blockStyle,
+        ...(isPast ? {} : { boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)" }),
       }}
       onMouseEnter={enter}
       onMouseLeave={leave}
@@ -163,11 +213,24 @@ function EventBlock({
         onMenu(event, e.clientX, e.clientY);
       }}
     >
-      {/* 标题：不截断，自动换行，优先保证完整展示 */}
+      {/* 状态标（进行中 / 已结束）：右上角，卡片够高才显示 */}
+      {showBadge && (
+        <span
+          className={cn(
+            "absolute right-1 top-1 z-10 rounded-full px-1 py-px text-[9px] font-medium leading-none",
+            isPast ? "bg-black/10 text-foreground/60" : "bg-white/30 text-white",
+          )}
+        >
+          {isOngoing ? "进行中" : "已结束"}
+        </span>
+      )}
+      {/* 标题：不截断，自动换行，优先保证完整展示（极窄卡片才允许 2 行截断） */}
       <div
         className={cn(
-          "break-words leading-snug",
-          compact ? "text-[11px] font-semibold" : "text-xs font-semibold",
+          "break-words leading-snug font-semibold",
+          t.titlePx === 11 ? "text-[11px]" : "text-xs",
+          t.titleClamp === 2 && "line-clamp-2",
+          showBadge && "pr-9",
         )}
       >
         {event.title}
@@ -175,12 +238,16 @@ function EventBlock({
       {/* 时间 + 地点：正常文档流，位于标题正下方，永不与标题重叠（卡片不够高时自动让位） */}
       {showMeta && (
         <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/85">
-          <span className="size-1 flex-none rounded-full bg-white/80" />
-          <span className="truncate font-medium tabular-nums">{fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}</span>
+          <span className={cn("flex-none rounded-full bg-white/80", isNext ? "size-1.5" : "size-1")} />
+          <span className={cn("truncate font-medium tabular-nums", isNext && "font-semibold text-white")}>
+            {fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}
+          </span>
           {event.location && (
             <>
               <span className="flex-none text-white/50">·</span>
-              <span className="truncate opacity-90">{event.location}</span>
+              <span className={cn("truncate opacity-90", isNext && "font-semibold text-white opacity-100")}>
+                {event.location}
+              </span>
             </>
           )}
         </div>
@@ -191,6 +258,8 @@ function EventBlock({
           {event.notes}
         </div>
       )}
+      {/* 备注圆点：右下角（周视图用，不占文字空间） */}
+      {noteDot && <span className="absolute bottom-1 right-1 size-1 rounded-full bg-white/90" />}
       {/* 悬停浮层：置顶展示完整信息，避免被截断 */}
       {hover && rect && tipStyle
         ? createPortal(
@@ -288,6 +357,11 @@ export function WeekView({
 
   const now = useNow();
   const today = localDayKey(now);
+  // 今天「下一节课」（用于地点高亮）
+  const nextEv = useMemo(() => pickNextEvent(events, now, today), [events, now, today]);
+  // 网格实测宽度（px）：供事件块按实际宽度分档缩字号
+  const [bodyRef, bodyW] = useElementWidth<HTMLDivElement>();
+  const colWpx = bodyW > 0 ? Math.max(0, bodyW - 40) / days.length : 0;
   // 图例默认收起；展开才显示课程色块
   const [legendOpen, setLegendOpen] = useState(false);
   const { start: sH, end: eH } = useMemo(() => fitWindow(events), [events]);
@@ -352,9 +426,10 @@ export function WeekView({
           )}
         </div>
       )}
-      {/* 列头：第一行 MM/DD 日期（今天主题圆底色），第二行 星期（周一~周日） */}
-      <div className="flex shrink-0 border-b">
-        <div className="w-10 shrink-0" />
+      {/* 列头：第一行 MM/DD 日期（今天主题圆底色），第二行 星期（周一~周日）
+          今天那一列不画底边线 → 与下方网格的今日列连成一根贯通高亮 */}
+      <div className="flex shrink-0">
+        <div className="w-10 shrink-0 border-b" />
         {days.map((k) => {
           const d = k % 100;
           const mth = Math.floor((k % 10000) / 100);
@@ -365,7 +440,7 @@ export function WeekView({
               onClick={() => onSelectDay(k)}
               className={cn(
                 "flex flex-1 flex-col items-center gap-0.5 py-1.5",
-                k === today ? "rounded-t-md bg-primary/10" : "hover:bg-accent",
+                k === today ? "bg-primary/10" : "border-b hover:bg-accent",
               )}
             >
               <span
@@ -385,11 +460,11 @@ export function WeekView({
           );
         })}
       </div>
-      {/* 全天条带 */}
-      <div className="flex shrink-0 border-b bg-muted/30">
-        <div className="flex w-10 shrink-0 items-center px-1 text-[9px] text-muted-foreground">全天</div>
+      {/* 全天条带（今天列同样不画底边线，保持高亮贯通） */}
+      <div className="flex shrink-0 bg-muted/30">
+        <div className="flex w-10 shrink-0 items-center border-b px-1 text-[9px] text-muted-foreground">全天</div>
         {days.map((k) => (
-          <div key={k} className="flex flex-1 flex-col gap-px px-0.5 py-1">
+          <div key={k} className={cn("flex flex-1 flex-col gap-px px-0.5 py-1", k === today ? "bg-primary/10" : "border-b")}>
             {allDayOfDay(events, k).map((e) => {
             const tint = eventTint(e, subColors);
             return (
@@ -417,7 +492,13 @@ export function WeekView({
         ))}
       </div>
       {/* 时间轴主体 */}
-      <div className="relative flex flex-1 overflow-y-auto" ref={scrollRef}>
+      <div
+        className="relative flex flex-1 overflow-y-auto"
+        ref={(el) => {
+          scrollRef.current = el;
+          bodyRef.current = el;
+        }}
+      >
         <HourAxis startHour={sH} endHour={eH} />
         {days.map((k) => {
           const blocks = layoutDay(
@@ -427,7 +508,7 @@ export function WeekView({
           return (
             <div
               key={k}
-              className={cn("relative flex-1 border-l", k === today && "bg-primary/[0.03]")}
+              className={cn("relative flex-1 border-l", k === today && "bg-primary/[0.07]")}
               style={{ height: spanH * HOUR_HEIGHT }}
               onClick={() => onSelectDay(k)}
               onDoubleClick={(e) => {
@@ -438,6 +519,8 @@ export function WeekView({
               <TimelineGrid startHour={sH} endHour={eH} />
               {blocks.map((b) => {
                 const ev = timedOfDay(events, k)[b.index];
+                // 周视图只在「今天」这一列做状态表达（进度 + 已结束变灰）；翻到别的日子保持课程色，避免整屏灰
+                const vis = eventStatusOf(ev, now, k);
                 return (
                   <EventBlock
                     key={ev.id}
@@ -448,6 +531,12 @@ export function WeekView({
                     width={b.width}
                     subColors={subColors}
                     dimmed={focusTitle != null && ev.title !== focusTitle}
+                    status={k === today ? vis.status : undefined}
+                    pct={k === today ? vis.pct : 0}
+                    badge={false}
+                    isNext={nextEv != null && ev.id === nextEv.id && localDayKey(ev.start_ms) === k}
+                    tier={blockTier((colWpx * b.width) / 100, b.height)}
+                    noteDot={!!ev.notes}
                     onClick={onEventClick}
                     onMenu={onEventMenu}
                   />
@@ -510,6 +599,8 @@ export function DayView({
   const now = useNow();
   const today = localDayKey(now);
   const isToday = dayKey === today;
+  // 今天「下一节课」（仅当天为今天时才高亮）
+  const nextEv = useMemo(() => pickNextEvent(events, now, today), [events, now, today]);
   const { start: sH, end: eH } = useMemo(() => fitWindow(timed), [timed]);
   const spanH = eH - sH;
   const nowPos = ((new Date(now).getHours() * 60 + new Date(now).getMinutes() - sH * 60) / 60) * HOUR_HEIGHT;
@@ -598,6 +689,7 @@ export function DayView({
               { startHour: sH, endHour: eH, hourHeight: HOUR_HEIGHT },
             ).map((b) => {
               const ev = timed[b.index];
+              const vis = eventStatusOf(ev, now, dayKey);
               return (
                 <EventBlock
                   key={ev.id}
@@ -608,6 +700,11 @@ export function DayView({
                   width={b.width}
                   subColors={subColors}
                   dimmed={focusTitle != null && ev.title !== focusTitle}
+                  status={vis.status}
+                  pct={vis.pct}
+                  badge={isToday}
+                  isNext={isToday && nextEv != null && ev.id === nextEv.id}
+                  noteDot={!!ev.notes}
                   onClick={onEventClick}
                   onMenu={onEventMenu}
                 />
@@ -667,6 +764,8 @@ export function TimeLineView({
   const now = useNow();
   const today = localDayKey(now);
   const hourHeight = 36; // 缩放固定「适中」
+  // 今天「下一节课」（仅今天的分时事件参与）
+  const nextEv = useMemo(() => pickNextEvent(events, now, today), [events, now, today]);
   const { days, totalHeight } = useMemo(
     () => buildTimeline(events, { startMs: loadedStart, endMs: loadedEnd, hourHeight, hideEmpty }),
     [events, loadedStart, loadedEnd, hourHeight, hideEmpty],
@@ -779,12 +878,19 @@ export function TimeLineView({
                   {isToday && " · 今天"}
                 </span>
                 {d.allDay.map((e) => {
-                  const tint = eventTint(e, subColors);
+                  const past = d.dayKey < today;
+                  const tint = past ? null : eventTint(e, subColors);
                   return (
                     <span
                       key={e.id}
                       className="truncate rounded-full border border-black/10 bg-primary px-2 py-px text-[10px] font-medium text-primary-foreground"
-                      style={tint ? { backgroundColor: tint, color: "#fff" } : undefined}
+                      style={
+                        past
+                          ? { backgroundColor: "var(--muted)", color: "var(--muted-foreground)" }
+                          : tint
+                            ? { backgroundColor: tint, color: "#fff" }
+                            : undefined
+                      }
                       onClick={() => onEventClick(e)}
                       onContextMenu={(ev) => {
                         ev.preventDefault();
@@ -837,6 +943,7 @@ export function TimeLineView({
                           { startHour: c.startHour, endHour: c.endHour, hourHeight },
                         ).map((b) => {
                           const ev = c.events[b.index];
+                          const vis = eventStatusOf(ev, now, d.dayKey);
                           return (
                             <EventBlock
                               key={`${ev.id}-${d.dayKey}-${ci}`}
@@ -846,6 +953,11 @@ export function TimeLineView({
                               left={b.left}
                               width={b.width}
                               subColors={subColors}
+                              status={vis.status}
+                              pct={vis.pct}
+                              badge={d.dayKey === today}
+                              isNext={nextEv != null && ev.id === nextEv.id && d.dayKey === today}
+                              noteDot={!!ev.notes}
                               onClick={onEventClick}
                               onMenu={onEventMenu}
                             />

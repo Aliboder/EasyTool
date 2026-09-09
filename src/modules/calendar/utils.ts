@@ -430,6 +430,103 @@ export function buildTimeline<T extends TlEventLike>(
   return { days, totalHeight: top };
 }
 
+// ---------- 状态 / 进度 / 下一节课（视图「会说话」用；纯函数，可单测） ----------
+
+/** 分时事件的状态（全天事件单列一档，不参与进行中/进度） */
+export type EventStatus = "past" | "ongoing" | "future" | "allday";
+
+export interface EventVisual {
+  status: EventStatus;
+  /** 进行中进度 0-100；其它状态恒为 0 或 100 */
+  pct: number;
+}
+
+/**
+ * 分时事件在 now 时刻的状态与进度。
+ * 跨午夜（end 早于 start）按「当日可见段」计算：end 钳制到当日 24:00；
+ * 零时长（end <= start）不判进行中，按瞬时处理。
+ */
+export function timedStatus(startMs: number, endMs: number, nowMs: number): { status: "past" | "ongoing" | "future"; pct: number } {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return { status: "future", pct: 0 };
+  if (endMs <= startMs) {
+    return nowMs >= startMs ? { status: "past", pct: 100 } : { status: "future", pct: 0 };
+  }
+  const dayEnd = dayStartMs(localDayKey(startMs)) + 86_400_000; // 当日 24:00
+  const end = endMs > dayEnd ? dayEnd : endMs; // 跨午夜 → 只算当日那一段
+  const span = end - startMs;
+  if (nowMs >= end) return { status: "past", pct: 100 };
+  if (nowMs < startMs || span <= 0) return { status: "future", pct: 0 };
+  const pct = Math.round(((nowMs - startMs) / span) * 100);
+  return { status: "ongoing", pct: Math.max(0, Math.min(100, pct)) };
+}
+
+/** 某一天相对今天的位置：过去 / 今天 / 未来 */
+export function dayPhase(dayKey: number, todayKeyVal: number): "past" | "today" | "future" {
+  if (dayKey < todayKeyVal) return "past";
+  if (dayKey > todayKeyVal) return "future";
+  return "today";
+}
+
+/**
+ * 事件在某一天展示时的视觉状态：
+ * 过去的日子整体算已结束（灰化）；未来的日子不算进行中；只有今天才按真实时刻判进行中/进度。
+ * 全天事件恒为 'allday'（不参与进度），但过去的日子仍算 'past'（要灰化）。
+ */
+export function eventStatusOf(
+  e: { all_day: boolean; start_ms: number; end_ms: number },
+  nowMs: number,
+  dayKey: number,
+): EventVisual {
+  const phase = dayPhase(dayKey, localDayKey(nowMs));
+  if (phase === "past") return { status: "past", pct: 100 };
+  if (phase === "future") return { status: e.all_day ? "allday" : "future", pct: 0 };
+  if (e.all_day) return { status: "allday", pct: 0 };
+  return timedStatus(e.start_ms, e.end_ms, nowMs);
+}
+
+/**
+ * 今天「下一节课」：时间上最近的一条**未开始**分时事件（全天事件不参与）。
+ * 正在进行时返回其后的下一条；课间时段仍返回即将开始的那条；今天没有更多 → null。
+ */
+export function pickNextEvent<T extends { all_day: boolean; start_ms: number }>(
+  events: T[],
+  nowMs: number,
+  dayKey: number,
+): T | null {
+  let best: T | null = null;
+  for (const e of events) {
+    if (e.all_day) continue;
+    if (localDayKey(e.start_ms) !== dayKey) continue;
+    if (e.start_ms <= nowMs) continue;
+    if (!best || e.start_ms < best.start_ms) best = e;
+  }
+  return best;
+}
+
+/** 事件块的文字分档（宽度/高度像素 → 显示策略） */
+export interface BlockTier {
+  /** 显示时间/地点行 */
+  showMeta: boolean;
+  /** 备注行数（0 = 不显示） */
+  notesLines: 0 | 2 | 3;
+  /** 标题字号（px） */
+  titlePx: number;
+  /** 标题最多行数（0 = 不限制） */
+  titleClamp: 0 | 2;
+}
+
+/** 按卡片实际宽度/高度给出显示策略（窄列缩字号、极窄卡片标题截断） */
+export function blockTier(widthPx: number, heightPx: number): BlockTier {
+  const narrow = widthPx < 90;
+  const tiny = heightPx < 34;
+  return {
+    showMeta: heightPx >= 54,
+    notesLines: heightPx >= 110 ? 3 : heightPx >= 80 ? 2 : 0,
+    titlePx: narrow || tiny ? 11 : 12,
+    titleClamp: widthPx < 70 && heightPx < 54 ? 2 : 0,
+  };
+}
+
 /** 日键加减 N 天（正确处理跨月/跨年，如 8月31 +1 → 9月1） */
 export function addDaysKey(key: number, n: number): number {
   const y = Math.floor(key / 10000);

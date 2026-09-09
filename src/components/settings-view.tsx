@@ -167,9 +167,11 @@ export function SettingsView({
     : manifests;
 
   // 外观：强调色 + 界面缩放（localStorage 持久化，启动时在 App 侧应用）
+  // 强调色默认 emerald（2026-09 视图对齐）；显式选过「默认」的用户存的是空串，要原样保留
   const [accent, setAccent] = useState<AccentKey>(() => {
-    const v = localStorage.getItem("easytool_accent") as AccentKey | null;
-    return v && ["emerald", "sky", "violet", "amber"].includes(v) ? v : "";
+    const v = localStorage.getItem("easytool_accent");
+    if (v === null) return "emerald";
+    return ["emerald", "sky", "violet", "amber"].includes(v) ? (v as AccentKey) : "";
   });
   const [uiScale, setUiScale] = useState(() => {
     const v = Number(localStorage.getItem("easytool_ui_scale"));

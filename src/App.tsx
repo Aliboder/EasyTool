@@ -123,13 +123,15 @@ function App() {
         setManifests(m);
         setConfig(c);
         // 应用持久化的外观偏好（强调色 / 界面缩放）
-        const storedAccent = localStorage.getItem("easytool_accent") as
+        // 强调色默认 emerald（2026-09 视图对齐：未设置过的用户默认薄荷绿；显式选过「默认」的保持原样）
+        const rawAccent = localStorage.getItem("easytool_accent");
+        const storedAccent = (rawAccent === null ? "emerald" : rawAccent) as
           | "emerald"
           | "sky"
           | "violet"
           | "amber"
           | "";
-        if (storedAccent) applyAccent(storedAccent);
+        applyAccent(storedAccent);
         const storedScale = Number(localStorage.getItem("easytool_ui_scale"));
         if ([90, 100, 110, 120].includes(storedScale)) applyUiScale(storedScale);
         // 落地面板：优先恢复上次使用的模块（启用中才生效）

@@ -21,6 +21,11 @@ import {
   buildTimeline,
   TL_HEADER_H,
   TL_CLUSTER_GAP,
+  timedStatus,
+  dayPhase,
+  eventStatusOf,
+  pickNextEvent,
+  blockTier,
   type TimedEventLike,
 } from "./utils";
 
@@ -232,5 +237,84 @@ describe("calendar utils", () => {
     expect(neg.freq).toBe("monthlyNth");
     expect(neg.nth).toBe(-1);
     expect(buildRrule(neg)).toBe("FREQ=MONTHLY;BYDAY=-1FR");
+  });
+});
+
+describe("calendar utils · 状态 / 进度 / 下一节课", () => {
+  const at = (y: number, m: number, d: number, h: number, mi = 0) => new Date(y, m - 1, d, h, mi, 0).getTime();
+
+  it("timedStatus 未开始 / 进行中 / 已结束 + 进度四舍五入", () => {
+    const s = at(2026, 9, 15, 10, 0);
+    const e = at(2026, 9, 15, 11, 0);
+    expect(timedStatus(s, e, at(2026, 9, 15, 9, 0))).toEqual({ status: "future", pct: 0 });
+    expect(timedStatus(s, e, at(2026, 9, 15, 10, 0))).toEqual({ status: "ongoing", pct: 0 });
+    expect(timedStatus(s, e, at(2026, 9, 15, 10, 30))).toEqual({ status: "ongoing", pct: 50 });
+    expect(timedStatus(s, e, at(2026, 9, 15, 10, 20)).pct).toBe(33);
+    expect(timedStatus(s, e, at(2026, 9, 15, 11, 0))).toEqual({ status: "past", pct: 100 });
+    expect(timedStatus(s, e, at(2026, 9, 15, 23, 0))).toEqual({ status: "past", pct: 100 });
+  });
+
+  it("timedStatus 跨午夜只算当日可见段", () => {
+    const s = at(2026, 9, 15, 23, 0);
+    const e = at(2026, 9, 16, 1, 0);
+    expect(timedStatus(s, e, at(2026, 9, 15, 23, 30))).toEqual({ status: "ongoing", pct: 50 });
+    expect(timedStatus(s, e, at(2026, 9, 16, 0, 30))).toEqual({ status: "past", pct: 100 });
+  });
+
+  it("timedStatus 零时长与异常输入不崩", () => {
+    const t = at(2026, 9, 15, 10, 0);
+    expect(timedStatus(t, t, at(2026, 9, 15, 9, 59))).toEqual({ status: "future", pct: 0 });
+    expect(timedStatus(t, t, at(2026, 9, 15, 10, 0))).toEqual({ status: "past", pct: 100 });
+    expect(timedStatus(NaN, NaN, t)).toEqual({ status: "future", pct: 0 });
+  });
+
+  it("dayPhase 过去 / 今天 / 未来", () => {
+    expect(dayPhase(20260914, 20260915)).toBe("past");
+    expect(dayPhase(20260915, 20260915)).toBe("today");
+    expect(dayPhase(20260916, 20260915)).toBe("future");
+  });
+
+  it("eventStatusOf 只有今天才判进行中；过去的日子整体已结束", () => {
+    const now = at(2026, 9, 15, 10, 30);
+    const timed = { all_day: false, start_ms: at(2026, 9, 15, 10, 0), end_ms: at(2026, 9, 15, 11, 0) };
+    expect(eventStatusOf(timed, now, 20260915)).toEqual({ status: "ongoing", pct: 50 });
+    // 同一条事件在「过去的日子」里 → 整体已结束
+    expect(eventStatusOf(timed, now, 20260914)).toEqual({ status: "past", pct: 100 });
+    // 未来的日子 → 未开始
+    expect(eventStatusOf({ all_day: false, start_ms: at(2026, 9, 16, 10, 0), end_ms: at(2026, 9, 16, 11, 0) }, now, 20260916)).toEqual({
+      status: "future",
+      pct: 0,
+    });
+    // 全天事件今天 → allday（不参与进度）；过去 → past（要灰化）
+    const allDay = { all_day: true, start_ms: at(2026, 9, 15, 0, 0), end_ms: at(2026, 9, 15, 23, 59) };
+    expect(eventStatusOf(allDay, now, 20260915)).toEqual({ status: "allday", pct: 0 });
+    expect(eventStatusOf({ ...allDay, start_ms: at(2026, 9, 14, 0, 0) }, now, 20260914)).toEqual({ status: "past", pct: 100 });
+  });
+
+  it("pickNextEvent 取今天最近的未开始分时事件", () => {
+    const evs = [
+      { all_day: false, start_ms: at(2026, 9, 15, 9, 0), end_ms: at(2026, 9, 15, 10, 0) }, // 已结束
+      { all_day: false, start_ms: at(2026, 9, 15, 10, 0), end_ms: at(2026, 9, 15, 11, 0) }, // 进行中
+      { all_day: false, start_ms: at(2026, 9, 15, 14, 0), end_ms: at(2026, 9, 15, 15, 0) }, // 下一条
+      { all_day: true, start_ms: at(2026, 9, 15, 0, 0), end_ms: at(2026, 9, 15, 23, 59) }, // 全天不参与
+      { all_day: false, start_ms: at(2026, 9, 16, 9, 0), end_ms: at(2026, 9, 16, 10, 0) }, // 别的日子
+    ];
+    expect(pickNextEvent(evs, at(2026, 9, 15, 10, 30), 20260915)?.start_ms).toBe(at(2026, 9, 15, 14, 0));
+    // 课间时段仍指向即将开始的那条
+    expect(pickNextEvent(evs, at(2026, 9, 15, 11, 30), 20260915)?.start_ms).toBe(at(2026, 9, 15, 14, 0));
+    // 今天没有未开始的了
+    expect(pickNextEvent(evs, at(2026, 9, 15, 14, 30), 20260915)).toBe(null);
+    expect(pickNextEvent([], at(2026, 9, 15, 10, 0), 20260915)).toBe(null);
+  });
+
+  it("blockTier 宽度/高度分档边界", () => {
+    expect(blockTier(200, 40)).toEqual({ showMeta: false, notesLines: 0, titlePx: 12, titleClamp: 0 });
+    expect(blockTier(200, 33)).toEqual({ showMeta: false, notesLines: 0, titlePx: 11, titleClamp: 0 });
+    expect(blockTier(89, 40)).toEqual({ showMeta: false, notesLines: 0, titlePx: 11, titleClamp: 0 });
+    expect(blockTier(90, 40)).toEqual({ showMeta: false, notesLines: 0, titlePx: 12, titleClamp: 0 });
+    expect(blockTier(60, 40)).toEqual({ showMeta: false, notesLines: 0, titlePx: 11, titleClamp: 2 });
+    expect(blockTier(200, 54)).toEqual({ showMeta: true, notesLines: 0, titlePx: 12, titleClamp: 0 });
+    expect(blockTier(200, 80)).toEqual({ showMeta: true, notesLines: 2, titlePx: 12, titleClamp: 0 });
+    expect(blockTier(200, 110)).toEqual({ showMeta: true, notesLines: 3, titlePx: 12, titleClamp: 0 });
   });
 });
