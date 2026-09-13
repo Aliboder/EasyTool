@@ -962,6 +962,18 @@ export function TimeLineView({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadBusy = useRef(false);
   const centeredRef = useRef(false);
+  // 已结束的日子整体收成一条折叠条（默认收起、不持久化；每次进时间线都是收起状态）
+  const [pastOpen, setPastOpen] = useState(false);
+  const lastToggleRef = useRef(0);
+  const pastDays = useMemo(() => days.filter((d) => d.dayKey < today), [days, today]);
+  const restDays = useMemo(() => days.filter((d) => d.dayKey >= today), [days, today]);
+  // 连点保护：展开会一次性挂载上百个卡片节点，260ms 内的重复点击直接忽略
+  const togglePast = () => {
+    const t = Date.now();
+    if (t - lastToggleRef.current < 260) return;
+    lastToggleRef.current = t;
+    setPastOpen((v) => !v);
+  };
 
   // 数据就绪后首次定位到「今天」所在处
   useEffect(() => {
@@ -1001,8 +1013,78 @@ export function TimeLineView({
   // 内容不足一屏时自动向下填充，保证可继续滚动（历史/未来）
   useEffect(() => {
     const c = scrollRef.current;
-    if (c && c.scrollHeight <= c.clientHeight + 40 && !loading) onLoadEdge("down");
+    if (c && c.scrollHeight <= c.clientHeight + 100 && !loading) onLoadEdge("down");
   }, [days, loading, onLoadEdge]);
+
+  /** 单个日期段：日期头（日期 + 星期 + 今天胶囊 + 条数 + 新建）→ 卡片流（含「现在」标线） */
+  const renderSection = (d: (typeof days)[number]) => {
+    const isToday = d.dayKey === today;
+    const weekend = weekdayOfKey(d.dayKey) >= 5;
+    const m = Math.floor((d.dayKey % 10000) / 100);
+    const dd = d.dayKey % 100;
+    const items: { e: EventDto; vis: EventVisual }[] = [
+      ...d.allDay.map((e) => ({ e, vis: eventStatusOf(e, now, d.dayKey) })),
+      ...d.timed.map((e) => ({ e, vis: eventStatusOf(e, now, d.dayKey) })),
+    ];
+    // 「现在」标线插在今天最后一条已结束的卡片之后；今天没有卡片则不显示
+    const nowIdx = isToday && items.length > 0 ? items.filter((it) => it.vis.status === "past").length : -1;
+    return (
+      <section key={d.dayKey} data-daykey={d.dayKey} className="border-b border-border/50 last:border-b-0">
+        <div className="sticky top-0 z-10 flex items-center gap-1.5 border-b border-border/50 bg-background/95 px-3 py-1.5 backdrop-blur">
+          <span
+            className={cn(
+              "text-sm font-bold",
+              isToday ? "text-primary" : weekend ? "text-muted-foreground" : "text-foreground",
+            )}
+          >
+            {m}月{dd}日
+          </span>
+          <span className="text-[11px] text-muted-foreground">
+            周{["一", "二", "三", "四", "五", "六", "日"][weekdayOfKey(d.dayKey)]}
+          </span>
+          {isToday && (
+            <span className="rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-semibold leading-tight text-primary">
+              今天
+            </span>
+          )}
+          <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
+            {items.length > 0 ? `${items.length} 项` : ""}
+          </span>
+          <button
+            title="在这天新建事件"
+            onClick={() => onCreateAt?.(dayStartMs(d.dayKey) + 9 * 3_600_000)}
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+          >
+            <Plus className="size-3.5" />
+          </button>
+        </div>
+        <div className="flex flex-col gap-1.5 px-3 py-2">
+          {items.length === 0 ? (
+            <div className="rounded-lg border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
+              这天没有安排
+            </div>
+          ) : (
+            <>
+              {items.map((it, i) => (
+                <Fragment key={`${it.e.id}-${it.e.instance_date ?? it.e.start_ms}`}>
+                  {i === nowIdx && <NowLine now={now} />}
+                  <TlCard
+                    event={it.e}
+                    vis={it.vis}
+                    subColors={subColors}
+                    isNext={isToday && nextEv != null && it.e.id === nextEv.id}
+                    onClick={onEventClick}
+                    onMenu={onEventMenu}
+                  />
+                </Fragment>
+              ))}
+              {nowIdx === items.length && <NowLine now={now} />}
+            </>
+          )}
+        </div>
+      </section>
+    );
+  };
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -1022,75 +1104,24 @@ export function TimeLineView({
         </span>
       </div>
       <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto">
-        {days.map((d) => {
-          const isToday = d.dayKey === today;
-          const weekend = weekdayOfKey(d.dayKey) >= 5;
-          const m = Math.floor((d.dayKey % 10000) / 100);
-          const dd = d.dayKey % 100;
-          const items: { e: EventDto; vis: EventVisual }[] = [
-            ...d.allDay.map((e) => ({ e, vis: eventStatusOf(e, now, d.dayKey) })),
-            ...d.timed.map((e) => ({ e, vis: eventStatusOf(e, now, d.dayKey) })),
-          ];
-          // 「现在」标线插在今天最后一条已结束的卡片之后；今天没有卡片则不显示
-          const nowIdx = isToday && items.length > 0 ? items.filter((it) => it.vis.status === "past").length : -1;
-          return (
-            <section key={d.dayKey} data-daykey={d.dayKey} className="border-b border-border/50 last:border-b-0">
-              {/* 日期头：日期（粗）→ 星期（灰）→「今天」胶囊；右侧条数 + 新建 */}
-              <div className="sticky top-0 z-10 flex items-center gap-1.5 border-b border-border/50 bg-background/95 px-3 py-1.5 backdrop-blur">
-                <span
-                  className={cn(
-                    "text-sm font-bold",
-                    isToday ? "text-primary" : weekend ? "text-muted-foreground" : "text-foreground",
-                  )}
-                >
-                  {m}月{dd}日
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  周{["一", "二", "三", "四", "五", "六", "日"][weekdayOfKey(d.dayKey)]}
-                </span>
-                {isToday && (
-                  <span className="rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-semibold leading-tight text-primary">
-                    今天
-                  </span>
-                )}
-                <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
-                  {items.length > 0 ? `${items.length} 项` : ""}
-                </span>
-                <button
-                  title="在这天新建事件"
-                  onClick={() => onCreateAt?.(dayStartMs(d.dayKey) + 9 * 3_600_000)}
-                  className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
-                >
-                  <Plus className="size-3.5" />
-                </button>
-              </div>
-              <div className="flex flex-col gap-1.5 px-3 py-2">
-                {items.length === 0 ? (
-                  <div className="rounded-lg border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
-                    这天没有安排
-                  </div>
-                ) : (
-                  <>
-                    {items.map((it, i) => (
-                      <Fragment key={`${it.e.id}-${it.e.instance_date ?? it.e.start_ms}`}>
-                        {i === nowIdx && <NowLine now={now} />}
-                        <TlCard
-                          event={it.e}
-                          vis={it.vis}
-                          subColors={subColors}
-                          isNext={isToday && nextEv != null && it.e.id === nextEv.id}
-                          onClick={onEventClick}
-                          onMenu={onEventMenu}
-                        />
-                      </Fragment>
-                    ))}
-                    {nowIdx === items.length && <NowLine now={now} />}
-                  </>
-                )}
-              </div>
-            </section>
-          );
-        })}
+        {/* 已结束折叠条：不带 sticky（滚过去就该走开），展开后才把过去的日子铺在它下面 */}
+        {pastDays.length > 0 && (
+          <button
+            onClick={togglePast}
+            title={pastOpen ? "收起已结束的日子" : "展开已结束的日子"}
+            className="mx-3 my-2 flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-left shadow-sm transition-colors hover:bg-accent"
+          >
+            <span className="text-[11px] font-semibold text-muted-foreground">
+              已结束 · 过去 {pastDays.length} 天
+            </span>
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-primary">
+              {pastOpen ? "收起" : "展开"}
+              <ChevronDown className={cn("size-3.5 transition-transform", pastOpen && "rotate-180")} />
+            </span>
+          </button>
+        )}
+        {pastOpen && pastDays.map((d) => renderSection(d))}
+        {restDays.map((d) => renderSection(d))}
         {loading && (
           <div className="pointer-events-none sticky bottom-2 z-20 flex justify-center">
             <span className="rounded bg-popover px-2 py-0.5 text-[10px] text-muted-foreground shadow">加载中…</span>
