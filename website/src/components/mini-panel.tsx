@@ -1,4 +1,4 @@
-import { Calendar, Clipboard, Clock, Gauge, Search, Settings, Smile } from "lucide-react";
+import { Calendar, Clipboard, Clock, Gauge, Search, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ItemIcon, type ClipType } from "./minis/item-icon";
@@ -17,11 +17,10 @@ const POOL: Omit<Item, "id">[] = [
 // 时间标签按位置递推（与 App 一致的固定 MM/DD HH:mm 格式）
 const TIMES = ["08/29 14:30", "08/29 14:12", "08/29 13:58", "08/29 13:41", "08/29 13:27"];
 
-// 主面板底部模块栏（与真实 App 底栏一致：6 模块 + 设置）
+// 主面板底部模块栏（与真实 App 底栏一致：5 模块 + 设置）
 const MODULES = [
   { id: "clipboard", label: "剪贴板", Icon: Clipboard },
   { id: "quota", label: "额度", Icon: Gauge },
-  { id: "emoji", label: "表情", Icon: Smile },
   { id: "search", label: "搜索", Icon: Search },
   { id: "timetracker", label: "时长", Icon: Clock },
   { id: "calendar", label: "日历", Icon: Calendar },

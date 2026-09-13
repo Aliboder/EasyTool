@@ -65,7 +65,6 @@
 41. **后台刷新类 loading 不能整体替换已有内容**（spinner 顶掉→闪烁）：`loading && 数据为空` 才显示 spinner（保留上一次数据）
 42. **异步响应要防迟到覆盖**：列表加序号 ref，`seq !== current` 丢弃旧响应（快速输入/切 Tab 场景）
 43. **图标这类「可能失败」的异步资源，成功和失败都要缓存**（失败进 missing 集合），否则失败路径每次渲染反复 invoke + 闪烁
-44. **Canvas 像素检测（emoji 支持性）别同步跑**：useState 初始读缓存（未命中先按支持显示）+ `requestIdleCallback`/rAF 分片（24 个/帧）+ localStorage 防抖批写；复用共享 canvas，别逐字符新建 context 扫 4096 像素
 45. **keep-alive 切回模块的刷新策略**：激活重载要保留（分片后很便宜），focus 刷新只作补充（切 Tab 不触发 focus，会数据过期）；「按需刷新」要防事件风暴——in-flight 合并（并发共享同一 Promise）+ 150ms 防抖
 46. **虚拟列表只适合固定/可预测高度**：文本自动换行高度动态会重叠（estimateSize 固定 80px 案例）——要么 `measureElement` 动态测量，要么小数据量不用虚拟列表
 47. **右键菜单**：Portal 到 `document.body` 避开父元素 transform 包含块 + 视口边界钳制；所有可交互元素 + 容器都要 `e.preventDefault()` 阻止浏览器默认菜单
@@ -127,17 +126,6 @@
 
 **应用中心性能**：`.lnk` 每次全量 COM 解析 → `apps.db` 的 `shortcut_cache(path,target,mtime_ms)` 按 mtime 命中缓存，只解析新增/变更的快捷方式。前台频率排序的「应用中心」是原 quicklaunch 模块并入 search 的结果（速查 #62 官网同步清理）。
 
-### 表情模块
-
-**数据源与死代码**：`emoji-datasource` npm 包（`package/emoji.json` 1911 条 + 英文分类/shortcode）一次生成 `emoji.json` 资源（~234KB）提交仓库，无运行时依赖；中文名用高频映射表兜底。1906 条纯前端内存过滤毫秒级完成，后端 `search` 命令是死代码删掉（YAGNI）。
-
-**性能优化三连**（切回卡、首屏卡、呼出卡）：
-1. 「每次激活重载数据 + 重建 1906 对象 + 重渲染」+ 缓存冷时 `requestIdleCallback` 连续 144+ 次 canvas 检测（每次新建 context + 4096 像素扫描 + 全量 localStorage 写）→ 切回卡 200ms+。修：检测复用共享 canvas/context + 每帧 rAF 分片（24 个/帧）+ localStorage 防抖批写；未命中先按支持显示字符（速查 #44）。
-2. 去掉激活重载后切 Tab（剪贴板→表情）不触发 focus → 「添加表情」后收藏不刷新（DB 已写入）。修：**激活重载要保留**（分片后 ~5ms 不卡），focus 刷新只作补充。排查「操作后不显示」先查 DB 是否写入成功，再查前端刷新时机（速查 #45）。
-3. 快捷键呼出时 WebView2 focus 事件连发多次 → `loadCatalog` 并发重载互相叠加（单次呼出 2~6 次、尖峰 400ms+）。修：`loadCatalog` 加 in-flight 合并（共享同一 Promise，同对象 setCat React 跳过重渲染）+ 焦点刷新 150ms 防抖。教训：「按需刷新」也要考虑事件风暴 + 提供合并/防抖。
-
-**右键菜单**：内置表情「复制表情」、自定义表情「复制/收藏/删除」，统一走通用 ContextMenu 组件（速查 #47）。
-
 ### 时长统计
 
 **时间口径**：events 表曾用 SQLite `CURRENT_TIMESTAMP`（UTC）存、`date('now','localtime')` 查 → UTC+8 下每天 0:00~8:00 归到昨天。统一 `chrono::Local::now()` 本地时间 + `julianday(两端同格式)`（速查 #12）。
@@ -157,7 +145,7 @@
 
 **应用名三级解析**：前台钩子只能拿 exe_path → `display_name.rs`：① 读 search `apps.db` 的 `shortcut_cache`（.lnk 主名，复用缓存不重复 COM 解析）；② `GetFileVersionInfoW` + `VerQueryValueW` 的 `FileDescription`（`\\VarFileInfo\\Translation` 枚举语言比固定 `040904B0` 兼容性好）；③ 兜底 exe 主名。展示名与判定名分离（`display_name` vs `app_name`），避免友好名破坏 `auto_categorize`/正则。
 
-**页面轮询双门控**：时长统计页 30s 轮询改为「当前 Tab 活跃 + document 可见」双门控，keep-alive 隐藏/弹窗失焦即停止轮询；重新可见时立即补一次刷新，避免数据过期（与表情页刷新策略同源的资源优化，速查 #45）。
+**页面轮询双门控**：时长统计页 30s 轮询改为「当前 Tab 活跃 + document 可见」双门控，keep-alive 隐藏/弹窗失焦即停止轮询；重新可见时立即补一次刷新，避免数据过期（速查 #45）。
 
 **图标消失三连**：
 1. 无图标占位太淡（20% 透明色块）≈ 消失 → 显式 `bg-muted` 方框 + FileQuestion（照抄搜索「应用」Tab）。
@@ -177,11 +165,11 @@
 
 **blur-grace 演进**（失焦自动隐藏的完整历史）：初版固定 200ms 宽限期 → 第一次拖动失踪（拖动 move loop 持续失焦 >200ms）→ 加左键按住判断（速查 #24）→ EasyAsk 子 WebView 抢焦点（子 HWND 算窗口聚焦，IsChild 判定）→ 移除 EasyAsk 后换通用方案：F24 按键注入 + `MAIN_FOCUSED_SINCE_SHOW` 守护 + 焦点重试（速查 #23）。教训：面板式窗口的失焦隐藏要覆盖「瞬时失焦」「拖动中」「呼出后未真正聚焦」三类假失焦。
 
-**弹窗 helper 收敛**：剪贴板/搜索/表情/时长统计四弹窗统一到 `lib.rs` 的 `ensure_popup_window`/`show_popup_at`/`popup_position_physical`（Win32 物理坐标 + 光标所在显示器工作区钳制），模块只留 label/html/尺寸参数；顺带统一恢复 `popup_size` 并过滤脏值。
+**弹窗 helper 收敛**：剪贴板/搜索/时长统计三弹窗统一到 `lib.rs` 的 `ensure_popup_window`/`show_popup_at`/`popup_position_physical`（Win32 物理坐标 + 光标所在显示器工作区钳制），模块只留 label/html/尺寸参数；顺带统一恢复 `popup_size` 并过滤脏值。
 
 ### 启动流程
 
-**setup 阻塞推迟首帧**：search/emoji 的 `join()` 排在 setup 里，任何模块初始化慢都推迟窗口显示。修：模块工作 spawn 时已并行，**join 只是同步点**——首屏不依赖的模块（search/emoji/timetracker）join 放 `build_tray` 之后的后台线程；剪贴板保留同步 join（主窗口首屏数据源，开库毫秒级）；quota 延迟 500ms 初始化；`win.show()` 移到 setup 外（见下）。
+**setup 阻塞推迟首帧**：search 的 `join()` 排在 setup 里，任何模块初始化慢都推迟窗口显示。修：模块工作 spawn 时已并行，**join 只是同步点**——首屏不依赖的模块（search/timetracker）join 放 `build_tray` 之后的后台线程；剪贴板保留同步 join（主窗口首屏数据源，开库毫秒级）；quota 延迟 500ms 初始化；`win.show()` 移到 setup 外（见下）。
 
 **主窗口「先空白、闪一下、才加载」**：窗口显示时机（Rust）与内容就绪时机（前端 WebView 加载 + React 挂载 + 懒加载，dev 模式可达数秒）从未对齐。修：**显示决定权交给前端**——Rust 不再 show，新增 `main_window_ready` 命令（show+unminimize+set_focus）；前端 bootstrap 完成 → 预载全部模块 chunk → 双 rAF（等主题应用/首帧绘制）→ invoke；setup 尾部 15s 兜底线程（查 `is_visible()` 再 show，避免覆盖用户交互）。多端协作的「就绪」必须显式握手 + 超时兜底。
 

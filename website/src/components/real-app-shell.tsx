@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { ClipboardList, Clock, Gauge, Search, Settings2, Smile } from "lucide-react";
+import { ClipboardList, Clock, Gauge, Search, Settings2 } from "lucide-react";
 
 const MODULES = [
   { id: "clipboard", icon: ClipboardList, label: "剪贴板" },
   { id: "quota", icon: Gauge, label: "额度" },
-  { id: "emoji", icon: Smile, label: "表情" },
   { id: "search", icon: Search, label: "搜索" },
   { id: "timetracker", icon: Clock, label: "时长" },
 ];

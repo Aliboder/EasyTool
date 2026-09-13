@@ -8,11 +8,11 @@ web
 
 ## Users
 
-Windows 桌面效率工具用户（中文为主）：需要快速粘贴历史、监控 AI API 额度、插入表情、搜索文件的个人用户。开发者本人是典型用户（广东工业大学大一学生，个人工具项目）。
+Windows 桌面效率工具用户（中文为主）：需要快速粘贴历史、监控 AI API 额度、搜索文件的个人用户。开发者本人是典型用户（广东工业大学大一学生，个人工具项目）。
 
 ## Product Purpose
 
-EasyTool 是一个 Windows 效率工具箱：剪贴板历史（文本/图片/文件）、AI 额度监控（DeepSeek / OpenCode Go 多账户）、表情面板（1900+ 表情）、Everything 文件秒搜（内置已安装应用中心）、软件使用时长统计。单应用 + 模块注册表架构，每个功能是独立模块，可启停、排序、扩展。
+EasyTool 是一个 Windows 效率工具箱：剪贴板历史（文本/图片/文件）、AI 额度监控（DeepSeek / OpenCode Go 多账户）、Everything 文件秒搜（内置已安装应用中心）、软件使用时长统计、本地日程表。单应用 + 模块注册表架构，每个功能是独立模块，可启停、排序、扩展。
 
 ## Positioning
 
@@ -20,11 +20,11 @@ EasyTool 是一个 Windows 效率工具箱：剪贴板历史（文本/图片/文
 
 ## Operating Context
 
-Windows 10/11 x64 桌面环境；托盘驻留 + 单一全局热键（Ctrl+Shift+E，可自定义）呼出主面板；主面板置顶、点外部自动隐藏、可选跟随鼠标（无独立弹窗）；NSIS 安装包、无需管理员权限。数据目录 %APPDATA%\com.aliboder.easytool。
+Windows 10/11 x64 桌面环境；托盘驻留 + 单一全局热键（Alt+Q，可自定义）呼出主面板；主面板置顶、点外部自动隐藏、可选跟随鼠标（无独立弹窗）；NSIS 安装包、无需管理员权限。数据目录 %APPDATA%\com.aliboder.easytool。
 
 ## Capabilities and Constraints
 
-- 模块：clipboard（WM_CLIPBOARDUPDATE + 500ms 轮询兜底、指纹去重、2s 自写守卫、256px 缩略图、pin_order 固定排序）、quota（后台线程轮询、预警/告警双阈值、5000 条历史、消费突增提醒）、emoji（系统字体优先 + canvas 像素检测 + Twemoji 兜底、SendInput 直输）、search（Everything64.dll 动态加载、全局互斥锁、后台线程查询、已安装应用中心）、timetracker（前台窗口钩子、每日甘特时间线、应用排行总/活跃时长、自动分类 + 自定义正则规则、AFK 离开检测）
+- 模块：clipboard（WM_CLIPBOARDUPDATE + 500ms 轮询兜底、指纹去重、2s 自写守卫、256px 缩略图、pin_order 固定排序）、quota（后台线程轮询、预警/告警双阈值、5000 条历史、消费突增提醒）、search（Everything64.dll 动态加载、全局互斥锁、后台线程查询、已安装应用中心）、timetracker（前台窗口钩子、每日甘特时间线、应用排行总/活跃时长、自动分类 + 自定义正则规则、AFK 离开检测）、calendar（事件/待办一体、重复规则、.ics 导入导出与订阅、提醒）
 - 技术：Tauri 2 / Rust / React 19 / TS / Tailwind v4 / shadcn / Vite MPA / SQLite WAL / keyring / reqwest / chrono
 - 版本：v0.6.7（2026-08-28），MIT 许可，66 后端单元测试
 - 依赖：搜索模块需要用户安装 Everything（免费，MIT）
@@ -40,7 +40,7 @@ Windows 10/11 x64 桌面环境；托盘驻留 + 单一全局热键（Ctrl+Shift+
 
 - 代码仓库：D:\SystemFiles\Documents\Project\EasyTool（git tag v0.6.0）
 - 落地页现状：site live（瑞士编辑排版风，已 6 轮迭代，用户认可方向但要求更强视觉/交互）
-- 模块细节均来自源码（config.rs、modules/*/mod.rs、SmartEmoji.tsx 等）
+- 模块细节均来自源码（config.rs、modules/*/mod.rs 等）
 - 版本历史来自 git log（v0.4.0 → v0.6.0，2026-08-26）
 - 不存在：真实产品截图、用户评价、下载量数据、winget 已发布事实（均不得虚构）
 

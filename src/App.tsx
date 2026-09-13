@@ -52,8 +52,6 @@ const importClipboard = () =>
   import("@/modules/clipboard/Clippage").then(m => ({ default: m.Clippage }));
 const importQuota = () =>
   import("@/modules/quota/QuotaPage").then(m => ({ default: m.QuotaPage }));
-const importEmoji = () =>
-  import("@/modules/emoji/Page").then(m => ({ default: m.EmojiPage }));
 const importSearch = () =>
   import("@/modules/search/Page").then(m => ({ default: m.SearchPage }));
 const importTimetracker = () =>
@@ -63,7 +61,6 @@ const importCalendar = () =>
 
 const Clippage = lazy(loadPage("clipboard", importClipboard));
 const QuotaPage = lazy(loadPage("quota", importQuota));
-const EmojiPage = lazy(loadPage("emoji", importEmoji));
 const SearchPage = lazy(loadPage("search", importSearch));
 const TimetrackerPage = lazy(loadPage("timetracker", importTimetracker));
 const CalendarPage = lazy(loadPage("calendar", importCalendar));
@@ -72,7 +69,6 @@ const CalendarPage = lazy(loadPage("calendar", importCalendar));
 const PAGE_IMPORTS: Record<string, () => Promise<{ default: React.ComponentType<any> }>> = {
   clipboard: importClipboard,
   quota: importQuota,
-  emoji: importEmoji,
   search: importSearch,
   timetracker: importTimetracker,
   calendar: importCalendar,
@@ -352,11 +348,6 @@ function App() {
       {visited.has("quota") && (
         <div className={active === "quota" ? "h-full" : "hidden"}>
           <QuotaPage />
-        </div>
-      )}
-      {visited.has("emoji") && (
-        <div className={active === "emoji" ? "h-full" : "hidden"}>
-          <EmojiPage active={active === "emoji"} />
         </div>
       )}
       {visited.has("search") && (

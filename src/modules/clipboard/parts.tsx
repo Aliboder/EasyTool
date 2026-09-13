@@ -12,7 +12,6 @@ import {
   FolderOpen,
   MessageSquare,
   Pin,
-  Smile,
   Trash2,
   Type,
   X,
@@ -102,7 +101,6 @@ export function ClipboardContextMenu({
     onTogglePin: (id: number, pinned: boolean) => void;
     onCopy: (id: number) => void;
     onCopyPlain: (id: number) => void;
-    onAddEmoji: (item: ItemDto) => void;
     onViewImage: (item: ItemDto) => void;
     onOpenExternal: (item: ItemDto) => void;
     onOpenLocation: (path: string) => void;
@@ -128,13 +126,6 @@ export function ClipboardContextMenu({
           icon={<Type className="size-3.5" />}
           label="复制为纯文本"
           onClick={() => item && handlers.onCopyPlain(item.id)}
-        />
-      )}
-      {item && isImageItem(item) && (
-        <ContextMenuItem
-          icon={<Smile className="size-3.5" />}
-          label="添加为表情"
-          onClick={() => handlers.onAddEmoji(item)}
         />
       )}
       {item && isImageItem(item) && (

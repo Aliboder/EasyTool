@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { CalendarDays, ClipboardList, Clock, Gauge, Monitor, Search, Smile } from "lucide-react";
+import { CalendarDays, ClipboardList, Clock, Gauge, Monitor, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../lib/cn";
 import { Reveal } from "./reveal";
@@ -8,7 +8,6 @@ import { SectionHead } from "./section-head";
 import { RealClipboard } from "./real-clipboard";
 import { RealMainWindow } from "./real-main-window";
 import { RealQuotaSettings } from "./real-quota-settings";
-import { RealEmoji } from "./real-emoji";
 import { RealTimetracker } from "./real-timetracker";
 import { RealCalendar } from "./real-calendar";
 import { RealAppShell } from "./real-app-shell";
@@ -17,7 +16,6 @@ const MODULES: { id: string; label: string; desc: string; icon: LucideIcon }[] =
   { id: "clipboard", label: "剪贴板", desc: "500 条历史 · 搜索高亮 · 纯文本粘贴", icon: ClipboardList },
   { id: "search", label: "文件搜索", desc: "Everything 引擎，输入即出结果", icon: Search },
   { id: "quota", label: "额度监控", desc: "多账户余额 · 阈值系统通知", icon: Gauge },
-  { id: "emoji", label: "表情面板", desc: "最近使用 · 分类检索 · 自定义导入", icon: Smile },
   { id: "timetracker", label: "时长统计", desc: "排行 + 甘特时间线 + 自动分类", icon: Clock },
   { id: "calendar", label: "日程表", desc: "五视图 · 重复规则 · 到期提醒", icon: CalendarDays },
   { id: "shell", label: "App 外壳", desc: "单窗口 · 底部导航 · 托盘快捷入口", icon: Monitor },
@@ -44,8 +42,6 @@ export function Screenshots() {
         return <RealMainWindow />;
       case "quota":
         return <RealQuotaSettings />;
-      case "emoji":
-        return <RealEmoji />;
       case "timetracker":
         return <RealTimetracker />;
       case "calendar":

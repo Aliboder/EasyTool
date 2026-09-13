@@ -14,7 +14,6 @@ EasyTool 是一款开源免费的 Windows 效率工具箱，用 Tauri 2 + Rust +
 |------|------|
 | **剪贴板历史** | 记录文本/图片/文件，固定常用项，拖拽排序，搜索，一键粘贴 |
 | **额度监控** | DeepSeek / OpenCode Go 多账户余额监控，消费历史，阈值告警 |
-| **表情面板** | 1900+ 表情分类浏览，中文/英文/shortcode 搜索，收藏置顶，一键插入 |
 | **文件秒搜** | Everything 全文引擎毫秒级搜索 + 已安装应用中心，自定义列/排序，复制路径联动剪贴板 |
 | **时长统计** | 自动记录软件使用时长，今日/本周/本月排行与甘特时间线，自动分类 + 自定义规则 |
 
@@ -43,7 +42,7 @@ EasyTool 是一款开源免费的 Windows 效率工具箱，用 Tauri 2 + Rust +
 1. 安装并启动 EasyTool
 2. 打开设置页，配置 API 密钥（如需使用额度监控）
 3. 按 `Alt+Q` 呼出主面板
-4. 试试剪贴板历史、表情面板、文件搜索、时长统计
+4. 试试剪贴板历史、文件搜索、时长统计
 
 ---
 
@@ -77,7 +76,6 @@ src-tauri/src/
 └── modules/            # 模块注册表
     ├── clipboard/      # 剪贴板历史
     ├── quota/          # 额度监控
-    ├── emoji/          # 表情面板
     ├── search/         # 文件搜索（含已安装应用中心）
     └── timetracker/    # 时长统计
 
@@ -129,5 +127,3 @@ API 密钥通过 Windows 凭据管理器加密存储，不落盘明文。
 ## 许可
 
 [MIT License](LICENSE) © 2026 [Aliboder](https://github.com/Aliboder)
-
-表情模块的 Emoji 图片来自 [Twemoji](https://github.com/jdecked/twemoji)（CC-BY 4.0）

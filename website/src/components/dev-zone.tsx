@@ -45,7 +45,7 @@ const HIGHLIGHTS = [
   {
     icon: Cpu,
     title: "Win32 原生集成",
-    body: "WM_CLIPBOARDUPDATE 监听、SendInput 直输、全局热键、前台窗口钩子，全部走系统级 API。",
+    body: "WM_CLIPBOARDUPDATE 监听、全局热键、前台窗口钩子，全部走系统级 API。",
   },
   {
     icon: Blocks,

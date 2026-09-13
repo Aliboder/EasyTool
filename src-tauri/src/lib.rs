@@ -327,10 +327,6 @@ fn search_enabled(app: &tauri::AppHandle) -> bool {
     module_enabled(app, "search")
 }
 
-fn emoji_enabled(app: &tauri::AppHandle) -> bool {
-    module_enabled(app, "emoji")
-}
-
 fn timetracker_enabled(app: &tauri::AppHandle) -> bool {
     module_enabled(app, "timetracker")
 }
@@ -580,9 +576,10 @@ pub fn run() {
             });
             
             modules::merge_manifests(&mut cfg, &manifests);
-            // 清理已废弃的配置键 + 热键默认值迁移（老默认 Ctrl+Shift+E → Alt+Q，用户自定义不覆盖）
+            // 清理已废弃的配置键 + 热键默认值迁移 + 已下线模块（表情）残留
             let mut cfg_dirty = config::sanitize_legacy_keys(&mut cfg);
             cfg_dirty |= config::migrate_default_hotkey(&mut cfg);
+            cfg_dirty |= config::remove_retired_modules(&mut cfg);
             if cfg_dirty {
                 let _ = config::save_config(app.handle(), &cfg);
             }
@@ -622,17 +619,6 @@ pub fn run() {
                 }))
             } else {
                 log::info!("[setup] search module disabled, skipping");
-                None
-            };
-
-            let emoji_handle = if emoji_enabled(app.handle()) {
-                log::info!("[setup] initializing emoji module");
-                let app_clone = app.handle().clone();
-                Some(std::thread::spawn(move || {
-                    modules::emoji::setup_from_handle(&app_clone)
-                }))
-            } else {
-                log::info!("[setup] emoji module disabled, skipping");
                 None
             };
 
@@ -738,8 +724,8 @@ pub fn run() {
 
             build_tray(app)?;
 
-            // search/emoji/timetracker 的 join 放后台线程：setup 内任何阻塞都会推迟事件循环启动
-            // （即推迟首帧绘制）；二者实际工作在上方 spawn 时已并行开始，
+            // search/timetracker/calendar 的 join 放后台线程：setup 内任何阻塞都会推迟事件循环启动
+            // （即推迟首帧绘制）；它们实际工作在上方 spawn 时已并行开始，
             // 主窗口首屏只依赖剪贴板模块，前端首次访问对应页面时早已就绪
             std::thread::spawn(move || {
                 if let Some(handle) = search_handle {
@@ -747,13 +733,6 @@ pub fn run() {
                         Ok(Ok(())) => {}
                         Ok(Err(e)) => log::error!("search module init failed: {e}"),
                         Err(e) => log::error!("search module thread panicked: {:?}", e),
-                    }
-                }
-                if let Some(handle) = emoji_handle {
-                    match handle.join() {
-                        Ok(Ok(())) => {}
-                        Ok(Err(e)) => log::error!("emoji module init failed: {e}"),
-                        Err(e) => log::error!("emoji module thread panicked: {:?}", e),
                     }
                 }
                 if let Some(handle) = timetracker_handle {
@@ -834,22 +813,6 @@ pub fn run() {
             modules::search::commands::search_scan_apps,
             modules::search::commands::search_open_path,
             modules::search::commands::search_reset_apps,
-            modules::emoji::commands::get_emoji_static,
-            modules::emoji::commands::get_emoji_dynamic,
-            modules::emoji::commands::get_groups,
-            modules::emoji::commands::import_emoji_files,
-            modules::emoji::commands::add_clipboard_item_as_emoji,
-            modules::emoji::commands::delete_custom_emoji,
-            modules::emoji::commands::rename_custom_emoji,
-            modules::emoji::commands::move_custom_emoji,
-            modules::emoji::commands::create_group,
-            modules::emoji::commands::rename_group,
-            modules::emoji::commands::delete_group,
-            modules::emoji::commands::record_use,
-            modules::emoji::commands::toggle_favorite,
-            modules::emoji::commands::get_emoji_thumb,
-            modules::emoji::commands::apply_emoji,
-            modules::emoji::commands::copy_custom_emoji,
             modules::timetracker::commands::timetracker_get_today_stats,
             modules::timetracker::commands::timetracker_get_week_stats,
             modules::timetracker::commands::timetracker_get_month_stats,

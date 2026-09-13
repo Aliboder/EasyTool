@@ -5,7 +5,6 @@ import {
   ClipboardList,
   Gauge,
   Search,
-  Smile,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -15,7 +14,6 @@ import { Reveal } from "./reveal";
 import { SectionHead } from "./section-head";
 import { MiniClipboard } from "./minis/clipboard";
 import { MiniQuota } from "./minis/quota";
-import { MiniEmoji } from "./minis/emoji";
 import { MiniSearch } from "./minis/search";
 import { MiniTimetracker } from "./minis/timetracker";
 import { MiniCalendar } from "./minis/calendar";
@@ -115,7 +113,7 @@ export function Bento() {
       <Reveal>
         <SectionHead
           eyebrow="核心模块"
-          title="六个模块，各司其职"
+          title="五个模块，各司其职"
           sub="下面的演示都是真实交互，不是截图，动手试试。点「了解详情」直达下方模块深潜。"
         />
       </Reveal>
@@ -158,19 +156,7 @@ export function Bento() {
           </Card>
         </div>
 
-        <div className="lg:col-span-2">
-          <Card
-            icon={Smile}
-            title="表情面板"
-            desc="点一下试试手感。分类、最近使用、收藏置顶。"
-            variant="tint"
-            link="#module-emoji"
-          >
-            <MiniEmoji />
-          </Card>
-        </div>
-
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-6">
           <Card
             icon={Search}
             title="文件秒搜"

@@ -36,7 +36,7 @@
 ## 资源
 - 设计文档：`docs/superpowers/specs/2026-08-29-calendar-design.md`
 - 新增模块指南：`docs/module-guide.md`
-- 参照实现：quota（轮询/配置/抽屉）、clipboard（右键菜单/表单）、search（ModuleHeader 参照）、emoji（配置三件套）
+- 参照实现：quota（轮询/配置/抽屉）、clipboard（右键菜单/表单）、search（ModuleHeader 参照）、quota（配置三件套）
 
 ## 视觉/浏览器发现
 - 采用手机日历 + 课表软件交互参照（用户口述方向），无浏览器调研产出。周视图色块定位细节待实现时按「顶部对齐 + 冲突左右分列」落实。

@@ -9,7 +9,6 @@ import {
   Gauge,
   MousePointerClick,
   Search,
-  Smile,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Reveal } from "./reveal";
@@ -55,13 +54,12 @@ const SCENARIOS: Scenario[] = [
   {
     name: "日常沟通",
     tag: "即时交流",
-    desc: "表情直输聊天框，图片文件复制即存，附件定位秒级完成。",
+    desc: "聊天里的图片、文件复制即存，附件定位秒级完成，素材随取随用。",
     flow: [
-      { icon: Smile, label: "表情直输" },
       { icon: ClipboardList, label: "剪贴板图片" },
       { icon: Search, label: "文件秒搜" },
     ],
-    highlight: "1900+ 表情 + 自定义图片，聊天常客都停在「最近」",
+    highlight: "复制过的素材都停在历史里，不用再翻聊天记录找文件",
     accent: "text-amber-400",
   },
   {

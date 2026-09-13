@@ -22,19 +22,19 @@ website/
 │       ├── hero.tsx                 # 海报 Hero（主视觉；版本号不在 Hero 里）
 │       ├── stats-ticker.tsx         # 翻转统计条（数字在此）
 │       ├── tech-marquee.tsx         # 技术栈滚动条
-│       ├── bento.tsx                # 01 六个模块（迷你组件入口）
+│       ├── bento.tsx                # 01 五个模块（迷你组件入口）
 │       ├── deep-dive.tsx            # 02 模块深潜（特性清单）
 │       ├── workflows.tsx            # 03 场景工作流（替代原快捷键板块）
 │       ├── pillars.tsx              # 04 设计哲学（代码片段）
 │       ├── local-data.tsx           # 05 数据属于你（对比表）
 │       ├── dev-zone.tsx             # 为开发者而建（终端/Logo）
-│       ├── screenshots.tsx          # 06 真实界面（7个组件）
+│       ├── screenshots.tsx          # 06 真实界面（6个组件）
 │       ├── changelog.tsx            # 07 更新日志
 │       ├── faq.tsx                  # 08 常见问题
 │       ├── download.tsx             # 09 下载
 │       ├── version-bar.tsx          # 底部版本条
 │       ├── footer.tsx               # 页脚（含版本号）
-│       ├── mini-panel.tsx           # Hero 右侧主面板动效（底部模块栏 6 模块 + 设置）
+│       ├── mini-panel.tsx           # Hero 右侧主面板动效（底部模块栏 5 模块 + 设置）
 │       ├── scroll-progress.tsx      # 滚动进度条
 │       ├── toast.tsx                # Toast 通知系统
 │       ├── reveal.tsx               # 滚动入场动画
@@ -46,21 +46,17 @@ website/
 │       ├── minis/                   # Bento 迷你组件
 │       │   ├── clipboard.tsx        # 剪贴板迷你（交互）
 │       │   ├── quota.tsx            # 额度迷你（进度条）
-│       │   ├── emoji.tsx            # 表情迷你（分类Tab）
 │       │   ├── search.tsx           # 搜索迷你（过滤）
 │       │   ├── timetracker.tsx      # 时长统计迷你（排行条）
 │       │   ├── calendar.tsx         # 日程表迷你（月格 + 课程色 + 重复规则）
 │       │   └── item-icon.tsx        # 共享图标映射
-│       └── real-*.tsx               # 真实界面组件（7个，用代码绘制，不是截图）
+│       └── real-*.tsx               # 真实界面组件（6个，用代码绘制，不是截图）
 │           ├── real-timetracker.tsx
 │           ├── real-main-window.tsx
 │           ├── real-clipboard.tsx
-│           ├── real-emoji.tsx
 │           ├── real-quota-settings.tsx
 │           ├── real-calendar.tsx
 │           └── real-app-shell.tsx
-├── public/
-│   └── screenshots/                 # 截图（备用，当前用代码绘制）
 ├── index.html                       # HTML 入口（dark class 强制）
 ├── vite.config.ts                   # base: "./"
 └── package.json
@@ -73,9 +69,9 @@ App.tsx 中的组件顺序 = 页面从上到下的顺序。编号在各组件的
 | 编号 | 组件 | 板块名 | 何时需要更新 |
 |------|------|--------|-------------|
 | — | Hero | 海报 | 版本号变化 |
-| — | StatsTicker | 统计条 | 数字变化（表情数/测试数等） |
+| — | StatsTicker | 统计条 | 数字变化（测试数等） |
 | — | TechMarquee | 技术栈 | 新增技术依赖 |
-| 01 | Bento | 六个模块 | 新增/删除模块 |
+| 01 | Bento | 五个模块 | 新增/删除模块 |
 | 02 | DeepDive | 模块深潜 | 模块特性变化 |
 | 03 | Workflows | 场景工作流 | 模块组合/场景变化 |
 | 04 | Pillars | 设计哲学 | 架构变化 |
@@ -166,7 +162,6 @@ App.tsx 中的组件顺序 = 页面从上到下的顺序。编号在各组件的
 | 模块列表 | `src-tauri/modules/*/manifest.json` | 各模块目录 |
 | 默认热键 | `src-tauri/src/config.rs` | `hotkeys.insert(...)` |
 | 测试数量 | `cargo test` 输出 | `src-tauri/` |
-| 表情数量 | `src/modules/emoji/data/emoji.json` | 行数 |
 | 技术栈 | `package.json` + `Cargo.toml` | 根目录 |
 | 更新日志 | `git log --oneline` | 终端 |
 | UI 布局 | `src/modules/*/` | 各模块前端文件 |

@@ -12,7 +12,6 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 
 - `clipboard` 剪贴板：监听系统剪贴板，记录文本/图片/文件，固定/拖拽排序/搜索/跟手粘贴
 - `quota` 额度监控：DeepSeek / OpenCode Go **多账户**，各账户独立密钥/余额/消费历史/告警；后台轮询
-- `emoji` 表情面板：1900+ 表情分类检索，中文/英文/shortcode 搜索，收藏置顶，SendInput 直输；支持导入/添加自定义表情与分组管理
 - `search` 文件搜索：Everything 全文搜索（**需用户安装 Everything**），Everything64.dll 随应用打包；第一个「应用」Tab = **已安装应用中心**（扫描开始菜单，点击即启动，前台频率排序），搜索时匹配应用置顶显示
 - `timetracker` 时长统计：自动记录前台软件使用时长，今日/本周/本月总览与对比、应用排行（总/活跃时长）、每日甘特时间线、自动分类 + 自定义正则规则、AFK 离开检测
 - `calendar` 日程表：事件/待办一体的本地日历，日/周/月/**时间线**/待办五视图 + 平滑切换动画（时间线=按天的卡片流，周视图=课表网格；卡片一律「事件色柔和底 + 左侧竖条 + 主题字色」，深浅主题通用）；重复规则（每天/每周+间隔/每月同日/第 N 个/倒数第 N 个星期几）与「仅此一次」例外；按课程自动配色 + 课程聚焦；.ics 导入/导出(保留重复规则+EXDATE 例外)、JSON 备份、外部日历订阅（只读、定时刷新）；事件/全局两档提醒；设置在卡片式抽屉统一管理
@@ -35,14 +34,14 @@ src-tauri/src/
 ├── lib.rs         # 壳：托盘、全局热键、窗口事件、模块 setup、日志
 ├── config.rs      # AppConfig + ConfigState(Mutex)、config 读写命令
 ├── migrate.rs     # 旧数据一次性迁移
-└── modules/       # 模块注册表 mod.rs + clipboard/ + quota/ + emoji/ + search/ + timetracker/ + calendar/
+└── modules/       # 模块注册表 mod.rs + clipboard/ + quota/ + search/ + timetracker/ + calendar/
 src-tauri/modules/  # 模块 manifest.json 目录
 src/
 ├── App.tsx        # 壳 UI：底部导航 + 模块页 + 设置页
 ├── lib/           # api(ipc封装)/theme/toast/utils/grid/use-horizontal-wheel/use-window-entrance
 ├── hooks/         # useModuleConfig(模块配置读写)/useFileIcons
 ├── components/    # ui(shadcn) + layout(Sidebar) + module-header/setting-row/settings-view + hotkey-recorder + LazyImage + ErrorBoundary + context-menu
-└── modules/       # clipboard/ + quota/ + emoji/ + search/ + timetracker/ + calendar/ 前端
+└── modules/       # clipboard/ + quota/ + search/ + timetracker/ + calendar/ 前端
 website/           # 官网（独立工程，详见 docs/website-guide.md）
 ```
 
@@ -54,7 +53,7 @@ website/           # 官网（独立工程，详见 docs/website-guide.md）
 - 静默启动：手动双击与开机自启**一视同仁**（不区分启动来源）；通知发不出去（专注助手/通知权限关闭）时自动退回显示窗口，避免用户以为没启动；运行中再次双击 exe（单实例回调）仍直接呼出窗口
 - 呼出保护：托盘点击不授予前台权限，`show_main` 前注入一次 F24 按键 + `MAIN_FOCUSED_SINCE_SHOW` 守护（没真正聚焦过的「失焦」不算点外部）+ 150/400/900ms 焦点重试
 - 跟随鼠标定位复用 `popup_position_physical`（Win32 物理坐标 + 光标所在显示器工作区钳制），由 `clipboard::position_at_cursor` 调用
-- **不存在独立弹窗**（已移除）；剪贴板/表情的收起操作为：隐藏主窗口 → 100ms 焦点回原窗口 → 注入（跟手粘贴/直输）
+- **不存在独立弹窗**（已移除）；剪贴板的收起操作为：隐藏主窗口 → 100ms 焦点回原窗口 → 注入（跟手粘贴）
 
 ### 全局热键与呼出
 - 全局热键**只有一个**：主窗口呼出（默认 Alt+Q，可自定义录制，`set_main_hotkey` → `reapply_hotkeys`）；托盘点击同样呼出
@@ -81,11 +80,6 @@ website/           # 官网（独立工程，详见 docs/website-guide.md）
 - 监听：事件驱动（WM_CLIPBOARDUPDATE）+ 500ms 轮询兜底；按 hash 去重
 - 固定条目排序：`items.pin_order`（NULL=未排过序排最后）
 
-### 表情面板要点
-- 数据源：`emoji-datasource` npm 包生成 `emoji.json`（~234KB），含 1911 条
-- 检测：系统字体优先 → canvas 像素检测 → Twemoji CDN 兜底
-- 直输：文本表情 SendInput 直接输入（不写剪贴板）；图片表情 write+Ctrl+V
-
 ### 时长统计要点
 - 采集：前台窗口 SetWinEventHook → `mpsc::channel` 入队即返回（防止阻塞系统事件派发）；独立心跳线程 `recv_timeout` 消费，超时则 UPDATE 当前会话时长
 - 时长口径：时间字符串一律由 `chrono::Local::now()` 生成本地时间传入（写入/心跳/查询同口径，混用 UTC 会跨时区错日）；duration 用 `julianday(两端同格式)` 差值得出
@@ -110,7 +104,7 @@ npx tsc --noEmit       # 前端类型检查
 ```
 
 - 打包只支持 `msi/nsis`（**不支持 portable**）
-- 后端 118 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 56 个）
+- 后端 113 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 56 个）
 
 ## 发版流程（AI 代发版时必须按此执行）
 

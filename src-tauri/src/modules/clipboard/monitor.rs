@@ -28,7 +28,8 @@ static IMAGE_TX: OnceLock<std::sync::mpsc::Sender<(i64, Vec<u8>, u32, u32)>> = O
 const POLL_INTERVAL_MS: u64 = 500;
 /// 自身写入守卫窗口（毫秒）。
 /// 覆盖「write 写剪贴板 → 模拟 Ctrl+V → 目标应用粘贴时可能改写剪贴板」的完整链路，
-/// 避免表情/历史粘贴写入的内容被剪贴板监听记录；配合内容指纹精确比对（内容一致才跳过）。
+/// 避免本应用自己写入剪贴板的内容（历史粘贴、复制到剪贴板）被监听记录；
+/// 配合内容指纹精确比对（内容一致才跳过）。
 const SELF_WRITE_GUARD_MS: i64 = 2000;
 /// 缩略图最长边
 const THUMB_MAX_SIZE: u32 = 256;
@@ -247,7 +248,7 @@ fn save_from_clipboard(state: &AppState, app: &AppHandle) -> Result<Option<(Item
 
     let now = now_ms();
 
-    // 2.5 内容指纹比对：与表情/粘贴登记的"待忽略指纹"一致且在窗口内则跳过记录
+    // 2.5 内容指纹比对：与自身写入登记的"待忽略指纹"一致且在窗口内则跳过记录
     if state.check_pending_ignore(&hash, SELF_WRITE_GUARD_MS, now) {
         log::debug!("skip by content fingerprint");
         return Ok(None);

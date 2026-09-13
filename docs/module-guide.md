@@ -1,8 +1,8 @@
-# EasyTool 新增模块开发指南
+﻿# EasyTool 新增模块开发指南
 
 本指南供 AI Agent 阅读：如何为 EasyTool 快速新增一个功能模块并衔接现有架构。开发前请结合 `AGENTS.md` 阅读；文档与代码不一致时以代码为准。
 
-> 当前事实基线：后端 Rust 单元测试 **116 通过 / 3 ignored**（3 个需真实 Everything / 真实 .ics 文件，默认忽略）；前端 vitest **48 通过**（纯函数单测，见第 7 节）；构建要求 `cargo build` 零警告。
+> 当前事实基线：后端 Rust 单元测试 **113 通过 / 3 ignored**（3 个需真实 Everything / 真实 .ics 文件，默认忽略）；前端 vitest **56 通过**（纯函数单测，见第 7 节）；构建要求 `cargo build` 零警告。
 
 ## 1. 模块是什么
 
@@ -122,7 +122,7 @@ let foo_handle = if foo_enabled(app.handle()) {
 
 3. **join 策略**（约 590-696 行，决定主窗口首屏依赖）：
    - 主窗口首屏**依赖**该模块（如剪贴板）→ 在 `reapply_hotkeys` 前同步 join
-   - 不依赖 → 参考 quota（延迟 500ms 后台 join）或 search/emoji/timetracker（统一后台线程 join）
+   - 不依赖 → 参考 quota（延迟 500ms 后台 join）或 search/timetracker（统一后台线程 join）
 4. `invoke_handler` 注册命令：`modules::foo::commands::do_something,`
 5. 若模块需要新插件权限（dialog/notification/updater 等），在 `capabilities/default.json` 的 `permissions` 追加（窗口只有 `main`）
 
@@ -130,7 +130,7 @@ let foo_handle = if foo_enabled(app.handle()) {
 
 #### 4.1 页面组件
 
-`src/modules/foo/Page.tsx`：主窗口内的功能页。需要「切走时暂停工作」的模块（如 emoji 的检测、timetracker 渲染）接收 `active: boolean` prop（参考 `App.tsx` 里 `EmojiPage active={...}`）。页面顶栏一律 `ModuleHeader`，设置放独立组件 + `Drawer`：
+`src/modules/foo/Page.tsx`：主窗口内的功能页。需要「切走时暂停工作」的模块（如 timetracker 渲染）接收 `active: boolean` prop（参考 `App.tsx` 里 `TimetrackerPage active={...}`）。页面顶栏一律 `ModuleHeader`，设置放独立组件 + `Drawer`：
 
 ```tsx
 export function FooPage() {
@@ -199,8 +199,8 @@ const PAGE_IMPORTS: Record<string, () => Promise<{ default: React.ComponentType<
 
 ### Step 6：测试
 
-- 后端纯逻辑 `#[cfg(test)]`（当前 116 通过 / 3 ignored，`cargo test` 为准）
-- **前端纯函数也可以有单测**（vitest，当前 48 通过）：
+- 后端纯逻辑 `#[cfg(test)]`（当前 113 通过 / 3 ignored，`cargo test` 为准）
+- **前端纯函数也可以有单测**（vitest，当前 56 通过）：
   - 纯函数必须放在**不含 `@/` 导入**的文件里（vitest 解析不了 `@` 别名）——参考 `modules/quota/pricing.ts`、`modules/clipboard/date-group.ts`
   - **内容含 JSX 的文件即使纯函数也要 `.tsx` 后缀**——参考 `modules/search/search-utils.tsx`
   - 校验：`npx vitest run`、`npx tsc --noEmit`、`npm run build`
@@ -231,7 +231,7 @@ update({ gridSize: 80 });   // 即改即落盘（400ms 防抖），无需任何 
 function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<FooConfig>) => void }) { ... }
 ```
 
-参考模板：`emoji/config.ts` + `emoji/Settings.tsx`、`search/SearchSettings.tsx`。
+参考模板：`search/SearchSettings.tsx`、`calendar/config.ts` + `calendar/Settings.tsx`。
 
 ### 3.2 内建行为（Hook 已处理，勿重复实现）
 
@@ -265,7 +265,7 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 
 ## 5. 网格实现标准
 
-涉及格子网格的模块（search/emoji/clipboard）遵守：
+涉及格子网格的模块（search/clipboard）遵守：
 1. 真 CSS Grid（`grid gap-2` + `gridTemplateColumns: repeat(auto-fill, Npx)`），**不用 flex-wrap 模拟网格**
 2. 内容缩放公式从 `src/lib/grid.ts` 引用（`gridIconSize`/`gridFontScale`），不手写魔法数字
 3. 键盘 ↑↓ 跨行步进用 `gridColumns(el)` 实测列数
@@ -315,7 +315,7 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 17. （弹窗体系历史教训，仅存档）`.visible(false)` 在 Windows WebView2 仍会闪现
 18. **窗口入场动画**用共享 `useWindowEntrance`，不要重挂载根节点
 19. **SQLite 建索引放在列添加之后**（版本迁移中加的列，索引创建放迁移后，否则新库建表失败）
-20. **Tauri v2 invoke 参数 JS 侧必须 camelCase**：Rust 参数 `follow_mouse` ↔ JS `followMouse`；用 snake_case 键名会反序列化失败且**静默无报错**（emoji 曾因此所有设置存不上）。配置读写走 useModuleConfig 天然避开；手写 invoke 其他命令务必注意
+20. **Tauri v2 invoke 参数 JS 侧必须 camelCase**：Rust 参数 `follow_mouse` ↔ JS `followMouse`；用 snake_case 键名会反序列化失败且**静默无报错**（曾因此所有设置存不上）。配置读写走 useModuleConfig 天然避开；手写 invoke 其他命令务必注意
 21. **App.tsx 接入四处缺一不可**：lazy 分包、`PAGE_IMPORTS` entry、renderModules 挂载块、Sidebar `ICONS` 图标映射。漏 PAGE_IMPORTS → 启动预载/恢复上次模块失效；漏 ICONS → 导航回退默认图标
 22. **启用状态由 manifest + config 驱动**：模块启用状态一律读 `config.modules.<id>.enabled`（设置页开关/排序落盘），前端不要硬编码模块列表或另起一套开关状态
 23. **UTC 与本地时间口径统一**：时间字符串一律本地时间生成（`chrono::Local::now()`）生成后入库存取/查询同口径；跨时区统计按 `date(time/1000,'unixepoch','localtime')` 切桶，混用会跨日错账
@@ -344,4 +344,3 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 - **quota**：后台轮询线程 + **多账户 registry 驱动**（8+ 供应商，卡片形态注册表）+ 定时任务/告警 + SQLite 时间序列 + 卡片统一等高拖拽排序（坑 9 方案）+ 峰谷纯函数 `pricing.ts` 双端实现（Rust + TS 各一套单测）——**后台任务 / 数据可视化 / 多实例 / 统一等高卡片 类模块的首选参照**
 - **timetracker**：SetWinEventHook 事件采集 + 心跳线程 + 跨天会话分桶 + 分类规则——系统事件/会话类模块参照；`db_stats.rs` 是「大 db.rs 拆分」样例
 - **calendar**：RRULE 重复规则「存一条规则 + 按需展开」的纯函数（Rust + TS 双实现双单测同一批用例）、ICS 导入导出（现成 crate，不重复造轮子）、常驻提醒线程 + 外部订阅定时刷新、`event_overrides` 例外表——**规则存储 / 导入导出 / 提醒线程 类模块的首选参照**
-- **emoji**：`config.ts` + `useModuleConfig` + 受控 Settings 的配置标准参照

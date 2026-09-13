@@ -16,7 +16,6 @@ const WHAT_YOU_GET = [
   { icon: "⌨️", text: "全局热键一键呼出" },
   { icon: "📋", text: "剪贴板历史实时记录" },
   { icon: "📊", text: "AI 额度多账户监控" },
-  { icon: "😀", text: "1900+ 表情直输" },
   { icon: "🔍", text: "Everything 文件秒搜 + 应用中心" },
   { icon: "⏱️", text: "软件使用时长统计" },
   { icon: "📅", text: "日程表：事件 + 待办 + 重复提醒" },

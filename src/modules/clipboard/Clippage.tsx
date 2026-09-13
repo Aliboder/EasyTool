@@ -278,16 +278,6 @@ export function Clippage() {
     }
   };
 
-  const addAsEmoji = async (item: ItemDto) => {
-    setMenu(null);
-    try {
-      await invoke("add_clipboard_item_as_emoji", { id: item.id });
-      toast("已添加为表情");
-    } catch (e) {
-      toast(String(e));
-    }
-  };
-
   const startEditNote = (item: ItemDto) => {
     setMenu(null);
     setEditingNoteId(item.id);
@@ -989,7 +979,6 @@ export function Clippage() {
           onTogglePin: togglePin,
           onCopy: copy,
           onCopyPlain: copyPlain,
-          onAddEmoji: addAsEmoji,
           onViewImage: viewImage,
           onOpenExternal: openImageExternal,
           onOpenLocation: (path) => {

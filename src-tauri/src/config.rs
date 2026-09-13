@@ -144,6 +144,25 @@ pub fn migrate_default_hotkey(cfg: &mut AppConfig) -> bool {
     true
 }
 
+/// 一次性迁移：抹掉已下线模块（表情）在配置里的残留 —— `modules.emoji` 设置项与
+/// `module_order` 里的 "emoji"。幂等：仅在没有标记时执行一次，无残留时也返回 true
+/// （推入标记本身要落盘，否则每次启动都会重跑）。
+pub fn remove_retired_modules(cfg: &mut AppConfig) -> bool {
+    const MARK: &str = "remove_emoji_module";
+    if cfg.migrated.iter().any(|m| m == MARK) {
+        return false;
+    }
+    cfg.migrated.push(MARK.into());
+    cfg.modules.remove("emoji");
+    let before = cfg.module_order.len();
+    cfg.module_order.retain(|id| id != "emoji");
+    log::info!(
+        "retired module cleanup: dropped modules.emoji and {} order entry",
+        before - cfg.module_order.len()
+    );
+    true
+}
+
 /// 读模块配置对象（缺失返回空对象）
 pub fn module_cfg(app: &AppHandle, id: &str) -> serde_json::Value {
     app.state::<ConfigState>()
@@ -382,5 +401,17 @@ mod tests {
         missing.hotkeys.clear();
         assert!(migrate_default_hotkey(&mut missing));
         assert_eq!(missing.hotkeys["main"], DEFAULT_MAIN_HOTKEY);
+    }
+
+    #[test]
+    fn remove_retired_modules_clears_emoji_leftovers() {
+        let mut cfg = AppConfig::default();
+        cfg.modules.insert("emoji".into(), serde_json::json!({ "enabled": true }));
+        cfg.module_order = vec!["clipboard".into(), "emoji".into(), "quota".into()];
+        assert!(remove_retired_modules(&mut cfg));
+        assert!(!cfg.modules.contains_key("emoji"));
+        assert_eq!(cfg.module_order, vec!["clipboard".to_string(), "quota".to_string()]);
+        // 幂等：第二次不再执行（且不再写盘）
+        assert!(!remove_retired_modules(&mut cfg));
     }
 }
