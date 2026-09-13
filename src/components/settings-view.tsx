@@ -75,6 +75,7 @@ export function SettingsView({
   onMainHotkey,
   onMainFollowMouse,
   onCheckUpdateOnStart,
+  onStartSilent,
 }: {
   config: AppConfig;
   manifests: Manifest[];
@@ -84,6 +85,7 @@ export function SettingsView({
   onMainHotkey: (hotkey: string) => Promise<void>;
   onMainFollowMouse: (enabled: boolean) => Promise<void>;
   onCheckUpdateOnStart: (enabled: boolean) => Promise<void>;
+  onStartSilent: (enabled: boolean) => Promise<void>;
 }) {
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [version, setVersion] = useState("");
@@ -355,6 +357,15 @@ export function SettingsView({
             <Switch
               checked={config.check_update_on_start !== false}
               onCheckedChange={(v) => onCheckUpdateOnStart(v)}
+            />
+          </SettingRow>
+          <SettingRow
+            title="启动时静默运行"
+            hint="启动成功只发一条系统通知、不弹出窗口；用热键或托盘图标随时呼出"
+          >
+            <Switch
+              checked={config.start_silent !== false}
+              onCheckedChange={(v) => onStartSilent(v)}
             />
           </SettingRow>
         </CardContent>

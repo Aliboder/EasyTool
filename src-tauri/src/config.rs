@@ -18,6 +18,9 @@ pub struct AppConfig {
     /// 启动时是否静默检查更新（默认开）
     #[serde(default = "default_true")]
     pub check_update_on_start: bool,
+    /// 启动时静默运行：只发一条系统通知，不弹出主窗口（默认开；托盘/热键照常呼出）
+    #[serde(default = "default_true")]
+    pub start_silent: bool,
 }
 
 fn default_true() -> bool {
@@ -48,7 +51,7 @@ impl Default for AppConfig {
         );
         let mut hotkeys = HashMap::new();
         hotkeys.insert("main".into(), "Ctrl+Shift+E".into());
-        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], main_size: None, main_follow_mouse: false, module_order: vec![], check_update_on_start: true }
+        Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], main_size: None, main_follow_mouse: false, module_order: vec![], check_update_on_start: true, start_silent: true }
     }
 }
 
@@ -286,6 +289,18 @@ pub fn set_check_update_on_start(
 ) -> Result<(), String> {
     let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     cfg.check_update_on_start = enabled;
+    save_config(&app, &cfg)
+}
+
+/// 启动时静默运行：只发通知不弹窗（下次启动生效）
+#[tauri::command]
+pub fn set_start_silent(
+    app: AppHandle,
+    state: State<ConfigState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut cfg = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    cfg.start_silent = enabled;
     save_config(&app, &cfg)
 }
 

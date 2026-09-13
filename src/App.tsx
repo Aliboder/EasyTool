@@ -13,6 +13,7 @@ import {
   setMainHotkey,
   setMainFollowMouse,
   setCheckUpdateOnStart,
+  setStartSilent,
   saveMainSize,
   type AppConfig,
   type Manifest,
@@ -328,6 +329,11 @@ function App() {
     setConfig(await getConfig());
   };
 
+  const changeStartSilent = async (enabled: boolean) => {
+    await setStartSilent(enabled);
+    setConfig(await getConfig());
+  };
+
   if (!config) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
@@ -464,6 +470,7 @@ function App() {
                 onMainHotkey={changeMainHotkey}
                 onMainFollowMouse={changeMainFollowMouse}
                 onCheckUpdateOnStart={changeCheckUpdateOnStart}
+                onStartSilent={changeStartSilent}
               />
             )}
 

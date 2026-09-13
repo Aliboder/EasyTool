@@ -442,11 +442,65 @@ fn log_frontend(level: String, msg: String) {
     }
 }
 
-/// 前端首屏就绪信号：页面加载完成才显示主窗口（配合 visible:false，消除空白期）
+/// 启动「露面」是否已完成（弹窗或通知，二者只做一次）。
+/// 用于 8s 兜底：前端已就绪过就不再重复提示，只有前端真出事时才补一次
+static STARTUP_PRESENTED: AtomicBool = AtomicBool::new(false);
+
+/// 静默启动通知：只弹一条系统通知，不亮主窗口（大部分时间它在后台跑）。
+/// 内容带上当前呼出热键，用户知道怎么把它叫出来
+fn notify_started(app: &tauri::AppHandle) -> bool {
+    use tauri_plugin_notification::NotificationExt;
+    let hotkey = app
+        .state::<ConfigState>()
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .hotkeys
+        .get("main")
+        .cloned()
+        .unwrap_or_else(|| "Ctrl+Shift+E".into());
+    let title = "EasyTool 已在后台运行";
+    let body = format!("按 {hotkey} 或点托盘图标呼出窗口");
+    let ok = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(&body)
+        .show()
+        .is_ok();
+    if !ok {
+        // 通知被系统挡掉（专注助手/通知权限关闭）时用户将毫无感知：
+        // 退化成显示窗口，宁可打扰也不要让人以为程序没启动
+        log::warn!("startup notification failed, falling back to showing main window");
+    }
+    ok
+}
+
+/// 启动露面：静默模式只发通知，否则显示主窗口。
+/// 通知发不出去时退回显示窗口。仅执行一次（重复调用直接返回）
+fn present_on_startup(app: &tauri::AppHandle) {
+    if STARTUP_PRESENTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let silent = app
+        .state::<ConfigState>()
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .start_silent;
+    if silent && notify_started(app) {
+        log::info!("[startup] silent start: notification sent, main window stays hidden");
+        return;
+    }
+    show_main(app);
+}
+
+/// 前端首屏就绪信号：页面加载完成才决定「露面」方式（配合 visible:false，消除空白期）；
+/// 静默模式下只发通知，不弹主窗口
 #[tauri::command]
 fn main_window_ready(app: tauri::AppHandle) {
-    log::info!("[frontend] first paint ready, showing main window");
-    show_main(&app);
+    log::info!("[frontend] first paint ready");
+    present_on_startup(&app);
 }
 
 /// 启动一次性拉取：模块清单 + 配置（合并原 get_manifests/get_config 两次 IPC）
@@ -667,18 +721,17 @@ pub fn run() {
                     }
                 }
             }
-            // 显示时机交给前端：首屏就绪后调 main_window_ready 再显示，
+            // 露面时机交给前端：首屏就绪后调 main_window_ready 再决定弹窗还是只发通知，
             // 消除「窗口先出现、内容后跟上」的空白期；
-            // 8s 兜底：前端异常未发信号时强制显示，避免窗口永不出现
+            // 8s 兜底：前端异常未发信号时补一次露面（静默模式补通知，否则显示窗口）
             let fallback_handle = app.handle().clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_secs(8));
-                if let Some(win) = fallback_handle.get_webview_window(MAIN_WINDOW_LABEL) {
-                    if !win.is_visible().unwrap_or(true) {
-                        log::warn!("main_window_ready timeout, force showing main window");
-                        let _ = win.show();
-                    }
+                if STARTUP_PRESENTED.load(Ordering::SeqCst) {
+                    return;
                 }
+                log::warn!("main_window_ready timeout, presenting on startup as fallback");
+                present_on_startup(&fallback_handle);
             });
 
             build_tray(app)?;
@@ -730,6 +783,7 @@ pub fn run() {
             config::save_main_size,
             config::set_main_follow_mouse,
             config::set_check_update_on_start,
+            config::set_start_silent,
             modules::clipboard::commands::github_latest_release,
             get_bootstrap,
             modules::clipboard::commands::get_all_history,

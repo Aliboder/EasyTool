@@ -18,6 +18,7 @@ export interface AppConfig {
   main_follow_mouse: boolean;
   module_order: string[];
   check_update_on_start: boolean;
+  start_silent: boolean;
 }
 
 export interface Bootstrap {
@@ -39,6 +40,8 @@ export const setMainFollowMouse = (enabled: boolean) =>
   invoke<void>("set_main_follow_mouse", { enabled });
 export const setCheckUpdateOnStart = (enabled: boolean) =>
   invoke<void>("set_check_update_on_start", { enabled });
+export const setStartSilent = (enabled: boolean) =>
+  invoke<void>("set_start_silent", { enabled });
 
 export interface UpdateInfo {
   version: string;
