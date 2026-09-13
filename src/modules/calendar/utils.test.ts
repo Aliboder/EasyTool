@@ -18,9 +18,12 @@ import {
   fmtRruleSummary,
   COURSE_COLORS,
   courseColor,
-  buildTimeline,
-  TL_HEADER_H,
-  TL_CLUSTER_GAP,
+  groupTimelineDays,
+  tintedSurface,
+  tintedBorder,
+  tintedStrip,
+  tintedProgress,
+  tintedPill,
   timedStatus,
   dayPhase,
   eventStatusOf,
@@ -173,29 +176,52 @@ describe("calendar utils", () => {
     expect(courseColor("")).toBe(COURSE_COLORS[0]);
   });
 
-  it("buildTimeline 跳过空闲与真实连续", () => {
+  it("卡片配色：柔和底 / 描边 / 竖条 / 进度 / 胶囊（深浅主题通用，已结束归中性）", () => {
+    const tint = "#4f8ef7";
+    // 默认 15% 混入主题卡底；可覆盖强度
+    expect(tintedSurface(tint)).toBe("color-mix(in srgb, #4f8ef7 15%, var(--card))");
+    expect(tintedSurface(tint, { strength: 22 })).toBe("color-mix(in srgb, #4f8ef7 22%, var(--card))");
+    // 已结束 → 中性灰（丢掉事件色）
+    expect(tintedSurface(tint, { past: true })).toBe("var(--muted)");
+    expect(tintedBorder(tint, true)).toBe("var(--border)");
+    expect(tintedStrip(tint, true)).toBe("var(--border)");
+    // 缺失事件色（订阅色未加载）不能拼出非法 CSS
+    expect(tintedSurface("")).toBe("var(--card)");
+    expect(tintedStrip(undefined)).toBe("var(--border)");
+    // 描边与竖条保留事件色
+    expect(tintedBorder(tint)).toContain("#4f8ef7");
+    expect(tintedStrip(tint)).toBe(tint);
+    // 进度：钳制 0..100，两个浓度各一段
+    expect(tintedProgress(tint, -5)).toContain(" 0 0%");
+    expect(tintedProgress(tint, 150)).toContain("30%, var(--card)) 0 100%");
+    expect(tintedProgress(tint, 42.4)).toContain(" 42%");
+    // 胶囊：字色混前景色，保证深色底上也可读
+    expect(tintedPill(tint).color).toContain("var(--foreground)");
+  });
+
+  it("groupTimelineDays 按天分组、分时排序、跳过空闲但保留今天", () => {
     const day = (y: number, m: number, d: number, h: number, mi = 0) => new Date(y, m - 1, d, h, mi, 0).getTime();
-    const ev = (start: number, end: number) => ({
-      id: 1, title: "课", location: "", notes: "", all_day: false, start_ms: start, end_ms: end, subscription_id: null, color: null,
+    const ev = (id: number, start: number, end: number, allDay = false) => ({
+      id, title: "课", location: "", notes: "", all_day: allDay, start_ms: start, end_ms: end, subscription_id: null, color: null,
     });
     const events = [
-      ev(day(2026, 9, 15, 10, 0), day(2026, 9, 15, 11, 0)),
-      ev(day(2026, 9, 15, 14, 0), day(2026, 9, 15, 15, 0)),
-      ev(day(2026, 9, 17, 9, 0), day(2026, 9, 17, 10, 0)),
+      ev(1, day(2026, 9, 15, 14, 0), day(2026, 9, 15, 15, 0)),
+      ev(2, day(2026, 9, 15, 10, 0), day(2026, 9, 15, 11, 0)),
+      ev(3, day(2026, 9, 15, 0, 0), day(2026, 9, 16, 0, 0), true),
+      ev(4, day(2026, 9, 16, 9, 0), day(2026, 9, 16, 10, 0)),
     ];
-    // 跳过空闲（hideEmpty=true）：15 日有上午(10-11)与下午(14-15)两簇，16 日被跳过；17 日一簇
-    const r = buildTimeline(events, { startMs: day(2026, 9, 14, 0, 0), endMs: day(2026, 9, 17, 12, 0), hourHeight: 48, hideEmpty: true });
-    expect(r.days.length).toBe(2);
-    expect(r.days[0].dayKey).toBe(20260915);
-    expect(r.days[1].dayKey).toBe(20260917);
-    expect(r.days[0].clusters.length).toBe(2); // 10-11 与 14-15 间隔>1.5h → 两簇
-    expect(r.days[0].windowStartHour).toBe(9.75); // 首簇起点(10-0.25)
-    // 15 日：头(30) + 簇0(1.5h*48=72) + 簇间隔(16) + 簇1(1.5h*48=72)
-    expect(r.days[0].height).toBe(TL_HEADER_H + 72 + TL_CLUSTER_GAP + 72);
-    // 真实连续（hideEmpty=false）：14~17 每天 24h
-    const r2 = buildTimeline(events, { startMs: day(2026, 9, 14, 0, 0), endMs: day(2026, 9, 17, 12, 0), hourHeight: 48, hideEmpty: false });
-    expect(r2.days.length).toBe(4);
-    expect(r2.days[0].height).toBe(TL_HEADER_H + 24 * 48);
+    const range = { startMs: day(2026, 9, 15, 0, 0), endMs: day(2026, 9, 17, 23, 0) };
+    // 跳过空闲且今天=15 日：16 日有课保留，17 日无课被跳过
+    const r = groupTimelineDays(events, { ...range, hideEmpty: true, todayKey: 20260915 });
+    expect(r.map((d) => d.dayKey)).toEqual([20260915, 20260916]);
+    expect(r[0].allDay.map((e) => e.id)).toEqual([3]); // 全天事件单独一列
+    expect(r[0].timed.map((e) => e.id)).toEqual([2, 1]); // 分时按开始时间升序
+    // 今天没课时也要保留今天，否则「跳过空闲」会让今天凭空消失
+    const r2 = groupTimelineDays(events, { ...range, hideEmpty: true, todayKey: 20260917 });
+    expect(r2.map((d) => d.dayKey)).toContain(20260917);
+    // 不跳过空闲 → 区间内每天都出现
+    const r3 = groupTimelineDays(events, { ...range, hideEmpty: false, todayKey: 20260915 });
+    expect(r3.map((d) => d.dayKey)).toEqual([20260915, 20260916, 20260917]);
   });
 
   it("parseRrule / buildRrule 往返", () => {

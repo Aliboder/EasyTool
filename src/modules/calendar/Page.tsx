@@ -746,6 +746,7 @@ export function CalendarPage() {
             onEventClick={onEventTap}
             onEventMenu={(e, x, y) => openMenu("event", e, x, y)}
             onCreateAt={createEventAt}
+            onToggleWeekend={(v) => update({ weekShowWeekend: v })}
           />
         )}
 

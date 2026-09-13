@@ -319,115 +319,85 @@ export interface TlEventLike {
   color: string | null;
 }
 
-/** 时间线每日的日期头高度（px） */
-export const TL_HEADER_H = 30;
+// 卡片视觉：一律「事件色作点缀 + 主题卡底作背景」，深浅主题各自自适应。
+// 不做「深色实心块 + 白字」——单块色压白字在窄卡片上可读性差，也没法表达状态层次。
 
-/** 簇与簇之间的分隔高度（px） */
-export const TL_CLUSTER_GAP = 16;
-
-/** 相邻事件间隔超过该小时数即拆成两个簇（跳过空闲用） */
-export const TL_CLUSTER_GAP_H = 1.5;
-
-export interface TlCluster<T> {
-  startHour: number;
-  endHour: number;
-  top: number; // 相对当天 body 顶部的像素偏移
-  height: number;
-  events: T[];
+/** 事件卡的柔和底色：事件色按比例混入主题卡底色（past=已结束 → 归中性灰） */
+export function tintedSurface(tint: string, opts?: { strength?: number; past?: boolean }): string {
+  if (opts?.past) return "var(--muted)";
+  if (!tint) return "var(--card)";
+  return `color-mix(in srgb, ${tint} ${opts?.strength ?? 15}%, var(--card))`;
 }
 
-export interface TlDay<T> {
+/** 事件卡描边（低饱和，避免边框抢戏；已结束归中性） */
+export function tintedBorder(tint: string, past?: boolean): string {
+  if (past || !tint) return "var(--border)";
+  return `color-mix(in srgb, ${tint} 32%, var(--border))`;
+}
+
+/** 卡片左侧色条（事件身份的唯一载体；已结束去色） */
+export function tintedStrip(tint: string | null | undefined, past?: boolean): string {
+  if (past || !tint) return "var(--border)";
+  return tint;
+}
+
+/** 进行中卡片的进度底：已过段更实、未过段更淡（同一事件色两个浓度，白字深字都读得清） */
+export function tintedProgress(tint: string, pct: number): string {
+  const p = Math.max(0, Math.min(100, Math.round(pct)));
+  const done = `color-mix(in srgb, ${tint} 30%, var(--card))`;
+  const rest = `color-mix(in srgb, ${tint} 14%, var(--card))`;
+  return `linear-gradient(90deg, ${done} 0 ${p}%, ${rest} ${p}% 100%)`;
+}
+
+/** 小胶囊（时间 / 类型标签）配色：底为事件的淡色，字为「事件色混前景色」（两套主题都可读） */
+export function tintedPill(tint: string): { background: string; color: string } {
+  return {
+    background: `color-mix(in srgb, ${tint} 22%, var(--card))`,
+    color: `color-mix(in srgb, ${tint} 72%, var(--foreground))`,
+  };
+}
+
+/** 时间线按天分组后的分组结构 */
+export interface TlDayGroup<T> {
   dayKey: number;
-  top: number; // 相对时间轴顶部的像素偏移
-  height: number;
-  windowStartHour: number; // 首簇起点（兼容旧字段）
-  events: T[]; // 当天所有分时事件
+  /** 全天事件（卡片模式里排在分时事件之前） */
   allDay: T[];
-  hasEvents: boolean;
-  clusters: TlCluster<T>[];
+  /** 分时事件（已按开始时间升序） */
+  timed: T[];
 }
 
 /**
- * 由事件数组和缩放/跳过空闲构建时间线布局（纯函数）。返回各日分段与总高度。
- * hideEmpty=true：按「簇」打包（间隔≤1.5h 聚成一簇、紧凑排布，簇间留薄分隔），跳过无事件的天。
- * hideEmpty=false：每天 0-24 连续真实时间。泛型保留完整事件类型。
+ * 时间线按天分组（纯函数）：区间内每天一组，全天事件单独一列、分时事件按开始时间排序。
+ * hideEmpty=true 跳过没有事件的日子——但「今天」永远保留（否则跳过空闲会让今天凭空消失）。
  */
-export function buildTimeline<T extends TlEventLike>(
+export function groupTimelineDays<T extends TlEventLike>(
   events: T[],
-  opts: { startMs: number; endMs: number; hourHeight: number; hideEmpty: boolean },
-): { days: TlDay<T>[]; totalHeight: number } {
-  const { startMs, endMs, hourHeight, hideEmpty } = opts;
-  const byDay = new Map<number, { timed: T[]; allDay: T[] }>();
+  opts: { startMs: number; endMs: number; hideEmpty: boolean; todayKey: number },
+): TlDayGroup<T>[] {
+  const { startMs, endMs, hideEmpty, todayKey } = opts;
+  const byDay = new Map<number, { allDay: T[]; timed: T[] }>();
   for (const e of events) {
-    const k = localDayKey(e.start_ms);
+    // 跨天事件可能只有一部分落在已加载区间内 → 按重叠判定，避免边界日漏事件
     if (e.start_ms > endMs || e.end_ms < startMs) continue;
-    const bucket = byDay.get(k) ?? { timed: [], allDay: [] };
-    (e.all_day ? bucket.allDay : bucket.timed).push(e);
-    byDay.set(k, bucket);
+    const k = localDayKey(e.start_ms);
+    const b = byDay.get(k) ?? { allDay: [], timed: [] };
+    (e.all_day ? b.allDay : b.timed).push(e);
+    byDay.set(k, b);
   }
 
-  const makeClusters = (timed: T[]): TlCluster<T>[] => {
-    if (!hideEmpty) {
-      return [{ startHour: 0, endHour: 24, top: 0, height: 24 * hourHeight, events: timed }];
-    }
-    if (timed.length === 0) return [];
-    const sorted = [...timed].sort((a, b) => a.start_ms - b.start_ms);
-    const raw: { startHour: number; endHour: number; events: T[] }[] = [];
-    for (const e of sorted) {
-      const dayMs = dayStartMs(localDayKey(e.start_ms));
-      const sh = (e.start_ms - dayMs) / 3_600_000;
-      const eh = Math.max((e.end_ms - dayMs) / 3_600_000, sh + 0.25);
-      const last = raw[raw.length - 1];
-      if (last && sh - last.endHour <= TL_CLUSTER_GAP_H) {
-        last.endHour = Math.max(last.endHour, eh);
-        last.events.push(e);
-      } else {
-        raw.push({ startHour: sh, endHour: eh, events: [e] });
-      }
-    }
-    const out: TlCluster<T>[] = [];
-    let top = 0;
-    for (let i = 0; i < raw.length; i++) {
-      const c = raw[i];
-      const start = Math.max(0, Math.floor(c.startHour) - 0.25);
-      const end = Math.min(24, Math.ceil(c.endHour) + 0.25);
-      const h = Math.max(30, (end - start) * hourHeight);
-      out.push({ startHour: start, endHour: end, top, height: h, events: c.events });
-      top += h + (i < raw.length - 1 ? TL_CLUSTER_GAP : 0);
-    }
-    return out;
-  };
-
-  const days: TlDay<T>[] = [];
-  let top = 0;
+  const out: TlDayGroup<T>[] = [];
   let cursor = dayStartMs(localDayKey(startMs));
   while (cursor <= endMs) {
     const k = localDayKey(cursor);
-    const bucket = byDay.get(k);
-    const timed = bucket?.timed ?? [];
-    const allDay = bucket?.allDay ?? [];
-    const hasEvents = timed.length > 0 || allDay.length > 0;
-    if (hideEmpty && !hasEvents) {
-      cursor += 86_400_000;
-      continue;
+    const b = byDay.get(k);
+    const allDay = b?.allDay ?? [];
+    const timed = [...(b?.timed ?? [])].sort((a, c) => a.start_ms - c.start_ms);
+    if (!hideEmpty || allDay.length + timed.length > 0 || k === todayKey) {
+      out.push({ dayKey: k, allDay, timed });
     }
-    const clusters = makeClusters(timed);
-    const body = clusters.length > 0 ? clusters[clusters.length - 1].top + clusters[clusters.length - 1].height : 0;
-    const height = TL_HEADER_H + body;
-    days.push({
-      dayKey: k,
-      top,
-      height,
-      windowStartHour: clusters[0]?.startHour ?? 0,
-      events: timed,
-      allDay,
-      hasEvents,
-      clusters,
-    });
-    top += height;
     cursor += 86_400_000;
   }
-  return { days, totalHeight: top };
+  return out;
 }
 
 // ---------- 状态 / 进度 / 下一节课（视图「会说话」用；纯函数，可单测） ----------

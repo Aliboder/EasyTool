@@ -1,12 +1,12 @@
 // 周 / 日 / 待办 三个视图（月视图留在 Page）。
 // 时间轴布局复用 utils.layoutDay 纯函数（重叠分列、窗口钳制），全部数据来自父组件。
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { CalendarPlus, ChevronDown, ChevronRight, ListTodo } from "lucide-react";
+import { CalendarPlus, ChevronDown, ChevronRight, ListTodo, MapPin, Plus, Repeat, StickyNote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs, courseColor, buildTimeline, TL_CLUSTER_GAP, blockTier, eventStatusOf, pickNextEvent, type BlockTier, type EventStatus } from "./utils";
+import { fmtHM, fmtKeyLong, addDaysKey, layoutDay, localDayKey, todayKey, weekStartKey, weekdayOfKey, dayStartMs, courseColor, groupTimelineDays, tintedSurface, tintedBorder, tintedStrip, tintedProgress, tintedPill, blockTier, eventStatusOf, pickNextEvent, type BlockTier, type EventStatus, type EventVisual } from "./utils";
 import type { EventDto, TodoDto } from "./types";
 
 const HOUR_HEIGHT = 46;
@@ -145,7 +145,8 @@ function EventBlock({
   const t = tier ?? blockTier(Number.POSITIVE_INFINITY, height);
   const isPast = status === "past";
   const isOngoing = status === "ongoing";
-  const tint = isPast ? null : eventTint(event, subColors);
+  const tint = eventTint(event, subColors);
+  const strip = tintedStrip(tint, isPast);
   const [hover, setHover] = useState(false);
   const [rect, setRect] = useState<{ x: number; y: number } | null>(null);
   // 空间分配：标题永远优先完整显示（不截断）；时间/地点只在卡片够高时出现；高卡片补备注填充
@@ -170,36 +171,31 @@ function EventBlock({
         left: Math.max(8, Math.min(rect.x - 4, window.innerWidth - 236)),
       }
     : undefined;
-  // 底色：已结束 → 灰底灰字（丢掉课程色）；进行中 → 按进度从左往右填色；其余 → 课程色渐变
-  const blockStyle: CSSProperties = isPast
-    ? { background: "var(--muted)", color: "var(--muted-foreground)" }
-    : tint
-      ? isOngoing
-        ? {
-            background: `linear-gradient(90deg, ${tint} 0%, ${tint} ${pct}%, color-mix(in srgb, ${tint} 65%, #000) ${pct}%, color-mix(in srgb, ${tint} 65%, #000) 100%)`,
-            color: "#ffffff",
-          }
-        : {
-            background: `linear-gradient(180deg, ${tint} 0%, color-mix(in srgb, ${tint} 85%, #000) 100%)`,
-            color: "#ffffff",
-          }
-      : {};
+  // 底色：事件色只做「柔和底 + 左侧色条」，文字走主题前景色（深色实心块压白字可读性差）；
+  // 进行中 → 按进度填色；已结束 → 中性灰 + 去色（不整体降透明度，避免对比度掉到读不清）
+  const blockStyle: CSSProperties = {
+    top: top + 1,
+    height: height - 2,
+    left: `${left}%`,
+    width: `${width}%`,
+    background: isPast
+      ? "var(--muted)"
+      : tint
+        ? isOngoing
+          ? tintedProgress(tint, pct)
+          : tintedSurface(tint)
+        : "color-mix(in srgb, var(--primary) 12%, var(--card))",
+    borderColor: tintedBorder(tint, isPast),
+    borderLeft: `3px solid ${strip}`,
+  };
   return (
     <div
       className={cn(
-        "absolute overflow-hidden rounded-xl border border-black/15 bg-primary px-2 py-1.5 text-primary-foreground shadow-sm transition-all hover:z-20 hover:shadow-md",
+        "absolute overflow-hidden rounded-lg border px-2 py-1.5 shadow-sm transition-all hover:z-20 hover:shadow-md",
         dimmed && "opacity-40 saturate-[0.6]",
-        !isPast && !tint && "hover:bg-primary/95",
-        isNext && "ring-2 ring-white/80",
+        isNext && "ring-2 ring-primary/70",
       )}
-      style={{
-        top: top + 1,
-        height: height - 2,
-        left: `${left}%`,
-        width: `${width}%`,
-        ...blockStyle,
-        ...(isPast ? {} : { boxShadow: "inset 0 1px 0 rgba(255,255,255,0.22)" }),
-      }}
+      style={blockStyle}
       onMouseEnter={enter}
       onMouseLeave={leave}
       onClick={(e) => {
@@ -218,7 +214,7 @@ function EventBlock({
         <span
           className={cn(
             "absolute right-1 top-1 z-10 rounded-full px-1 py-px text-[9px] font-medium leading-none",
-            isPast ? "bg-black/10 text-foreground/60" : "bg-white/30 text-white",
+            isPast ? "bg-muted text-muted-foreground" : "bg-primary/20 text-primary",
           )}
         >
           {isOngoing ? "进行中" : "已结束"}
@@ -228,6 +224,7 @@ function EventBlock({
       <div
         className={cn(
           "break-words leading-snug font-semibold",
+          isPast ? "text-muted-foreground" : "text-foreground",
           t.titlePx === 11 ? "text-[11px]" : "text-xs",
           t.titleClamp === 2 && "line-clamp-2",
           showBadge && "pr-9",
@@ -237,29 +234,27 @@ function EventBlock({
       </div>
       {/* 时间 + 地点：正常文档流，位于标题正下方，永不与标题重叠（卡片不够高时自动让位） */}
       {showMeta && (
-        <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-white/85">
-          <span className={cn("flex-none rounded-full bg-white/80", isNext ? "size-1.5" : "size-1")} />
-          <span className={cn("truncate font-medium tabular-nums", isNext && "font-semibold text-white")}>
+        <div className="mt-1 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
+          <span className={cn("flex-none rounded-full", isNext ? "size-1.5" : "size-1")} style={{ backgroundColor: strip }} />
+          <span className={cn("truncate font-medium tabular-nums", isNext && "font-semibold text-primary")}>
             {fmtHM(event.start_ms)}–{fmtHM(event.end_ms)}
           </span>
           {event.location && (
             <>
-              <span className="flex-none text-white/50">·</span>
-              <span className={cn("truncate opacity-90", isNext && "font-semibold text-white opacity-100")}>
-                {event.location}
-              </span>
+              <span className="flex-none opacity-50">·</span>
+              <span className={cn("truncate", isNext && "font-semibold text-primary")}>{event.location}</span>
             </>
           )}
         </div>
       )}
       {/* 高卡片：备注填充空档 */}
       {showNotes && (
-        <div className={cn("mt-1 text-[10px] leading-snug text-white/75", notesLines === 3 ? "line-clamp-3" : "line-clamp-2")}>
+        <div className={cn("mt-1 text-[10px] leading-snug text-muted-foreground", notesLines === 3 ? "line-clamp-3" : "line-clamp-2")}>
           {event.notes}
         </div>
       )}
       {/* 备注圆点：右下角（周视图用，不占文字空间） */}
-      {noteDot && <span className="absolute bottom-1 right-1 size-1 rounded-full bg-white/90" />}
+      {noteDot && <span className="absolute bottom-1 right-1 size-1 rounded-full" style={{ backgroundColor: strip }} />}
       {/* 悬停浮层：置顶展示完整信息，避免被截断 */}
       {hover && rect && tipStyle
         ? createPortal(
@@ -290,8 +285,18 @@ function EventBlock({
   );
 }
 
-/** 左侧小时刻度列（窗口自适应） */
-function HourAxis({ startHour, endHour }: { startHour: number; endHour: number }) {
+/** 左侧小时刻度列（窗口自适应）；nowPos 有值时在轴上挂一枚红色时间胶囊（对着实时线） */
+function HourAxis({
+  startHour,
+  endHour,
+  nowPos,
+  nowLabel,
+}: {
+  startHour: number;
+  endHour: number;
+  nowPos?: number;
+  nowLabel?: string;
+}) {
   const n = endHour - startHour;
   return (
     <div className="relative w-10 shrink-0" style={{ height: n * HOUR_HEIGHT }}>
@@ -304,6 +309,15 @@ function HourAxis({ startHour, endHour }: { startHour: number; endHour: number }
           {startHour + i}:00
         </span>
       ))}
+      {/* 实时线胶囊：单独一列盖在刻度上，跟着当前时刻走 */}
+      {nowPos != null && nowPos >= 0 && nowPos <= n * HOUR_HEIGHT && (
+        <span
+          className="absolute right-0 z-10 -translate-y-1/2 rounded-full bg-red-500 px-1 py-px text-[9px] font-medium tabular-nums text-white shadow-sm"
+          style={{ top: nowPos }}
+        >
+          {nowLabel}
+        </span>
+      )}
       <div className="absolute inset-y-0 right-0 w-px bg-border" />
     </div>
   );
@@ -322,6 +336,7 @@ export function WeekView({
   onEventClick,
   onEventMenu,
   onCreateAt,
+  onToggleWeekend,
 }: {
   events: EventDto[];
   selectedKey: number;
@@ -336,6 +351,8 @@ export function WeekView({
   onEventClick: EventClick;
   onEventMenu: EventMenu;
   onCreateAt?: (startMs: number) => void;
+  /** 5 列 / 7 列切换（写在模块配置里持久化） */
+  onToggleWeekend: (v: boolean) => void;
 }) {
   const days = useMemo(() => {
     const start = weekStartKey(selectedKey);
@@ -378,6 +395,22 @@ export function WeekView({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {/* 视图内工具条：列数切换 + 轴范围（对齐参照项目的「7 列 / 08:00 – 21:00」） */}
+      <div className="flex shrink-0 items-center gap-2 border-b px-2 py-1">
+        <button
+          onClick={() => onToggleWeekend(!showWeekend)}
+          title={showWeekend ? "只显示周一到周五" : "连周末一起显示"}
+          className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/25"
+        >
+          {showWeekend ? "7 列" : "5 列"}
+        </button>
+        <span className="text-[10px] text-muted-foreground">
+          {showWeekend ? "含周末" : "工作日"}
+        </span>
+        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
+          {String(sH).padStart(2, "0")}:00 – {String(eH).padStart(2, "0")}:00
+        </span>
+      </div>
       {/* 课程图例：可收起，默认收起；点开可点击只看某一门课（再点一次清除） */}
       {legend.length > 0 && (
         <div className="shrink-0 border-b">
@@ -426,7 +459,7 @@ export function WeekView({
           )}
         </div>
       )}
-      {/* 列头：第一行 MM/DD 日期（今天主题圆底色），第二行 星期（周一~周日）
+      {/* 列头：第一行 MM/DD 日期（浅灰小字），第二行 星期（主文字），今天用主色 + 小横杠标记
           今天那一列不画底边线 → 与下方网格的今日列连成一根贯通高亮 */}
       <div className="flex shrink-0">
         <div className="w-10 shrink-0 border-b" />
@@ -434,48 +467,52 @@ export function WeekView({
           const d = k % 100;
           const mth = Math.floor((k % 10000) / 100);
           const dateStr = `${String(mth).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
+          const isToday = k === today;
           return (
             <button
               key={k}
               onClick={() => onSelectDay(k)}
               className={cn(
                 "flex flex-1 flex-col items-center gap-0.5 py-1.5",
-                k === today ? "bg-primary/10" : "border-b hover:bg-accent",
+                isToday ? "bg-muted/40" : "border-b hover:bg-accent",
               )}
             >
-              <span
-                className={cn(
-                  "flex min-w-9 items-center justify-center rounded-full px-1 py-0.5 text-[11px] tabular-nums",
-                  k === today ? "bg-primary font-semibold text-primary-foreground" : "text-foreground",
-                )}
-              >
+              <span className={cn("text-[10px] tabular-nums", isToday ? "font-semibold text-primary" : "text-muted-foreground")}>
                 {dateStr}
               </span>
               <span
-                className={cn("text-[10px]", k === today ? "font-medium text-primary" : "text-muted-foreground")}
+                className={cn(
+                  "text-[11px] font-semibold",
+                  isToday
+                    ? "text-primary"
+                    : weekdayOfKey(k) >= 5
+                      ? "text-muted-foreground"
+                      : "text-foreground",
+                )}
               >
                 周{["一", "二", "三", "四", "五", "六", "日"][weekdayOfKey(k)]}
               </span>
+              <span className={cn("h-0.5 w-4 rounded-full", isToday ? "bg-primary" : "bg-transparent")} />
             </button>
           );
         })}
       </div>
       {/* 全天条带（今天列同样不画底边线，保持高亮贯通） */}
-      <div className="flex shrink-0 bg-muted/30">
+      <div className="flex shrink-0 bg-muted/20">
         <div className="flex w-10 shrink-0 items-center border-b px-1 text-[9px] text-muted-foreground">全天</div>
         {days.map((k) => (
-          <div key={k} className={cn("flex flex-1 flex-col gap-px px-0.5 py-1", k === today ? "bg-primary/10" : "border-b")}>
+          <div key={k} className={cn("flex flex-1 flex-col gap-px px-0.5 py-1", k === today ? "bg-muted/40" : "border-b")}>
             {allDayOfDay(events, k).map((e) => {
             const tint = eventTint(e, subColors);
+            const pill = tint ? tintedPill(tint) : undefined;
             return (
               <div
                 key={e.id}
                 className={cn(
-                  "flex min-w-0 items-center gap-1 truncate rounded-full border border-black/10 bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm",
+                  "flex min-w-0 items-center gap-1 truncate rounded-full border px-1.5 py-0.5 text-[10px] font-medium shadow-sm",
                   focusTitle != null && e.title !== focusTitle && "opacity-40 saturate-[0.6]",
-                  !tint && "hover:bg-primary/95",
                 )}
-                style={tint ? { backgroundColor: tint, color: "#ffffff" } : undefined}
+                style={pill ? { ...pill, borderColor: tintedBorder(tint) } : undefined}
                 title={e.title}
                 onClick={() => onEventClick(e)}
                 onContextMenu={(ev) => {
@@ -483,7 +520,7 @@ export function WeekView({
                   onEventMenu(e, ev.clientX, ev.clientY);
                 }}
               >
-                <span className="size-1 flex-none rounded-full bg-white/80" />
+                <span className="size-1 flex-none rounded-full" style={{ backgroundColor: tint ?? "var(--primary)" }} />
                 <span className="truncate">{e.title}</span>
               </div>
             );
@@ -499,7 +536,12 @@ export function WeekView({
           bodyRef.current = el;
         }}
       >
-        <HourAxis startHour={sH} endHour={eH} />
+        <HourAxis
+          startHour={sH}
+          endHour={eH}
+          nowPos={days.includes(today) && nowPos >= 0 && nowPos <= spanH * HOUR_HEIGHT ? nowPos : undefined}
+          nowLabel={nowTime(now)}
+        />
         {days.map((k) => {
           const blocks = layoutDay(
             timedOfDay(events, k).map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
@@ -508,7 +550,11 @@ export function WeekView({
           return (
             <div
               key={k}
-              className={cn("relative flex-1 border-l", k === today && "bg-primary/[0.07]")}
+              className={cn(
+                "relative flex-1 border-l",
+                // 今日列：中性灰底 + 一条灰右边缘（不带色相，避免与同色系卡片糊在一起）
+                k === today && "border-r border-border/70 bg-muted/40",
+              )}
               style={{ height: spanH * HOUR_HEIGHT }}
               onClick={() => onSelectDay(k)}
               onDoubleClick={(e) => {
@@ -543,11 +589,8 @@ export function WeekView({
                 );
               })}
               {k === today && nowPos >= 0 && nowPos <= spanH * HOUR_HEIGHT && (
-                <div className="absolute inset-x-0 z-10" style={{ top: nowPos }}>
-                  <div className="h-px bg-red-500" />
-                  <span className="absolute -top-2 -right-0 rounded bg-red-500 px-1 text-[9px] text-white">
-                    {nowTime(now)}
-                  </span>
+                <div className="pointer-events-none absolute inset-x-0 z-10" style={{ top: nowPos }}>
+                  <div className="h-[1.5px] bg-red-500" />
                 </div>
               )}
             </div>
@@ -638,24 +681,29 @@ export function DayView({
           <div className="mb-2 space-y-1">
             {allDay.map((e) => {
               const tint = eventTint(e, subColors);
+              const pill = tint ? tintedPill(tint) : undefined;
               return (
                 <div
                   key={e.id}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-lg border border-black/10 bg-primary px-2 py-1 text-xs font-medium text-primary-foreground shadow-sm",
+                    "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-medium shadow-sm",
                     focusTitle != null && e.title !== focusTitle && "opacity-40 saturate-[0.6]",
-                    !tint && "hover:bg-primary/95",
                   )}
-                  style={tint ? { backgroundColor: tint, color: "#ffffff" } : undefined}
+                  style={pill ? { ...pill, borderColor: tintedBorder(tint) } : undefined}
                   onClick={() => onEventClick(e)}
                   onContextMenu={(ev) => {
                     ev.preventDefault();
                     onEventMenu(e, ev.clientX, ev.clientY);
                   }}
                 >
-                  <span className="size-1.5 flex-none rounded-full bg-white/80" />
+                  <span className="size-1.5 flex-none rounded-full" style={{ backgroundColor: tint ?? "var(--primary)" }} />
                   <span className="truncate">{e.title}</span>
-                  {e.location && <span className="ml-auto truncate text-[10px] opacity-80">📍 {e.location}</span>}
+                  {e.location && (
+                    <span className="ml-auto flex min-w-0 items-center gap-0.5 text-[10px] text-muted-foreground">
+                      <MapPin className="size-3 flex-none" />
+                      <span className="truncate">{e.location}</span>
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -733,7 +781,145 @@ export function DayView({
   );
 }
 
-/** 时间线视图：连续纵向时间轴（越往下越晚），跨天、可缩放、可跳过空闲，滚动边缘动态加载 */
+/** 「现在 HH:mm」标线：主色圆点 + 左实右淡的渐变线 + 右侧时间（插在今天最后一条已结束的卡片之后） */
+function NowLine({ now }: { now: number }) {
+  return (
+    <div className="flex items-center gap-2 pl-0.5">
+      <span
+        className="size-2 flex-none rounded-full bg-primary"
+        style={{ boxShadow: "0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent)" }}
+      />
+      <span className="h-[1.5px] flex-1 bg-gradient-to-r from-primary/85 to-primary/10" />
+      <span className="flex-none text-[10px] font-bold tabular-nums text-primary">现在 {nowTime(now)}</span>
+    </div>
+  );
+}
+
+/**
+ * 时间线卡片（对齐参照项目的时间线页）：
+ * 最左时间列（开始胶囊 → 虚线 → 结束胶囊，全天只一个胶囊）+ 事件色竖条 + 内容列。
+ * 底色是「事件色混主题卡底」的柔和底，文字走主题前景色，因此深浅主题都成立。
+ */
+function TlCard({
+  event,
+  vis,
+  subColors,
+  isNext,
+  onClick,
+  onMenu,
+}: {
+  event: EventDto;
+  vis: EventVisual;
+  subColors: SubColors;
+  isNext: boolean;
+  onClick: EventClick;
+  onMenu: EventMenu;
+}) {
+  const past = vis.status === "past";
+  const tint = eventTint(event, subColors);
+  const strip = tintedStrip(tint, past);
+  const pill = tint
+    ? tintedPill(tint)
+    : { background: "var(--muted)", color: "var(--muted-foreground)" };
+  const ongoing = vis.status === "ongoing";
+  return (
+    <div
+      className={cn(
+        "relative flex min-h-[52px] cursor-pointer items-stretch rounded-xl border py-2 pl-[62px] pr-2.5 shadow-sm transition-shadow hover:shadow-md",
+      )}
+      style={{
+        background: ongoing && tint ? tintedProgress(tint, vis.pct) : tintedSurface(tint, { past }),
+        borderColor: tintedBorder(tint, past),
+      }}
+      onClick={() => onClick(event)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onMenu(event, e.clientX, e.clientY);
+      }}
+    >
+      {/* 事件色竖条：卡片身份的唯一载体，已结束时去色 */}
+      <span
+        className="absolute bottom-1.5 left-[52px] top-1.5 w-[3px] rounded-full"
+        style={{ backgroundColor: strip }}
+      />
+      {/* 最左时间列 */}
+      <div className="absolute left-1.5 top-1/2 flex w-[46px] -translate-y-1/2 flex-col items-start">
+        {event.all_day ? (
+          <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-semibold leading-tight text-muted-foreground">
+            全天
+          </span>
+        ) : (
+          <>
+            <span
+              className="rounded-full px-1.5 py-px text-[10px] font-semibold leading-tight tabular-nums"
+              style={{ background: past ? "var(--muted)" : pill.background, color: past ? "var(--muted-foreground)" : pill.color }}
+            >
+              {fmtHM(event.start_ms)}
+            </span>
+            <span className="my-0.5 ml-3 h-2 border-l border-dashed border-border" />
+            <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-semibold leading-tight tabular-nums text-muted-foreground">
+              {fmtHM(event.end_ms)}
+            </span>
+          </>
+        )}
+      </div>
+      {/* 内容列 */}
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+        <div className="flex items-center gap-1.5">
+          <span className={cn("truncate text-[13px] font-semibold", past ? "text-muted-foreground" : "text-foreground")}>
+            {event.title}
+          </span>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {ongoing && (
+              <span className="rounded-full bg-primary/20 px-1.5 py-px text-[10px] font-semibold leading-tight text-primary">
+                进行中
+              </span>
+            )}
+            {past && (
+              <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-semibold leading-tight text-muted-foreground">
+                已结束
+              </span>
+            )}
+            {event.subscription_id != null && (
+              <span className="rounded-full bg-violet-500/15 px-1.5 py-px text-[10px] font-semibold leading-tight text-violet-700 dark:text-violet-300">
+                订阅
+              </span>
+            )}
+          </div>
+        </div>
+        {(event.location || event.notes || event.rrule) && (
+          <div className="flex min-w-0 items-center gap-1.5 text-[11px] leading-tight text-muted-foreground">
+            {event.location && (
+              <span className={cn("flex min-w-0 items-center gap-0.5", isNext && "font-semibold text-primary")}>
+                <MapPin className="size-3 flex-none" />
+                <span className="truncate">{event.location}</span>
+              </span>
+            )}
+            {event.location && event.notes && <span className="flex-none opacity-50">·</span>}
+            {event.notes && (
+              <span className="flex min-w-0 flex-1 items-center gap-0.5">
+                <StickyNote className="size-3 flex-none" />
+                <span className="truncate">{event.notes}</span>
+              </span>
+            )}
+            {event.rrule && (
+              <span className="ml-auto flex flex-none items-center gap-0.5">
+                <Repeat className="size-3" />
+                重复
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 时间线视图：按天分组的事件卡片流（对齐参照项目的时间线页）。
+ * 不做时间比例轴——卡片高度由内容决定，比的是「一眼看清这一天有什么」；
+ * 跳过空闲只影响「没有事件的日子要不要露出来」，今天永远保留。
+ */
 export function TimeLineView({
   events,
   subColors,
@@ -763,35 +949,21 @@ export function TimeLineView({
 }) {
   const now = useNow();
   const today = localDayKey(now);
-  const hourHeight = 36; // 缩放固定「适中」
-  // 今天「下一节课」（仅今天的分时事件参与）
+  // 今天「下一节课」（仅今天的分时事件参与；用于地点高亮）
   const nextEv = useMemo(() => pickNextEvent(events, now, today), [events, now, today]);
-  const { days, totalHeight } = useMemo(
-    () => buildTimeline(events, { startMs: loadedStart, endMs: loadedEnd, hourHeight, hideEmpty }),
-    [events, loadedStart, loadedEnd, hourHeight, hideEmpty],
+  const days = useMemo(
+    () => groupTimelineDays(events, { startMs: loadedStart, endMs: loadedEnd, hideEmpty, todayKey: today }),
+    [events, loadedStart, loadedEnd, hideEmpty, today],
   );
-  // 跳过空闲时若「今天」没课被跳过，在其时间位置插入「今天 · 无课」标记，便于定位到当前时刻
-  const renderDays = useMemo(() => {
-    type Day = (typeof days)[number];
-    const hasToday = days.some((d) => d.dayKey === today);
-    if (!hideEmpty || hasToday || days.length === 0) {
-      return days.map((d) => ({ day: d, todayEmpty: false }));
-    }
-    const idx = days.findIndex((d) => d.dayKey > today);
-    const pos = idx === -1 ? days.length : idx;
-    const items: { day: Day; todayEmpty: boolean }[] = [];
-    for (let i = 0; i < days.length; i++) {
-      if (i === pos) items.push({ day: days[i], todayEmpty: true });
-      items.push({ day: days[i], todayEmpty: false });
-    }
-    if (pos === days.length) items.push({ day: days[days.length - 1], todayEmpty: true });
-    return items;
-  }, [days, hideEmpty, today]);
+  const totalCards = useMemo(
+    () => days.reduce((n, d) => n + d.allDay.length + d.timed.length, 0),
+    [days],
+  );
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadBusy = useRef(false);
   const centeredRef = useRef(false);
 
-  // 数据就绪后首次定位到「今天」所在处（含「今天 · 无课」标记）
+  // 数据就绪后首次定位到「今天」所在处
   useEffect(() => {
     if (centeredRef.current) return;
     const c = scrollRef.current;
@@ -802,7 +974,7 @@ export function TimeLineView({
     centeredRef.current = true;
   }, [days, today]);
 
-  // 点「时间线/今天」按钮：重新定位到当前时刻
+  // 点「今天」按钮：重新定位到当前时刻所在的那一天
   useEffect(() => {
     if (nowFocus <= 0) return;
     const c = scrollRef.current;
@@ -830,159 +1002,93 @@ export function TimeLineView({
   useEffect(() => {
     const c = scrollRef.current;
     if (c && c.scrollHeight <= c.clientHeight + 40 && !loading) onLoadEdge("down");
-  }, [totalHeight, loading, onLoadEdge]);
+  }, [days, loading, onLoadEdge]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
-        <span className="text-sm font-semibold">时间线</span>
-        <div className="ml-auto flex items-center gap-3">
-          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={hideEmpty}
-              onChange={(e) => onHideEmptyChange(e.target.checked)}
-              className="size-3.5 accent-primary"
-            />
-            跳过空闲
-          </label>
-        </div>
+      <div className="flex shrink-0 items-center gap-2 border-b px-2 py-1">
+        <button
+          onClick={() => onHideEmptyChange(!hideEmpty)}
+          title={hideEmpty ? "把没有安排的日子也显示出来" : "只显示有安排的日子"}
+          className={cn(
+            "rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors",
+            hideEmpty ? "bg-primary/15 text-primary hover:bg-primary/25" : "bg-muted text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {hideEmpty ? "跳过空闲" : "显示全部"}
+        </button>
+        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
+          {days.length} 天 · {totalCards} 条安排
+        </span>
       </div>
-      <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto bg-background">
-        {renderDays.map((item) => {
-          if (item.todayEmpty) {
-            return (
-              <div key="today-empty" data-daykey={today} className="border-b border-border/60">
-                <div className="flex items-center gap-2 border-b border-border/40 bg-primary/5 px-3 py-1 text-[11px]">
-                  <span className="font-medium text-primary">{fmtKeyLong(today)} · 今天</span>
-                  <span className="text-muted-foreground">无课</span>
-                </div>
-                <div className="py-4 text-center text-[11px] text-muted-foreground">今天没有安排课程/事件</div>
-              </div>
-            );
-          }
-          const d = item.day;
-          const weekend = weekdayOfKey(d.dayKey) >= 5;
+      <div ref={scrollRef} onScroll={onScroll} className="relative min-h-0 flex-1 overflow-y-auto">
+        {days.map((d) => {
           const isToday = d.dayKey === today;
+          const weekend = weekdayOfKey(d.dayKey) >= 5;
+          const m = Math.floor((d.dayKey % 10000) / 100);
+          const dd = d.dayKey % 100;
+          const items: { e: EventDto; vis: EventVisual }[] = [
+            ...d.allDay.map((e) => ({ e, vis: eventStatusOf(e, now, d.dayKey) })),
+            ...d.timed.map((e) => ({ e, vis: eventStatusOf(e, now, d.dayKey) })),
+          ];
+          // 「现在」标线插在今天最后一条已结束的卡片之后；今天没有卡片则不显示
+          const nowIdx = isToday && items.length > 0 ? items.filter((it) => it.vis.status === "past").length : -1;
           return (
-            <div key={d.dayKey} data-daykey={d.dayKey} className="border-b border-border/60">
-              {/* 日期头（流式 + sticky 吸附，随内容滚动不重叠） */}
-              <div
-                className={cn(
-                  "sticky top-0 z-10 flex items-center gap-2 border-b bg-background/95 px-3 py-1 text-[11px]",
-                  weekend && "text-muted-foreground",
-                )}
-              >
-                <span className={cn("font-medium", isToday && "text-primary")}>
-                  {fmtKeyLong(d.dayKey)}
-                  {isToday && " · 今天"}
+            <section key={d.dayKey} data-daykey={d.dayKey} className="border-b border-border/50 last:border-b-0">
+              {/* 日期头：日期（粗）→ 星期（灰）→「今天」胶囊；右侧条数 + 新建 */}
+              <div className="sticky top-0 z-10 flex items-center gap-1.5 border-b border-border/50 bg-background/95 px-3 py-1.5 backdrop-blur">
+                <span
+                  className={cn(
+                    "text-sm font-bold",
+                    isToday ? "text-primary" : weekend ? "text-muted-foreground" : "text-foreground",
+                  )}
+                >
+                  {m}月{dd}日
                 </span>
-                {d.allDay.map((e) => {
-                  const past = d.dayKey < today;
-                  const tint = past ? null : eventTint(e, subColors);
-                  return (
-                    <span
-                      key={e.id}
-                      className="truncate rounded-full border border-black/10 bg-primary px-2 py-px text-[10px] font-medium text-primary-foreground"
-                      style={
-                        past
-                          ? { backgroundColor: "var(--muted)", color: "var(--muted-foreground)" }
-                          : tint
-                            ? { backgroundColor: tint, color: "#fff" }
-                            : undefined
-                      }
-                      onClick={() => onEventClick(e)}
-                      onContextMenu={(ev) => {
-                        ev.preventDefault();
-                        onEventMenu(e, ev.clientX, ev.clientY);
-                      }}
-                    >
-                      {e.title}
-                    </span>
-                  );
-                })}
-              </div>
-              {/* 簇（流式堆叠，簇间留分隔） */}
-              <div className="flex flex-col px-2 py-2" style={{ gap: TL_CLUSTER_GAP }}>
-                {d.clusters.length === 0 && (
-                  <div className="py-4 text-center text-[11px] text-muted-foreground">无分时安排</div>
+                <span className="text-[11px] text-muted-foreground">
+                  周{["一", "二", "三", "四", "五", "六", "日"][weekdayOfKey(d.dayKey)]}
+                </span>
+                {isToday && (
+                  <span className="rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-semibold leading-tight text-primary">
+                    今天
+                  </span>
                 )}
-                {d.clusters.map((c, ci) => {
-                  // 只画该簇真实覆盖的整点（ceil 起点，避免负偏移与前后重叠）
-                  const hourMarks: number[] = [];
-                  for (let m = Math.ceil(c.startHour); m <= Math.floor(c.endHour); m++) hourMarks.push(m);
-                  return (
-                    <div key={ci} className="relative flex" style={{ height: c.height }}>
-                      {/* 左小时尺 */}
-                      <div className="relative w-10 shrink-0 border-r border-border/40">
-                        {hourMarks.map((m) => (
-                          <span
-                            key={m}
-                            className="absolute right-1.5 -translate-y-1/2 text-[10px] tabular-nums text-muted-foreground"
-                            style={{ top: (m - c.startHour) * hourHeight }}
-                          >
-                            {String(m).padStart(2, "0")}:00
-                          </span>
-                        ))}
-                      </div>
-                      {/* 内容区 */}
-                      <div
-                        className="relative flex-1"
-                        onDoubleClick={(e) => {
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          const hh = (e.clientY - rect.top) / hourHeight + c.startHour;
-                          const snapped = Math.max(c.startHour, Math.min(24 - 0.5, Math.round(hh * 2) / 2));
-                          onCreateAt?.(dayStartMs(d.dayKey) + snapped * 3_600_000);
-                        }}
-                      >
-                        {hourMarks.map((m) => (
-                          <div key={m} className="absolute inset-x-0 border-t border-border/40" style={{ top: (m - c.startHour) * hourHeight }} />
-                        ))}
-                        {layoutDay(
-                          c.events.map((e) => ({ start_ms: e.start_ms, end_ms: e.end_ms, all_day: false })),
-                          { startHour: c.startHour, endHour: c.endHour, hourHeight },
-                        ).map((b) => {
-                          const ev = c.events[b.index];
-                          const vis = eventStatusOf(ev, now, d.dayKey);
-                          return (
-                            <EventBlock
-                              key={`${ev.id}-${d.dayKey}-${ci}`}
-                              event={ev}
-                              top={b.top}
-                              height={b.height}
-                              left={b.left}
-                              width={b.width}
-                              subColors={subColors}
-                              status={vis.status}
-                              pct={vis.pct}
-                              badge={d.dayKey === today}
-                              isNext={nextEv != null && ev.id === nextEv.id && d.dayKey === today}
-                              noteDot={!!ev.notes}
-                              onClick={onEventClick}
-                              onMenu={onEventMenu}
-                            />
-                          );
-                        })}
-                        {isToday &&
-                          (() => {
-                            const nowH = (now - dayStartMs(d.dayKey)) / 3_600_000;
-                            const y = (nowH - c.startHour) * hourHeight;
-                            if (y < 0 || y > c.height) return null;
-                            return (
-                              <div className="absolute inset-x-0 z-10" style={{ top: y }}>
-                                <div className="h-px bg-red-500" />
-                                <span className="absolute -top-2 -right-0 rounded bg-red-500 px-1 text-[9px] text-white">
-                                  {nowTime(now)}
-                                </span>
-                              </div>
-                            );
-                          })()}
-                      </div>
-                    </div>
-                  );
-                })}
+                <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
+                  {items.length > 0 ? `${items.length} 项` : ""}
+                </span>
+                <button
+                  title="在这天新建事件"
+                  onClick={() => onCreateAt?.(dayStartMs(d.dayKey) + 9 * 3_600_000)}
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+                >
+                  <Plus className="size-3.5" />
+                </button>
               </div>
-            </div>
+              <div className="flex flex-col gap-1.5 px-3 py-2">
+                {items.length === 0 ? (
+                  <div className="rounded-lg border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
+                    这天没有安排
+                  </div>
+                ) : (
+                  <>
+                    {items.map((it, i) => (
+                      <Fragment key={`${it.e.id}-${it.e.instance_date ?? it.e.start_ms}`}>
+                        {i === nowIdx && <NowLine now={now} />}
+                        <TlCard
+                          event={it.e}
+                          vis={it.vis}
+                          subColors={subColors}
+                          isNext={isToday && nextEv != null && it.e.id === nextEv.id}
+                          onClick={onEventClick}
+                          onMenu={onEventMenu}
+                        />
+                      </Fragment>
+                    ))}
+                    {nowIdx === items.length && <NowLine now={now} />}
+                  </>
+                )}
+              </div>
+            </section>
           );
         })}
         {loading && (
