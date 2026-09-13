@@ -101,14 +101,15 @@ pub fn save_config(app: &AppHandle, cfg: &AppConfig) -> Result<(), String> {
 }
 
 /// 清理已废弃的历史配置键（独立弹窗移除后不再读取）：
-/// - 模块配置里的 `hotkey` / `follow_mouse` / `popup_size` / `fixed_pos`
+/// - 模块配置里的 `hotkey` / `follow_mouse` / `popup_size` / `fixed_pos` / `max_items`
+///   （`max_items`：剪贴板上限早已锁在代码常量 `clipboard::MAX_ITEMS`，配置里那份不再读取）
 /// - `hotkeys` 表中非 `main` 的残留热键（模块独立热键已删除）
 /// 幂等：无残留时返回 false（调用方据此跳过写盘）。
 pub fn sanitize_legacy_keys(cfg: &mut AppConfig) -> bool {
     let mut changed = false;
     for m in cfg.modules.values_mut() {
         if let Some(obj) = m.as_object_mut() {
-            for k in ["hotkey", "follow_mouse", "popup_size", "fixed_pos"] {
+            for k in ["hotkey", "follow_mouse", "popup_size", "fixed_pos", "max_items"] {
                 if obj.remove(k).is_some() {
                     changed = true;
                 }
@@ -413,5 +414,22 @@ mod tests {
         assert_eq!(cfg.module_order, vec!["clipboard".to_string(), "quota".to_string()]);
         // 幂等：第二次不再执行（且不再写盘）
         assert!(!remove_retired_modules(&mut cfg));
+    }
+
+    #[test]
+    fn sanitize_drops_legacy_and_dead_keys() {
+        let mut cfg = AppConfig::default();
+        cfg.modules.insert(
+            "clipboard".into(),
+            serde_json::json!({ "enabled": true, "max_items": 500, "popup_size": { "w": 1 } }),
+        );
+        cfg.hotkeys.insert("clipboard".into(), "Ctrl+Shift+V".into());
+        assert!(sanitize_legacy_keys(&mut cfg));
+        let m = cfg.modules["clipboard"].as_object().unwrap();
+        assert!(m.contains_key("enabled")); // 有效键保留
+        assert!(!m.contains_key("max_items")); // 上限已锁进代码常量，配置里那份作废
+        assert!(!m.contains_key("popup_size"));
+        assert!(!cfg.hotkeys.contains_key("clipboard"));
+        assert!(!sanitize_legacy_keys(&mut cfg)); // 幂等
     }
 }

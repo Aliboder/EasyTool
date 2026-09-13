@@ -81,6 +81,7 @@ website/           # 官网（独立工程，详见 docs/website-guide.md）
 ### 剪贴板要点
 - 监听：事件驱动（WM_CLIPBOARDUPDATE）+ 500ms 轮询兜底；按 hash 去重
 - 固定条目排序：`items.pin_order`（NULL=未排过序排最后）
+- 上限：**5000 条**（代码常量 `clipboard::MAX_ITEMS`，原 500，不可调），超出按时间清理最旧的非固定条目；配置里的 `max_items` 早已不读取，启动时由 `sanitize_legacy_keys` 清掉。调大上限的代价在磁盘（`images/` 原图 + `thumbs/` 缩略图）与首屏一次性渲染（虚拟列表曾因文本卡高度不一而回退）
 
 ### 时长统计要点
 - 采集：前台窗口 SetWinEventHook → `mpsc::channel` 入队即返回（防止阻塞系统事件派发）；独立心跳线程 `recv_timeout` 消费，超时则 UPDATE 当前会话时长
@@ -106,7 +107,7 @@ npx tsc --noEmit       # 前端类型检查
 ```
 
 - 打包只支持 `msi/nsis`（**不支持 portable**）
-- 后端 114 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 56 个）
+- 后端 115 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 56 个）
 
 ## 发版流程（AI 代发版时必须按此执行）
 

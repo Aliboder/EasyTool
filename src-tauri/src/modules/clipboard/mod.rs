@@ -15,8 +15,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
 };
 
-/// 剪贴板历史上限：锁定 500 条（不可调），超出自动清理最旧的非固定条目
-pub const MAX_ITEMS: u64 = 500;
+/// 剪贴板上限：锁定 5000 条（不可调），超出自动清理最旧的非固定条目。
+/// 注意：调大后开销落在两处——磁盘（images/ 原图 + thumbs/ 缩略图）与首屏渲染
+/// （前端一次性渲染整份历史，曾试过虚拟列表但因文本卡高度不一导致重叠而回退）。
+pub const MAX_ITEMS: u64 = 5000;
 
 /// 初始化剪贴板模块：数据库、状态、监听线程（从 AppHandle，用于并行初始化）
 pub fn setup_from_handle(app: &tauri::AppHandle) -> tauri::Result<()> {
