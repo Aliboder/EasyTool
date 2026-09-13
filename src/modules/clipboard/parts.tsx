@@ -12,6 +12,7 @@ import {
   FolderOpen,
   MessageSquare,
   Pin,
+  StickyNote,
   Trash2,
   Type,
   X,
@@ -30,23 +31,26 @@ export interface ItemDto {
 }
 
 /**
- * 右操作列：时间 + 分隔竖线 + 置顶/删除，**常驻显示**。
+ * 右操作列：时间 + 分隔竖线 + 备注/置顶/删除，**常驻显示**。
  * 曾按「分区文本卡悬停显示、列表模式常驻」做过 `hover` 开关，但悬停显示依赖容器上的 `group`
  * 类，容器漏写时会变成「永远透明却仍可点击」的隐形按钮（点一下误删/误固定）——故废弃该开关。
+ * 备注按钮：点一下就地展开备注输入框；已有备注时按钮高亮（同时兼作「这条有备注」的提示）。
  */
 export function ItemActionColumn({
   item,
   showTimestamps,
   onDelete,
   onTogglePin,
+  onEditNote,
 }: {
   item: ItemDto;
   showTimestamps: boolean;
   onDelete: (id: number) => void;
   onTogglePin: (id: number, pinned: boolean) => void;
+  onEditNote: (item: ItemDto) => void;
 }) {
   return (
-    <div className="flex min-w-[64px] shrink-0 flex-col items-end gap-1 border-l pl-2.5">
+    <div className="flex min-w-[76px] shrink-0 flex-col items-end gap-1 border-l pl-2.5">
       {showTimestamps && (
         <div className="text-[10px] tabular-nums text-muted-foreground">
           {fmtTime(item.created_at)}
@@ -56,12 +60,16 @@ export function ItemActionColumn({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onDelete(item.id);
+            onEditNote(item);
           }}
-          aria-label="删除"
-          className="rounded p-1 transition-colors hover:bg-destructive/15 hover:text-destructive"
+          aria-label={item.note ? "编辑备注" : "添加备注"}
+          title={item.note ? `编辑备注：${item.note}` : "添加备注"}
+          className={cn(
+            "rounded p-1 transition-colors hover:bg-accent",
+            item.note ? "text-primary" : "hover:text-foreground",
+          )}
         >
-          <Trash2 className="size-3.5" />
+          <StickyNote className="size-3.5" />
         </button>
         <button
           onClick={(e) => {
@@ -69,12 +77,24 @@ export function ItemActionColumn({
             onTogglePin(item.id, !item.pinned);
           }}
           aria-label={item.pinned ? "取消置顶" : "置顶"}
+          title={item.pinned ? "取消置顶" : "置顶"}
           className={cn(
             "rounded p-1 transition-colors hover:bg-accent",
             item.pinned ? "text-primary" : "hover:text-foreground",
           )}
         >
           <Pin className="size-3.5" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete(item.id);
+          }}
+          aria-label="删除"
+          title="删除"
+          className="rounded p-1 transition-colors hover:bg-destructive/15 hover:text-destructive"
+        >
+          <Trash2 className="size-3.5" />
         </button>
       </div>
     </div>

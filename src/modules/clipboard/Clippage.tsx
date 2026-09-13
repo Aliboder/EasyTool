@@ -567,6 +567,7 @@ export function Clippage() {
         showTimestamps={showTimestamps}
         onDelete={del}
         onTogglePin={togglePin}
+        onEditNote={startEditNote}
       />
     </div>
   );
@@ -657,6 +658,28 @@ export function Clippage() {
                 : (item.preview || "剪贴板图片")}
           </div>
           {isFile && <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{item.preview}</div>}
+          {/* 备注：就地编辑（与分区文本卡同一套交互，操作列的备注按钮触发） */}
+          {editingNoteId === item.id ? (
+            <input
+              type="text"
+              value={editingNoteValue}
+              onChange={(e) => setEditingNoteValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveNote();
+                if (e.key === "Escape") setEditingNoteId(null);
+              }}
+              onBlur={saveNote}
+              placeholder="输入备注（可选）"
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+              className="mt-1 w-full rounded border bg-muted px-2 py-1 text-[10px] outline-none focus:border-primary"
+            />
+          ) : item.note ? (
+            <div className="mt-1 flex items-center gap-1 truncate text-[10px] text-muted-foreground" title={item.note}>
+              <StickyNote className="size-3 shrink-0" />
+              <span className="truncate">{highlight(item.note, searchKws)}</span>
+            </div>
+          ) : null}
         </div>
         {/* 右侧：时间 + 常驻操作 */}
         <ItemActionColumn
@@ -664,6 +687,7 @@ export function Clippage() {
           showTimestamps={showTimestamps}
           onDelete={del}
           onTogglePin={togglePin}
+          onEditNote={startEditNote}
         />
       </div>
     );
