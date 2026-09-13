@@ -662,7 +662,6 @@ export function Clippage() {
         <ItemActionColumn
           item={item}
           showTimestamps={showTimestamps}
-          hover={false}
           onDelete={del}
           onTogglePin={togglePin}
         />

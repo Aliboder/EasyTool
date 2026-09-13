@@ -29,38 +29,30 @@ export interface ItemDto {
   note: string | null;
 }
 
-/** 右操作列：时间 + 分隔竖线 + 置顶/删除。hover=true 时操作悬停显示（分区文本卡），否则常驻（列表模式） */
+/**
+ * 右操作列：时间 + 分隔竖线 + 置顶/删除，**常驻显示**。
+ * 曾按「分区文本卡悬停显示、列表模式常驻」做过 `hover` 开关，但悬停显示依赖容器上的 `group`
+ * 类，容器漏写时会变成「永远透明却仍可点击」的隐形按钮（点一下误删/误固定）——故废弃该开关。
+ */
 export function ItemActionColumn({
   item,
   showTimestamps,
-  hover = true,
   onDelete,
   onTogglePin,
 }: {
   item: ItemDto;
   showTimestamps: boolean;
-  hover?: boolean;
   onDelete: (id: number) => void;
   onTogglePin: (id: number, pinned: boolean) => void;
 }) {
   return (
-    <div
-      className={cn(
-        "flex shrink-0 flex-col items-end border-l pl-2.5",
-        hover ? "min-w-[72px] gap-0.5" : "min-w-[64px] gap-1",
-      )}
-    >
+    <div className="flex min-w-[64px] shrink-0 flex-col items-end gap-1 border-l pl-2.5">
       {showTimestamps && (
         <div className="text-[10px] tabular-nums text-muted-foreground">
           {fmtTime(item.created_at)}
         </div>
       )}
-      <div
-        className={cn(
-          "flex items-center gap-0.5 text-muted-foreground",
-          hover && "opacity-0 transition-opacity group-hover:opacity-100",
-        )}
-      >
+      <div className="flex items-center gap-0.5 text-muted-foreground">
         <button
           onClick={(e) => {
             e.stopPropagation();
