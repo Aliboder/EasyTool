@@ -167,6 +167,10 @@
 
 **弹窗 helper 收敛**：剪贴板/搜索/时长统计三弹窗统一到 `lib.rs` 的 `ensure_popup_window`/`show_popup_at`/`popup_position_physical`（Win32 物理坐标 + 光标所在显示器工作区钳制），模块只留 label/html/尺寸参数；顺带统一恢复 `popup_size` 并过滤脏值。
 
+**启动通知要「点得动」**：静默启动只发系统通知不弹窗，但用户很自然会去点那条通知——而 `tauri-plugin-notification` 底层是 `notify-rust`，**不暴露点击回调**（桌面端只支持"显示"，移动端才有 action listener）。修：启动通知改用 `tauri-winrt-notification`，用 `Toast::new(aumid).on_activated(|| show_main())`。它挂的是 WinRT `ToastNotification.Activated`，**进程内回调**——通知由当前进程弹出、程序还在跑，所以不需要注册 COM 激活服务器（`INotificationActivationCallback`）。归属到「应用在运行时点通知」这一档；若将来要支持"应用已退出时点历史通知唤起"，才需要写 `HKCU\SOFTWARE\Classes\AppUserModelId\<AUMID>` + CLSID/LocalServer32 那套 COM 注册。
+
+**别用 PowerShell 重写仓库文本文件（BOM 陷阱，踩过两次）**：`Set-Content -Encoding utf8` 会写入 UTF-8 BOM，`tauri.conf.json` 带 BOM 后 Tauri 直接报 `unable to parse JSON Tauri config file ... expected value at line 1 column 1`，**整个 release 构建挂掉**（v0.10.0 首次发版就是这么失败的，v0.11.1 又踩了一次）。改文件优先用编辑工具；非要用脚本，就用 `[System.IO.File]::WriteAllText($p, $text, (New-Object System.Text.UTF8Encoding($false)))`，并在改完 `git diff` 确认只有目标行变化。
+
 ### 启动流程
 
 **setup 阻塞推迟首帧**：search 的 `join()` 排在 setup 里，任何模块初始化慢都推迟窗口显示。修：模块工作 spawn 时已并行，**join 只是同步点**——首屏不依赖的模块（search/timetracker）join 放 `build_tray` 之后的后台线程；剪贴板保留同步 join（主窗口首屏数据源，开库毫秒级）；quota 延迟 500ms 初始化；`win.show()` 移到 setup 外（见下）。

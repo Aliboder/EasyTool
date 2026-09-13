@@ -52,7 +52,7 @@ website/           # 官网（独立工程，详见 docs/website-guide.md）
 ### 窗口
 - `main` 是**唯一窗口**，按「面板」工作：关闭=隐藏到托盘、置顶、跳过任务栏、点外部关闭（`hide_after_blur_grace`）、可选跟随鼠标（`main_follow_mouse`）
 - 显示时机：`visible:false` 冷启动 → 前端首屏就绪后调 `main_window_ready` → `present_on_startup` 决定露面方式：`start_silent`（默认开）只发一条系统通知、不弹窗，关掉时才 `show_main`；8s 超时兜底走同一函数（前端已露面过则不重复）
-- 静默启动：手动双击与开机自启**一视同仁**（不区分启动来源）；通知发不出去（专注助手/通知权限关闭）时自动退回显示窗口，避免用户以为没启动；运行中再次双击 exe（单实例回调）仍直接呼出窗口
+- 静默启动：手动双击与开机自启**一视同仁**（不区分启动来源）；**点这条启动通知本身也能呼出窗口**（用 `tauri-winrt-notification` 的 `on_activated` 进程内回调——`tauri-plugin-notification` 底层 notify-rust 不暴露点击回调）；通知发不出去（专注助手/通知权限关闭）时自动退回显示窗口，避免用户以为没启动；运行中再次双击 exe（单实例回调）仍直接呼出窗口
 - 呼出保护：托盘点击不授予前台权限，`show_main` 前注入一次 F24 按键 + `MAIN_FOCUSED_SINCE_SHOW` 守护（没真正聚焦过的「失焦」不算点外部）+ 150/400/900ms 焦点重试
 - 跟随鼠标定位复用 `popup_position_physical`（Win32 物理坐标 + 光标所在显示器工作区钳制），由 `clipboard::position_at_cursor` 调用
 - **不存在独立弹窗**（已移除）；剪贴板的收起操作为：隐藏主窗口 → 100ms 焦点回原窗口 → 注入（跟手粘贴）

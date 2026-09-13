@@ -39,6 +39,10 @@ keyring = { version = "3", features = ["windows-native"] }
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 tauri-plugin-notification = "2"
+# 启动通知要「点击可呼出窗口」：只有 winrt 这一层能在进程内拿到通知点击回调
+# （tauri-plugin-notification 底层是 notify-rust，没有暴露 on_activated）。
+# 0.7 已在依赖树里（notify-rust 的 Windows 后端），显式声明不增加编译成本。
+tauri-winrt-notification = "0.7"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_System_DataExchange",

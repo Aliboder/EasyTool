@@ -443,9 +443,12 @@ fn log_frontend(level: String, msg: String) {
 static STARTUP_PRESENTED: AtomicBool = AtomicBool::new(false);
 
 /// 静默启动通知：只弹一条系统通知，不亮主窗口（大部分时间它在后台跑）。
-/// 内容带上当前呼出热键，用户知道怎么把它叫出来
+/// 内容带上当前呼出热键，用户知道怎么把它叫出来；**点这条通知本身也能呼出窗口**。
+/// 用 `tauri-winrt-notification` 而不是 `tauri-plugin-notification`：后者底层是 notify-rust，
+/// 没暴露点击回调；winrt 这层能在进程内拿到 `Activated`（通知由当前进程弹出、程序还在运行，
+/// 因此不需要注册 COM 激活服务器）。
 fn notify_started(app: &tauri::AppHandle) -> bool {
-    use tauri_plugin_notification::NotificationExt;
+    use tauri_winrt_notification::Toast;
     let hotkey = app
         .state::<ConfigState>()
         .0
@@ -455,21 +458,23 @@ fn notify_started(app: &tauri::AppHandle) -> bool {
         .get("main")
         .cloned()
         .unwrap_or_else(|| "Alt+Q".into());
-    let title = "EasyTool 已在后台运行";
-    let body = format!("按 {hotkey} 或点托盘图标呼出窗口");
-    let ok = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(&body)
+    let clicked = app.clone();
+    let shown = Toast::new(&app.config().identifier)
+        .title("EasyTool 已在后台运行")
+        .text1(&format!("点这条通知，或按 {hotkey} 呼出窗口"))
+        .on_activated(move |_action| {
+            log::info!("startup notification activated, showing main window");
+            show_main(&clicked);
+            Ok(())
+        })
         .show()
         .is_ok();
-    if !ok {
+    if !shown {
         // 通知被系统挡掉（专注助手/通知权限关闭）时用户将毫无感知：
         // 退化成显示窗口，宁可打扰也不要让人以为程序没启动
         log::warn!("startup notification failed, falling back to showing main window");
     }
-    ok
+    shown
 }
 
 /// 启动露面：静默模式只发通知，否则显示主窗口。
