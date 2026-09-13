@@ -57,7 +57,8 @@ website/           # 官网（独立工程，详见 docs/website-guide.md）
 - **不存在独立弹窗**（已移除）；剪贴板/表情的收起操作为：隐藏主窗口 → 100ms 焦点回原窗口 → 注入（跟手粘贴/直输）
 
 ### 全局热键与呼出
-- 全局热键**只有一个**：主窗口呼出（默认 Ctrl+Shift+E，可自定义录制，`set_main_hotkey` → `reapply_hotkeys`）；托盘点击同样呼出
+- 全局热键**只有一个**：主窗口呼出（默认 Alt+Q，可自定义录制，`set_main_hotkey` → `reapply_hotkeys`）；托盘点击同样呼出
+- 默认值常量 `config::DEFAULT_MAIN_HOTKEY`；老默认 `Ctrl+Shift+E` 由 `config::migrate_default_hotkey` 一次性迁移（只改「没设置过/仍是老默认」的配置，用户录过的热键不覆盖，`migrated` 标记保证只跑一次）
 - 解析缓存：热键字符串在 `reapply_hotkeys` 时解析进 `ResolvedHotkeys`，全局 handler 用 `Shortcut` 对象比较，**不每次按键重新解析/持配置锁**
 - 改热键入口顺序：先注册验证 → 写 config → `reapply_hotkeys` 整体重注册（**禁止**「unregister_all 后只重注册自己的」——会注销全部热键）
 - 录制格式：`Ctrl/Shift/Alt/Super + 键名`（Windows 键用 **Super** 不是 Win），见 `HotkeyRecorder`
@@ -109,7 +110,7 @@ npx tsc --noEmit       # 前端类型检查
 ```
 
 - 打包只支持 `msi/nsis`（**不支持 portable**）
-- 后端 116 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 56 个）
+- 后端 118 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 56 个）
 
 ## 发版流程（AI 代发版时必须按此执行）
 

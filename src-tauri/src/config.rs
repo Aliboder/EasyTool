@@ -2,6 +2,11 @@ use std::{collections::HashMap, fs, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
+/// 主窗口呼出热键的默认值（全应用唯一全局热键）
+pub const DEFAULT_MAIN_HOTKEY: &str = "Alt+Q";
+/// 历史默认热键：仍是这个值 = 用户从没自己录过 → 一次性迁移到新默认
+const LEGACY_MAIN_HOTKEY: &str = "Ctrl+Shift+E";
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct AppConfig {
@@ -50,7 +55,7 @@ impl Default for AppConfig {
             serde_json::json!({ "enabled": true, "refresh_interval_sec": 30, "warn_threshold": 10.0 }),
         );
         let mut hotkeys = HashMap::new();
-        hotkeys.insert("main".into(), "Ctrl+Shift+E".into());
+        hotkeys.insert("main".into(), DEFAULT_MAIN_HOTKEY.into());
         Self { modules, hotkeys, theme: "dark".into(), migrated: vec![], main_size: None, main_follow_mouse: false, module_order: vec![], check_update_on_start: true, start_silent: true }
     }
 }
@@ -116,6 +121,27 @@ pub fn sanitize_legacy_keys(cfg: &mut AppConfig) -> bool {
         changed = true;
     }
     changed
+}
+
+/// 一次性迁移：老默认热键 `Ctrl+Shift+E` → 新默认 `Alt+Q`。
+/// 只动「没有 main 键」或「仍是老默认值」的配置——用户自己录过的热键绝不覆盖；
+/// `migrated` 标记保证只跑一次（否则用户以后手动改回 Ctrl+Shift+E 会被每次启动改掉）。
+/// 返回 true = 配置有变化需要落盘（推入标记也算）。
+pub fn migrate_default_hotkey(cfg: &mut AppConfig) -> bool {
+    const MARK: &str = "hotkey_alt_q";
+    if cfg.migrated.iter().any(|m| m == MARK) {
+        return false;
+    }
+    cfg.migrated.push(MARK.into());
+    let untouched = match cfg.hotkeys.get("main") {
+        Some(v) => v == LEGACY_MAIN_HOTKEY,
+        None => true,
+    };
+    if untouched {
+        cfg.hotkeys.insert("main".into(), DEFAULT_MAIN_HOTKEY.into());
+        log::info!("main hotkey migrated to {DEFAULT_MAIN_HOTKEY}");
+    }
+    true
 }
 
 /// 读模块配置对象（缺失返回空对象）
@@ -324,5 +350,37 @@ mod tests {
         let back: AppConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(back.theme, cfg.theme);
         assert_eq!(back.modules.len(), cfg.modules.len());
+    }
+
+    #[test]
+    fn default_main_hotkey_is_alt_q() {
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.hotkeys["main"], DEFAULT_MAIN_HOTKEY);
+        assert_eq!(DEFAULT_MAIN_HOTKEY, "Alt+Q");
+    }
+
+    #[test]
+    fn migrate_default_hotkey_only_touches_untouched_configs() {
+        // 老默认值 → 迁移
+        let mut old = AppConfig::default();
+        old.hotkeys.insert("main".into(), LEGACY_MAIN_HOTKEY.into());
+        assert!(migrate_default_hotkey(&mut old));
+        assert_eq!(old.hotkeys["main"], DEFAULT_MAIN_HOTKEY);
+        // 幂等：第二次不再改（用户以后手动改回老值也不该被每次启动覆盖）
+        old.hotkeys.insert("main".into(), LEGACY_MAIN_HOTKEY.into());
+        assert!(!migrate_default_hotkey(&mut old));
+        assert_eq!(old.hotkeys["main"], LEGACY_MAIN_HOTKEY);
+
+        // 用户自定义过 → 保留原值，只落迁移标记
+        let mut custom = AppConfig::default();
+        custom.hotkeys.insert("main".into(), "Ctrl+Alt+P".into());
+        assert!(migrate_default_hotkey(&mut custom));
+        assert_eq!(custom.hotkeys["main"], "Ctrl+Alt+P");
+
+        // 缺 main 键（异常配置）→ 补默认
+        let mut missing = AppConfig::default();
+        missing.hotkeys.clear();
+        assert!(migrate_default_hotkey(&mut missing));
+        assert_eq!(missing.hotkeys["main"], DEFAULT_MAIN_HOTKEY);
     }
 }

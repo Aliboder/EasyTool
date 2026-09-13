@@ -193,7 +193,7 @@
 
 ### 全局热键
 
-`unregister_all` 全局坑（速查 #19，`set_hotkey`/`search_set_hotkey`/`set_main_hotkey` 都栽过）；解析结果缓存 `ResolvedHotkeys`（#20）；统一/独立模式相反注册 + 非统一模式拒绝主热键（#21）；失败通知（#22）；F24 呼出保护（#23）。**统一模式（默认）**：只注册主窗口热键（Ctrl+Shift+E），主窗口按「面板」工作（置顶 + 跳过任务栏 + 点外部关闭 + 可选跟随鼠标）；**独立模式**：各模块自己的热键，主窗口靠托盘呼出。
+`unregister_all` 全局坑（速查 #19，`set_hotkey`/`search_set_hotkey`/`set_main_hotkey` 都栽过）；解析结果缓存 `ResolvedHotkeys`（#20）；统一/独立模式相反注册 + 非统一模式拒绝主热键（#21）；失败通知（#22）；F24 呼出保护（#23）。**统一模式（默认）**：只注册主窗口热键（现默认 **Alt+Q**，常量 `config::DEFAULT_MAIN_HOTKEY`；老默认 `Ctrl+Shift+E` 由 `config::migrate_default_hotkey` 一次性迁移，只动没自定义过的配置），主窗口按「面板」工作（置顶 + 跳过任务栏 + 点外部关闭 + 可选跟随鼠标）；**独立模式**：各模块自己的热键，主窗口靠托盘呼出。
 
 ### 更新 / 发版 / 官网
 

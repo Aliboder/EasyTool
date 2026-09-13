@@ -382,7 +382,7 @@ fn read_hotkeys(app: &tauri::AppHandle) -> Hotkeys {
             .hotkeys
             .get("main")
             .cloned()
-            .unwrap_or_else(|| "Ctrl+Shift+E".into()),
+            .unwrap_or_else(|| "Alt+Q".into()),
     }
 }
 
@@ -458,7 +458,7 @@ fn notify_started(app: &tauri::AppHandle) -> bool {
         .hotkeys
         .get("main")
         .cloned()
-        .unwrap_or_else(|| "Ctrl+Shift+E".into());
+        .unwrap_or_else(|| "Alt+Q".into());
     let title = "EasyTool 已在后台运行";
     let body = format!("按 {hotkey} 或点托盘图标呼出窗口");
     let ok = app
@@ -580,8 +580,10 @@ pub fn run() {
             });
             
             modules::merge_manifests(&mut cfg, &manifests);
-            // 清理已废弃的配置键（弹窗/模块热键时代的残留），有清理才写盘
-            if config::sanitize_legacy_keys(&mut cfg) {
+            // 清理已废弃的配置键 + 热键默认值迁移（老默认 Ctrl+Shift+E → Alt+Q，用户自定义不覆盖）
+            let mut cfg_dirty = config::sanitize_legacy_keys(&mut cfg);
+            cfg_dirty |= config::migrate_default_hotkey(&mut cfg);
+            if cfg_dirty {
                 let _ = config::save_config(app.handle(), &cfg);
             }
             app.manage(ConfigState(std::sync::Mutex::new(cfg)));

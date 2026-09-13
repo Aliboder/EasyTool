@@ -330,7 +330,7 @@ export function SettingsView({
         <CardContent className="space-y-1">
           <SettingRow title="全局呼出热键" hint="按此热键呼出 / 隐藏主窗口">
             <HotkeyRecorder
-              value={(config.hotkeys.main as string) ?? "Ctrl+Shift+E"}
+              value={(config.hotkeys.main as string) ?? "Alt+Q"}
               onSave={async (combo) => {
                 try {
                   await onMainHotkey(combo);
