@@ -12,7 +12,6 @@ import {
   FolderOpen,
   MessageSquare,
   Pin,
-  StickyNote,
   Trash2,
   Type,
   X,
@@ -35,6 +34,7 @@ export interface ItemDto {
  * 曾按「分区文本卡悬停显示、列表模式常驻」做过 `hover` 开关，但悬停显示依赖容器上的 `group`
  * 类，容器漏写时会变成「永远透明却仍可点击」的隐形按钮（点一下误删/误固定）——故废弃该开关。
  * 备注按钮：点一下就地展开备注输入框；已有备注时按钮高亮（同时兼作「这条有备注」的提示）。
+ * 图标用气泡（与右键菜单「编辑备注」同一枚），便签图形在 14px 下像一坨方块、认不出来。
  */
 export function ItemActionColumn({
   item,
@@ -69,7 +69,7 @@ export function ItemActionColumn({
             item.note ? "text-primary" : "hover:text-foreground",
           )}
         >
-          <StickyNote className="size-3.5" />
+          <MessageSquare className="size-3.5" />
         </button>
         <button
           onClick={(e) => {
