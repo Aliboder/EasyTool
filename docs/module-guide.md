@@ -1,4 +1,4 @@
-﻿# EasyTool 新增模块开发指南
+# EasyTool 新增模块开发指南
 
 本指南供 AI Agent 阅读：如何为 EasyTool 快速新增一个功能模块并衔接现有架构。开发前请结合 `AGENTS.md` 阅读；文档与代码不一致时以代码为准。
 
@@ -319,6 +319,8 @@ function FooSettings({ cfg, onUpdate }: { cfg: FooConfig; onUpdate: (p: Partial<
 21. **App.tsx 接入四处缺一不可**：lazy 分包、`PAGE_IMPORTS` entry、renderModules 挂载块、Sidebar `ICONS` 图标映射。漏 PAGE_IMPORTS → 启动预载/恢复上次模块失效；漏 ICONS → 导航回退默认图标
 22. **启用状态由 manifest + config 驱动**：模块启用状态一律读 `config.modules.<id>.enabled`（设置页开关/排序落盘），前端不要硬编码模块列表或另起一套开关状态
 23. **UTC 与本地时间口径统一**：时间字符串一律本地时间生成（`chrono::Local::now()`）生成后入库存取/查询同口径；跨时区统计按 `date(time/1000,'unixepoch','localtime')` 切桶，混用会跨日错账
+24. **删模块要动三处，漏一处会「幽灵复活」**：① `src-tauri/src/modules/mod.rs` 的 `KNOWN_MODULES` 白名单增删 id；② 前后端模块目录与 `src-tauri/modules/<id>/` 清掉；③ 清掉编译输出里的旧资源副本 `src-tauri/target/{debug,release}/modules/<id>`——资源是「复制式」安装的（只增不删），留着的旧 manifest 会让底栏/设置页继续出现一个「点开就报错」的模块。白名单是兜底，第 ③ 步是清现场
+25. **模块下线要留数据后路**：删模块代码不必删用户数据（`%APPDATA%` 里的库/文件），但配置里的 `modules.<id>` 与 `module_order` 残留要用一次性迁移清掉（参考 `config::remove_retired_modules`，`migrated` 标记保证只跑一次）
 
 ## 8. 完成清单
 

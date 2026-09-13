@@ -16,6 +16,8 @@ Windows 桌面工具箱（Tauri 2 + React + TypeScript），**单应用 + 模块
 - `timetracker` 时长统计：自动记录前台软件使用时长，今日/本周/本月总览与对比、应用排行（总/活跃时长）、每日甘特时间线、自动分类 + 自定义正则规则、AFK 离开检测
 - `calendar` 日程表：事件/待办一体的本地日历，日/周/月/**时间线**/待办五视图 + 平滑切换动画（时间线=按天的卡片流，周视图=课表网格；卡片一律「事件色柔和底 + 左侧竖条 + 主题字色」，深浅主题通用）；重复规则（每天/每周+间隔/每月同日/第 N 个/倒数第 N 个星期几）与「仅此一次」例外；按课程自动配色 + 课程聚焦；.ics 导入/导出(保留重复规则+EXDATE 例外)、JSON 备份、外部日历订阅（只读、定时刷新）；事件/全局两档提醒；设置在卡片式抽屉统一管理
 
+> **加/删模块必看**：模块清单是**运行时资源**，`load_manifests` 按 `modules::KNOWN_MODULES` 白名单过滤（增删模块要同步该表）。删模块还必须清掉编译输出里的旧资源副本 `src-tauri/target/{debug,release}/modules/<id>`——资源复制是「只增不删」，残留的旧 manifest 会让底栏/设置页幽灵出现一个点开就报错的模块（详见 `docs/module-guide.md` 坑 24/25）。
+
 ## 技术栈
 
 后端 Tauri 2 + Rust（rusqlite / keyring / reqwest / chrono）；前端 React 19 + TS + Tailwind v4 + shadcn/ui + lucide-react + @dnd-kit；构建 Vite（`mpa` 多 HTML 入口）
@@ -104,7 +106,7 @@ npx tsc --noEmit       # 前端类型检查
 ```
 
 - 打包只支持 `msi/nsis`（**不支持 portable**）
-- 后端 113 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 56 个）
+- 后端 114 个单元测试（另 3 个需真实 Everything / 真实 .ics 文件的探测测试默认 ignored）；前端 vitest 纯函数单测（当前 56 个）
 
 ## 发版流程（AI 代发版时必须按此执行）
 

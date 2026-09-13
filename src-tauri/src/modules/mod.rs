@@ -34,6 +34,17 @@ pub fn modules_dir(app: &AppHandle) -> PathBuf {
     PathBuf::from("modules")
 }
 
+/// 已随本二进制编译的模块 id（白名单）。
+/// 模块清单是**运行时资源**（`modules/<id>/manifest.json`）：删掉一个模块后，
+/// 编译输出／安装目录里可能仍残留旧清单副本（资源复制是「只增不删」，安装器也不保证清理），
+/// 于是会幽灵出现一个「点开就报错」的模块页。这里按白名单过滤，残留清单直接忽略。
+pub const KNOWN_MODULES: &[&str] = &["clipboard", "quota", "search", "timetracker", "calendar"];
+
+/// 该清单是否属于本二进制已编译的模块（不在白名单 = 已下线模块的残留清单）
+pub fn is_known_module(id: &str) -> bool {
+    KNOWN_MODULES.contains(&id)
+}
+
 pub fn load_manifests(app: &AppHandle) -> Vec<Manifest> {
     let dir = modules_dir(app);
     let mut out = vec![];
@@ -43,6 +54,10 @@ pub fn load_manifests(app: &AppHandle) -> Vec<Manifest> {
                 let mpath = e.path().join("manifest.json");
                 if let Ok(text) = fs::read_to_string(mpath) {
                     if let Ok(m) = serde_json::from_str::<Manifest>(&text) {
+                        if !is_known_module(&m.id) {
+                            log::warn!("忽略已下线模块的残留清单: {}", m.id);
+                            continue;
+                        }
                         out.push(m);
                     }
                 }
@@ -109,5 +124,16 @@ mod tests {
         // 幂等：再次 merge 不重复追加
         merge_manifests(&mut cfg, &[Manifest { id: "clipboard".into(), name: "剪贴板".into(), icon: "clipboard".into(), enabled: true, description: String::new(), default_config: serde_json::json!({}) }]);
         assert_eq!(cfg.module_order, vec!["clipboard".to_string()]);
+    }
+
+    #[test]
+    fn retired_module_manifest_is_ignored() {
+        // 白名单只含现役 5 个模块；已下线的表情模块残留清单必须被拒
+        assert_eq!(KNOWN_MODULES.len(), 5);
+        for id in ["clipboard", "quota", "search", "timetracker", "calendar"] {
+            assert!(is_known_module(id), "{id} 应在白名单内");
+        }
+        assert!(!is_known_module("emoji"));
+        assert!(!is_known_module("easyask"));
     }
 }
