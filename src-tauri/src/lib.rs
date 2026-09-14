@@ -786,6 +786,7 @@ pub fn run() {
             modules::clipboard::commands::get_data_dir,
             modules::clipboard::commands::open_data_dir,
             modules::clipboard::commands::get_stats,
+            modules::clipboard::commands::clipboard_max_items,
             modules::clipboard::commands::get_thumb,
             modules::clipboard::commands::get_image,
             modules::clipboard::commands::get_image_path,

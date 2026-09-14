@@ -79,6 +79,8 @@ export function Clippage() {
   const [previewInfo, setPreviewInfo] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingNoteValue, setEditingNoteValue] = useState("");
+  /** 剪贴板历史上限（来自后端常量；未取到时不显示上限横幅） */
+  const [maxItems, setMaxItems] = useState<number | null>(null);
 
   // 本地搜索：根据 search + filter 内存过滤（纳秒级，无需 IPC）
   const items = useMemo(() => {
@@ -124,6 +126,14 @@ export function Clippage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // 历史上限：唯一来源是后端常量（`clipboard::MAX_ITEMS`），前端不另写数字，
+  // 否则改上限时后端变了、这里横幅还在报旧值
+  useEffect(() => {
+    invoke<number>("clipboard_max_items")
+      .then(setMaxItems)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const un = listen("clipboard://changed", () => load());
@@ -802,10 +812,10 @@ export function Clippage() {
 
       <>
 
-      {allItems.length >= 500 && (
+      {maxItems != null && allItems.length >= maxItems && (
         <div className="flex shrink-0 items-center justify-center gap-1 border-b bg-amber-500/10 px-3 py-1 text-[10px] text-amber-600 dark:text-amber-400">
           <ClipboardList className="size-3" />
-          已达 500 条上限，复制新内容会自动替换最旧记录
+          已达 {maxItems} 条上限，复制新内容会自动替换最旧记录
         </div>
       )}
 

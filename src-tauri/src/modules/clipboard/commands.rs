@@ -369,6 +369,14 @@ pub async fn get_file_preview(path: String) -> CmdResult<Option<String>> {
         })
 }
 
+/// 剪贴板历史上限（前端「已达上限」提示用）。
+/// 上限的唯一来源是 `clipboard::MAX_ITEMS` 常量——前端不要另写一个数字，
+/// 否则改上限时后端变了、前端横幅还在报旧值（v0.11.1 踩过：横幅一直显示 500）。
+#[tauri::command]
+pub fn clipboard_max_items() -> u64 {
+    super::MAX_ITEMS
+}
+
 /// 组装前端视图（缩略图由前端按需加载，避免列表全量读文件转 base64）
 fn to_dto(_state: &AppState, item: &Item) -> ItemDto {
     item.to_dto()
